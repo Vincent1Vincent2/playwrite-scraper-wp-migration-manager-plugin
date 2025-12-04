@@ -28,22 +28,27 @@ Use this guide to:
 
 1. Create and activate a virtualenv (recommended):
 
-```
+```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 2. Install dependencies:
 
-```
+```bash
 pip install -r scraper/requirements.txt
 python -m playwright install --with-deps
 ```
 
 3. Start the API:
 
-```
+```bash
+# From project root
 uvicorn scraper.app:app --host 0.0.0.0 --port 8000 --reload
+
+# Or from scraper directory
+cd scraper
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 4. Test endpoints:
@@ -56,7 +61,7 @@ uvicorn scraper.app:app --host 0.0.0.0 --port 8000 --reload
 
 From the `scraper/` directory:
 
-```
+```bash
 docker build -t scraper:latest scraper
 
 docker run --rm -it -p 8000:8000 --cap-drop=ALL --security-opt=no-new-privileges scraper:latest
@@ -168,9 +173,25 @@ server {
 
 ### Python runtime
 
-- Python 3.11
+- Python 3.11+
 - FastAPI, Uvicorn
 - Playwright 1.40.0 with Chromium
+
+### Project structure
+
+The `scraper/` directory is organized as a Python package:
+
+```
+scraper/
+├── __init__.py          # Package marker
+├── app.py               # FastAPI application (main entry point)
+├── config.py            # Configuration settings
+├── requirements.txt     # Production dependencies
+├── requirements-dev.txt # Development dependencies (pytest, black, etc.)
+├── Dockerfile           # Container configuration
+├── start.sh             # Startup script
+└── index.html           # JSON viewer
+```
 
 ### Docker image
 
@@ -202,6 +223,7 @@ For production:
 - Browser not initialized: ensure Playwright installed and container has required libs
 - Timeouts: increase `proxy_read_timeout` and inspect target site blocking
 - High CPU: lower concurrency (one request at a time) or scale horizontally
+- Import errors: ensure you're running from the project root when using `scraper.app:app`, or use `app:app` when inside the `scraper/` directory
 
 ---
 
