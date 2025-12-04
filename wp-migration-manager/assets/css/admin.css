@@ -1,0 +1,801 @@
+/**
+ * Migration Manager - Admin CSS
+ * Clean, consolidated styles for WordPress admin compatibility
+ *
+ * @package MigrationManager
+ */
+
+/* ==========================================================================
+   Main Plugin Styles
+   ========================================================================== */
+
+.migration-manager-wrap {
+    max-width: 1200px;
+}
+
+.migration-manager-header {
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.migration-manager-header h1 {
+    margin: 0 0 10px 0;
+    color: #23282d;
+}
+
+.migration-manager-header p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+/* Form Styles */
+.migration-form {
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.migration-form .form-table th {
+    width: 150px;
+    padding-left: 0;
+}
+
+.migration-form input[type="url"] {
+    width: 100%;
+    max-width: 500px;
+}
+
+/* Results Section */
+.migration-results {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.migration-results-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-bottom: 1px solid #e1e8ed;
+}
+
+.migration-results-content {
+    padding: 20px;
+}
+
+/* Stats Grid */
+.migration-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 15px;
+    margin: 15px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e1e8ed;
+}
+
+.stat-item {
+    text-align: center;
+    padding: 15px;
+    background: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.stat-number {
+    font-size: 28px;
+    font-weight: 700;
+    color: #0073aa;
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #666;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+/* Action Buttons */
+.migration-actions,
+.migration-action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 20px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e1e8ed;
+}
+
+.migration-actions .button,
+.migration-action-buttons .button {
+    flex: 0 0 auto;
+}
+
+.handle-actions {
+    display: flex;
+    gap: 10px;
+}
+
+/* Content Preview */
+.migration-content-preview {
+    max-height: 600px;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+/* Messages */
+.migration-messages {
+    margin-bottom: 20px;
+}
+
+/* Recent Scrapes Table */
+.recent-scrapes-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+.recent-scrapes-table th,
+.recent-scrapes-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #e1e8ed;
+}
+
+.recent-scrapes-table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #555;
+}
+
+.recent-scrapes-table .status-success {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.recent-scrapes-table .status-failed {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   Drag & Drop Styles
+   ========================================================================== */
+
+.draggable-item {
+    position: relative;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+    cursor: grab;
+    user-select: none;
+}
+
+.draggable-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.draggable-item:active {
+    cursor: grabbing;
+}
+
+.draggable-item.dragging {
+    opacity: 0.7;
+    transform: rotate(2deg);
+    cursor: grabbing;
+}
+
+.draggable-item::before {
+    content: "⋮⋮";
+    position: absolute;
+    left: -15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #ccc;
+    font-size: 12px;
+    line-height: 0.8;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.draggable-item:hover::before {
+    opacity: 1;
+}
+
+/* Enhanced drag indicators for different contexts */
+.sidebar-content .draggable-item::before {
+    left: -10px;
+    font-size: 10px;
+}
+
+.sticky-sidebar-content .draggable-item::before {
+    left: -8px;
+    font-size: 9px;
+}
+
+/* Drop Targets */
+.drag-over {
+    border-width: 2px !important;
+    border-style: solid !important;
+    background-color: #f8f9ff !important;
+    transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+textarea.drag-over,
+input[type="text"].drag-over,
+input[type="url"].drag-over,
+input[type="email"].drag-over,
+input[type="search"].drag-over {
+    border-style: dashed !important;
+    background-color: #f0f4ff !important;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+}
+
+/* Editor-specific drag over styling */
+.drag-over-editor,
+.wp-editor-area.drag-over,
+.wp-editor-container.drag-over,
+.acf-field-wysiwyg.drag-over,
+.block-editor-rich-text__editable.drag-over {
+    border-style: dashed !important;
+    background-color: #f8fff9 !important;
+    box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.15) !important;
+}
+
+/* TinyMCE iframe drag over styling */
+.drag-over-iframe,
+iframe[id$="_ifr"].drag-over,
+.mce-edit-area.drag-over {
+    border-style: dashed !important;
+    box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.15) !important;
+}
+
+/* Container highlighting for better visibility */
+.mce-tinymce.drag-over,
+.wp-editor-container:has(iframe.drag-over) {
+    background-color: rgba(40, 167, 69, 0.05) !important;
+    border-radius: 4px;
+}
+
+/* Contenteditable drag over styling */
+.drag-over-contenteditable,
+[contenteditable].drag-over {
+    border-style: dashed !important;
+    background-color: #fffdf0 !important;
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.15) !important;
+}
+
+/* Input field drag over styling */
+.drag-over-input {
+    border-style: dashed !important;
+    background-color: #f0f4ff !important;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+}
+
+/* Gutenberg block drag over */
+.wp-block.drag-over {
+    border-style: dashed !important;
+    outline-offset: 2px;
+    background-color: rgba(40, 167, 69, 0.05) !important;
+}
+
+/* CodeMirror drag over */
+.CodeMirror.drag-over {
+    border-style: dashed !important;
+    box-shadow: 0 0 0 3px rgba(232, 62, 140, 0.15) !important;
+}
+
+/* Iframe editor containers */
+.acf-field-wysiwyg.drag-over,
+.wp-editor-container.drag-over {
+    border-radius: 4px;
+    padding: 2px;
+}
+
+/* Blinking Animations */
+.blinking {
+    animation: blink-border-success 1s infinite;
+}
+
+.drag-over-editor.blinking,
+.drag-over-iframe.blinking,
+iframe[id$="_ifr"].blinking {
+    animation: blink-border-success 1s infinite;
+}
+
+.drag-over-contenteditable.blinking {
+    animation: blink-border-warning 1s infinite;
+}
+
+.drag-over-input.blinking,
+textarea.blinking,
+input[type="text"].blinking,
+input[type="url"].blinking,
+input[type="email"].blinking,
+input[type="search"].blinking {
+    animation: blink-border-primary 1s infinite;
+}
+
+@keyframes blink {
+    50% {
+        background-color: #ffff99 !important;
+        border-color: #ffc107 !important;
+    }
+}
+
+@keyframes blink-border-success {
+
+    0%,
+    50% {
+        border-color: #28a745;
+    }
+
+    51%,
+    100% {
+        border-color: #20c997;
+    }
+}
+
+@keyframes blink-border-warning {
+
+    0%,
+    50% {
+        border-color: #ffc107;
+    }
+
+    51%,
+    100% {
+        border-color: #fd7e14;
+    }
+}
+
+@keyframes blink-border-primary {
+
+    0%,
+    50% {
+        border-color: #667eea;
+    }
+
+    51%,
+    100% {
+        border-color: #28a745;
+    }
+}
+
+/* ==========================================================================
+   Editor Sidebar Styles
+   ========================================================================== */
+
+#migration-manager-editor-sidebar {
+    font-size: 13px;
+}
+
+.migration-sidebar-header h4 {
+    margin: 0 0 8px 0;
+    color: #23282d;
+    font-size: 14px;
+}
+
+.migration-sidebar-header p {
+    margin: 0 0 15px 0;
+    color: #666;
+    font-size: 12px;
+}
+
+.migration-sidebar-form .form-group {
+    margin-bottom: 15px;
+}
+
+.migration-sidebar-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #23282d;
+}
+
+.migration-sidebar-form input[type="url"] {
+    width: 100%;
+}
+
+.form-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+#editor-scraped-content {
+    position: fixed;
+    top: 40px;
+    right: 20px;
+    border-radius: 10px;
+    width: 250px;
+    padding: 20px;
+    background: white;
+    z-index: 999999999;
+}
+
+.migration-sidebar-section h5 {
+    margin: 0 0 10px 0;
+    color: #23282d;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.sidebar-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+/* Recent Scrapes in Sidebar */
+.recent-scrapes-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.recent-scrape-item {
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f1f1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.recent-scrape-item:last-child {
+    border-bottom: none;
+}
+
+.scrape-domain {
+    font-weight: 600;
+    color: #23282d;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scrape-time {
+    color: #666;
+    font-size: 11px;
+    margin: 0 8px;
+}
+
+.no-scrapes {
+    color: #666;
+    font-style: italic;
+    margin: 0;
+    font-size: 12px;
+}
+
+/* Content Preview in Sidebar */
+#editor-content-preview,
+#sticky-content-preview {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #e1e8ed;
+    border-radius: 4px;
+    padding: 10px;
+    background: #fafafa;
+}
+
+#editor-content-stats,
+#sticky-content-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 15px;
+    font-size: 11px;
+}
+
+#editor-content-stats .stat-item,
+#sticky-content-stats .stat-item {
+    padding: 8px;
+    text-align: center;
+    background: white;
+    border-radius: 4px;
+    border: 1px solid #e1e8ed;
+}
+
+#editor-content-stats .stat-number,
+#sticky-content-stats .stat-number {
+    font-size: 16px;
+    color: #667eea;
+}
+
+#editor-content-stats .stat-label,
+#sticky-content-stats .stat-label {
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+/* ==========================================================================
+   Sticky Sidebar Styles
+   ========================================================================== */
+
+.migration-sticky-sidebar {
+    position: fixed;
+    top: 50%;
+    right: -350px;
+    transform: translateY(-50%);
+    width: 350px;
+    max-height: 80vh;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px 0 0 8px;
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+    z-index: 9999;
+    transition: right 0.3s ease;
+    font-size: 13px;
+}
+
+.migration-sticky-sidebar.open {
+    right: 0;
+}
+
+.sticky-sidebar-handle {
+    position: absolute;
+    left: -45px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: white;
+    border: 1px solid #ddd;
+    border-right: none;
+    border-radius: 8px 0 0 8px;
+    padding: 10px 5px;
+    cursor: pointer;
+    box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+.sticky-sidebar-handle .button {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    padding: 8px 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    border: none;
+    background: #667eea;
+    color: white;
+    cursor: pointer;
+}
+
+.sticky-sidebar-handle .button:hover {
+    background: #5a67d8;
+    color: white;
+}
+
+.sticky-sidebar-handle .dashicons {
+    margin-bottom: 5px;
+    font-size: 16px;
+}
+
+.sticky-sidebar-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.sticky-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid #e1e8ed;
+    background: #f8f9fa;
+    flex-shrink: 0;
+}
+
+.sticky-sidebar-header h4 {
+    margin: 0;
+    color: #23282d;
+    font-size: 14px;
+}
+
+.sticky-sidebar-header .button-link {
+    text-decoration: none;
+    color: #666;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.sticky-sidebar-header .button-link:hover {
+    color: #dc3545;
+}
+
+.sticky-sidebar-form {
+    padding: 15px;
+    border-bottom: 1px solid #e1e8ed;
+    flex-shrink: 0;
+}
+
+.sticky-sidebar-form .form-group {
+    margin-bottom: 15px;
+}
+
+.sticky-sidebar-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #23282d;
+    font-size: 12px;
+}
+
+#sticky-recent-scrapes {
+    padding: 0 15px;
+    flex-shrink: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+#sticky-scraped-content {
+    padding: 15px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Sidebar Content Items */
+.sticky-sidebar-content .item {
+    margin-bottom: 15px;
+    padding: 12px;
+    background: white;
+    border: 1px solid #e1e8ed;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.sticky-sidebar-content .item-type {
+    font-size: 10px;
+    padding: 3px 8px;
+    margin-bottom: 8px;
+}
+
+.sticky-sidebar-content .rendered-element {
+    padding: 10px;
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+.sticky-sidebar-content .action-buttons {
+    margin-top: 8px;
+}
+
+.sticky-sidebar-content .action-buttons .button {
+    font-size: 10px;
+    padding: 2px 6px;
+    margin-right: 4px;
+    margin-bottom: 4px;
+}
+
+.sticky-sidebar-content .item-meta {
+    font-size: 10px;
+    margin-top: 6px;
+}
+
+/* Responsive adjustments for sticky sidebar */
+@media (max-width: 1400px) {
+    .migration-sticky-sidebar {
+        width: 300px;
+        right: -300px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .migration-sticky-sidebar {
+        width: 280px;
+        right: -280px;
+    }
+}
+
+@media (max-width: 782px) {
+    .migration-sticky-sidebar {
+        width: 100%;
+        right: -100%;
+        top: 0;
+        transform: none;
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .sticky-sidebar-handle {
+        display: none;
+    }
+}
+
+/* ==========================================================================
+   WordPress Admin Integration
+   ========================================================================== */
+
+/* Ensure compatibility with WordPress admin styles */
+.migration-manager-wrap .notice {
+    margin: 5px 0 15px;
+}
+
+.migration-manager-wrap .notice p {
+    margin: 0.5em 0;
+}
+
+/* Integration with WordPress meta boxes */
+#migration-manager-editor-sidebar .inside {
+    margin: 0;
+    padding: 0;
+}
+
+/* Ensure drag indicators work in WordPress admin */
+.wp-admin .draggable-item {
+    cursor: grab;
+}
+
+.wp-admin .draggable-item:active {
+    cursor: grabbing;
+}
+
+/* Editor specific adjustments */
+.post-type-post #migration-manager-editor-sidebar,
+.post-type-page #migration-manager-editor-sidebar {
+    font-size: 13px;
+}
+
+/* Messages in sidebar */
+#editor-migration-messages,
+#sticky-migration-messages {
+    margin: 10px 0;
+}
+
+#editor-migration-messages .notice,
+#sticky-migration-messages .notice {
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+/* Spinner adjustments for sidebar */
+#editor-scrape-spinner,
+#sticky-scrape-spinner {
+    margin-left: 5px;
+}
+
+/* Content preview scrolling */
+#editor-content-preview::-webkit-scrollbar,
+#sticky-content-preview::-webkit-scrollbar {
+    width: 6px;
+}
+
+#editor-content-preview::-webkit-scrollbar-track,
+#sticky-content-preview::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#editor-content-preview::-webkit-scrollbar-thumb,
+#sticky-content-preview::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+#editor-content-preview::-webkit-scrollbar-thumb:hover,
+#sticky-content-preview::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+.wp-editor-container {
+    border: none;
+}
