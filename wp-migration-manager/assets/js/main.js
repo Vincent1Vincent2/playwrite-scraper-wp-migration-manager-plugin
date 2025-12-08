@@ -868,8 +868,20 @@
           }
         } 
         // Check if it's a link
-        else if ($linkElement.length) {
-          content = $linkElement.text() + " - " + $linkElement.attr("href");
+        else if (itemType === "link" || $linkElement.length) {
+          const linkUrl = $linkElement.attr("href") || "";
+          const linkText = $linkElement.text() || linkUrl;
+          
+          if (linkUrl) {
+            // Escape HTML in link text to prevent XSS
+            const escapedText = linkText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            // Create link HTML for dragging
+            content = `<a href="${linkUrl.replace(/"/g, "&quot;")}">${escapedText}</a>`;
+            isHTML = true;
+          } else {
+            // Fallback to plain text if no URL
+            content = linkText;
+          }
         } 
         // Check if it's text
         else if ($textElement.length) {

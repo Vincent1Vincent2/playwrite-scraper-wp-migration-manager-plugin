@@ -724,8 +724,21 @@
           }
         } 
         // Check if it's a link
-        else if ($linkElement.length) {
-          dragContent = $linkElement.text() + " - " + $linkElement.attr("href");
+        else if (itemType === "link" || $linkElement.length) {
+          const linkUrl = $linkElement.attr("href") || "";
+          const linkText = $linkElement.text() || linkUrl;
+          
+          if (linkUrl) {
+            // Escape HTML in link text to prevent XSS
+            const escapedText = linkText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            // Create link HTML for dragging
+            dragContent = `<a href="${linkUrl.replace(/"/g, "&quot;")}">${escapedText}</a>`;
+            isHTML = true;
+            console.log("Making link draggable:", { linkUrl, linkText });
+          } else {
+            // Fallback to plain text if no URL
+            dragContent = linkText;
+          }
         } 
         // Check if it's text
         else if ($textElement.length) {
