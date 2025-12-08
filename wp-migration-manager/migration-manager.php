@@ -2,11 +2,10 @@
 
 /**
  * Plugin Name: Migration Manager
- * Plugin URI: https://yoursite.com/migration-manager
  * Description: A powerful WordPress plugin to migrate content from external websites using advanced scraping and intelligent content grouping.
  * Version: 1.0.0
- * Author: Your Name
- * Author URI: https://yoursite.com
+ * Author: Vincent J Ahlin
+ * Author URI: https://vincent1vincent2.github.io/PortfolioV2/
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: migration-manager

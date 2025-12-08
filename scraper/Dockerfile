@@ -1,12 +1,12 @@
 FROM python:3.11-slim
 
-# Install system dependencies (this layer will be cached)
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     gnupg \
     unzip \
     fonts-liberation \
+    fonts-unifont \
     libnss3 \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
@@ -17,29 +17,25 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libu2f-udev \
     libvulkan1 \
+    libgdk-pixbuf-xlib-2.0-0 \
+    libjpeg62-turbo \
+    libwebp7 \
+    libcups2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set workdir
+
 WORKDIR /app
 
-# Copy only requirements first (for better layer caching)
 COPY requirements.txt .
-
-# Install Python dependencies (this layer will be cached unless requirements.txt changes)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright and browser binaries (this layer will be cached)
-RUN playwright install --with-deps
+# Install only the browser binaries (NO --with-deps)
+RUN playwright install chromium
 
-# Copy application code last (this layer will change most frequently)
 COPY app.py .
 COPY start.sh .
 
-# Make start script executable
 RUN chmod +x start.sh
 
-# Expose port
 EXPOSE 8000
-
-# Run the app
 CMD ["bash", "start.sh"]
