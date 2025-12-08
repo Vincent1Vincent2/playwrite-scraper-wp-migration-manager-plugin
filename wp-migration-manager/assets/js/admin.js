@@ -958,9 +958,12 @@
     $(".copy-btn").off("click.sidebar");
 
     // Add new listeners
-    $(".copy-btn").on("click.sidebar", function () {
+    $(".copy-btn").on("click.sidebar", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
       const text = this.getAttribute("data-text");
       copyText(text);
+      return false;
     });
 
     // Add drag functionality
@@ -2991,9 +2994,12 @@
 
   function addButtonEventListeners() {
     document.querySelectorAll(".copy-btn").forEach((btn) => {
-      btn.addEventListener("click", function () {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
         const text = this.getAttribute("data-text");
         copyText(text);
+        return false;
       });
     });
 
