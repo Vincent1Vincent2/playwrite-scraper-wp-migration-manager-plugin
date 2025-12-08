@@ -223,6 +223,7 @@
       $("#create-posts").on("click", () => this.createPosts());
       $("#create-pages").on("click", () => this.createPages());
       $("#save-draft").on("click", () => this.saveDraft());
+      $("#download-images").on("click", () => this.downloadImages());
 
       // Recent scrapes
       $(document).on("click", ".load-scrape", (e) => {

@@ -309,14 +309,41 @@
      */
     handleDragStart(e, element) {
       const $element = $(element);
-      const content = $element.find(".item-text").text();
+      // Get content from data attribute first (set by makeDraggable), then fallback to text
+      let content = $element.data("drag-content");
+      const isHTML = $element.data("drag-html") || false;
+      
+      if (!content) {
+        // Fallback: try to get from various sources
+        const $img = $element.find("img");
+        if ($img.length > 0) {
+          // It's an image
+          const imageUrl = $img.attr("src") || "";
+          const imageAlt = $img.attr("alt") || "image";
+          if (imageUrl) {
+            content = `<img src="${imageUrl}" alt="${imageAlt}" />`;
+            isHTML = true;
+          }
+        } else {
+          // Try text content
+          content = $element.find(".item-text, .rendered-element").text() || $element.text();
+        }
+      }
+      
       State.actions.startDrag(content, element);
 
       $element.addClass("dragging");
       e.originalEvent.dataTransfer.effectAllowed = "copy";
-      e.originalEvent.dataTransfer.setData("text/plain", content);
+      
+      // Set drag data - support both HTML and plain text
+      if (isHTML) {
+        e.originalEvent.dataTransfer.setData("text/html", content);
+        e.originalEvent.dataTransfer.setData("text/plain", content);
+      } else {
+        e.originalEvent.dataTransfer.setData("text/plain", content);
+      }
 
-      EventBus.emit(EventBus.events.DRAG_START, { element, content });
+      EventBus.emit(EventBus.events.DRAG_START, { element, content, isHTML });
     },
 
     handleDragEnd(e, element) {
@@ -334,18 +361,38 @@
 
       const element = $target[0];
       let success = false;
+      
+      // Check if content is HTML (starts with <)
+      const isHTML = content.trim().startsWith("<");
 
       // Try TinyMCE first
       if (this.isTinyMCE($target)) {
-        success = this.insertIntoTinyMCE($target, content);
+        success = this.insertIntoTinyMCE($target, content, isHTML);
       }
       // Contenteditable
       else if ($target.is("[contenteditable]")) {
-        success = this.insertIntoContentEditable($target, content);
+        success = this.insertIntoContentEditable($target, content, isHTML);
       }
       // Regular input/textarea
       else if ($target.is("input, textarea")) {
-        success = this.insertIntoInput($target, content);
+        // For input/textarea, if it's HTML, extract just the URL or alt text
+        if (isHTML) {
+          // Try to extract image URL from HTML
+          const tempDiv = document.createElement("div");
+          tempDiv.innerHTML = content;
+          const img = tempDiv.querySelector("img");
+          if (img) {
+            // For images, insert the URL or alt text into text inputs
+            const imageUrl = img.getAttribute("src") || "";
+            const imageAlt = img.getAttribute("alt") || "";
+            const textContent = imageUrl || imageAlt || content;
+            success = this.insertIntoInput($target, textContent, false);
+          } else {
+            success = this.insertIntoInput($target, content, false);
+          }
+        } else {
+          success = this.insertIntoInput($target, content, false);
+        }
       }
 
       if (success) {
@@ -356,7 +403,7 @@
       return success;
     },
 
-    insertIntoTinyMCE($target, content) {
+    insertIntoTinyMCE($target, content, isHTML = false) {
       try {
         let editor = null;
 
@@ -386,7 +433,7 @@
       return false;
     },
 
-    insertIntoContentEditable($target, content) {
+    insertIntoContentEditable($target, content, isHTML = false) {
       try {
         const element = $target[0];
         element.focus();
@@ -405,7 +452,7 @@
       }
     },
 
-    insertIntoInput($target, content) {
+    insertIntoInput($target, content, isHTML = false) {
       try {
         const element = $target[0];
         const currentValue = $target.val() || "";
@@ -529,13 +576,14 @@
     /**
      * Make element draggable
      */
-    makeDraggable(element, content) {
+    makeDraggable(element, content, isHTML = false) {
       const $el = $(element);
 
       $el
         .addClass(this.config.draggableClass)
         .attr("draggable", "true")
         .data("drag-content", content)
+        .data("drag-html", isHTML)
         .css({
           cursor: "grab",
           "user-select": "none",

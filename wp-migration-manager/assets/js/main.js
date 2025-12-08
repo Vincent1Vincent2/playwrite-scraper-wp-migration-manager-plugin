@@ -145,6 +145,37 @@
           State.get("scraped.url"),
           State.computed.getContext()
         );
+        // Enable action buttons after rendering
+        if (State.computed.getContext() === "main") {
+          $("#create-posts, #create-pages, #save-draft").prop("disabled", false);
+          
+          // Enable upload images button only if there are images
+          const hasImages = (data.data || []).some(item => {
+            if (item.type === 'image') return true;
+            if (item.type === 'group' && item.children) {
+              return item.children.some(child => child.type === 'image');
+            }
+            return false;
+          });
+          $("#download-images").prop("disabled", !hasImages);
+        }
+      });
+
+      EventBus.on(EventBus.events.DATA_LOADED, (data) => {
+        // Enable action buttons when data is loaded
+        if (State.computed.getContext() === "main") {
+          $("#create-posts, #create-pages, #save-draft").prop("disabled", false);
+          
+          // Enable upload images button only if there are images
+          const hasImages = (data.data || []).some(item => {
+            if (item.type === 'image') return true;
+            if (item.type === 'group' && item.children) {
+              return item.children.some(child => child.type === 'image');
+            }
+            return false;
+          });
+          $("#download-images").prop("disabled", !hasImages);
+        }
       });
 
       EventBus.on(EventBus.events.DATA_UPDATED, () => {
@@ -214,6 +245,7 @@
       $("#create-posts").on("click", () => this.createPosts());
       $("#create-pages").on("click", () => this.createPages());
       $("#save-draft").on("click", () => this.saveDraft());
+      $("#download-images").on("click", () => this.downloadImages());
 
       // Recent scrapes
       $(document).on("click", ".load-scrape", (e) => {
@@ -284,13 +316,8 @@
         this.copyToClipboard(text);
       });
 
-      // Download buttons
-      $(document).on("click", ".download-btn", (e) => {
-        e.preventDefault();
-        const url = $(e.target).data("url");
-        const filename = $(e.target).data("filename");
-        this.downloadFile(url, filename);
-      });
+      // Download/Upload buttons - handled by renderer now
+      // Keeping this for backwards compatibility but renderer takes precedence
     }
 
     /**
@@ -444,6 +471,12 @@
           : "#sticky-scraped-content";
       $(containerId).hide();
 
+      // Disable action buttons
+      if (context === "main") {
+        $("#create-posts, #create-pages, #save-draft, #download-images").prop("disabled", true);
+        $("#image-download-progress").hide();
+      }
+
       Messages.info("Results cleared");
     }
 
@@ -495,24 +528,363 @@
     }
 
     /**
+     * Download images from scraped content (with progress bar)
+     */
+    downloadImages() {
+      const url = State.get("scraped.url");
+      const data = State.get("scraped.data");
+
+      if (!url || !data) {
+        Messages.error("No scraped content found. Please scrape a website first.");
+        return;
+      }
+
+      // Show progress UI
+      const $progressContainer = $("#image-download-progress");
+      const $progressBar = $("#progress-bar");
+      const $progressText = $("#progress-text");
+      
+      $progressContainer.show();
+      $progressBar.css("width", "0%");
+      $progressText.text("Preparing to upload images...");
+
+      // Disable button during download
+      const $downloadBtn = $("#download-images");
+      const originalText = $downloadBtn.html();
+      $downloadBtn.prop("disabled", true);
+      $downloadBtn.html('<span class="spinner is-active" style="float: none; margin: 0;"></span> Uploading...');
+
+      const loadingMsg = Messages.loading("Uploading images...");
+
+      // Process images in batches with progress updates
+      this.processImageBatches(url, 0, {}, loadingMsg, $progressBar, $progressText, $downloadBtn, originalText, $progressContainer);
+    }
+
+    /**
+     * Process images in batches with progress updates
+     */
+    processImageBatches(url, batchIndex, urlMapping, loadingMsg, $progressBar, $progressText, $downloadBtn, originalText, $progressContainer, accumulatedStats = { downloaded: 0, skipped: 0, failed: 0 }, lastProgress = 0) {
+      const batchSize = 5; // Process 5 images at a time
+      
+      API.request({
+        data: {
+          action: "migration_manager_download_images",
+          url: url,
+          batch_index: batchIndex,
+          batch_size: batchSize,
+          url_mapping: JSON.stringify(urlMapping),
+          previous_downloaded: accumulatedStats.downloaded,
+          previous_skipped: accumulatedStats.skipped,
+          previous_failed: accumulatedStats.failed
+        },
+      })
+        .then((response) => {
+          if (!response.success) {
+            throw new Error(response.data?.message || "Failed to process images");
+          }
+
+          const data = response.data;
+          const total = data.total || 0;
+          const processed = data.processed || 0;
+          const downloaded = data.downloaded || 0;
+          const skipped = data.skipped || 0;
+          const failed = data.failed || 0;
+          const currentImage = data.current_image || null;
+
+          // Update accumulated stats
+          accumulatedStats.downloaded = downloaded;
+          accumulatedStats.skipped = skipped;
+          accumulatedStats.failed = failed;
+
+          // Calculate smooth progress
+          const targetProgress = Math.min(Math.round((processed / total) * 100 * 10) / 10, 100);
+          
+          // Animate progress bar smoothly
+          this.animateProgress($progressBar, lastProgress, targetProgress, () => {
+            // Update progress text with current image info
+            let statusText = '';
+            if (currentImage) {
+              const statusMessages = {
+                'downloading': `Downloading image ${currentImage.index}/${total}: ${currentImage.filename}...`,
+                'uploading': `Uploading image ${currentImage.index}/${total}: ${currentImage.filename}...`,
+                'completed': `Completed image ${currentImage.index}/${total}: ${currentImage.filename}`,
+                'skipped': `Skipped image ${currentImage.index}/${total}: ${currentImage.filename} (${currentImage.message})`,
+                'failed': `Failed image ${currentImage.index}/${total}: ${currentImage.filename}`
+              };
+              statusText = statusMessages[currentImage.status] || `Processing image ${currentImage.index}/${total}...`;
+            } else {
+              statusText = `Processing batch ${batchIndex + 1}/${Math.ceil(total / batchSize)}...`;
+            }
+            
+            $progressText.html(
+              `<strong>${statusText}</strong><br>` +
+              `<small>Progress: ${processed}/${total} images | ` +
+              `Downloaded: ${downloaded} | Skipped: ${skipped} | Failed: ${failed}</small>`
+            );
+          });
+
+          // Merge URL mappings
+          const newUrlMapping = data.url_mapping || {};
+          const mergedMapping = { ...urlMapping, ...newUrlMapping };
+
+          // Check if complete
+          if (data.complete) {
+            Messages.update(
+              loadingMsg,
+              data.message || "Images uploaded successfully!",
+              "success"
+            );
+
+            // Animate to 100%
+            this.animateProgress($progressBar, targetProgress, 100, () => {
+              $progressText.html(
+                `<strong>Complete!</strong> Downloaded: ${downloaded}, ` +
+                `Skipped: ${skipped}, Failed: ${failed}`
+              );
+            });
+
+            // Update state with new data if available
+            if (data.updated_data && data.updated_data.data) {
+              State.actions.setScrapedData(data.updated_data, url);
+              
+              // Refresh renderer to show updated URLs
+              if (window.Renderer) {
+                Renderer.refresh();
+              }
+            }
+
+            // Re-enable button after a delay
+            setTimeout(() => {
+              $downloadBtn.prop("disabled", false);
+              $downloadBtn.html(originalText);
+              $progressContainer.fadeOut(3000);
+            }, 2000);
+          } else {
+            // Process next batch with smooth progress continuation
+            setTimeout(() => {
+              this.processImageBatches(
+                url,
+                data.batch_index,
+                mergedMapping,
+                loadingMsg,
+                $progressBar,
+                $progressText,
+                $downloadBtn,
+                originalText,
+                $progressContainer,
+                accumulatedStats,
+                targetProgress
+              );
+            }, 300); // Small delay between batches
+          }
+        })
+        .catch((error) => {
+          Messages.update(
+            loadingMsg,
+            error.message || "Failed to upload images",
+            "error"
+          );
+
+          $progressBar.css("width", "0%");
+          $progressText.html(`<strong>Error:</strong> ${error.message || "Unknown error"}`);
+
+          // Re-enable button
+          $downloadBtn.prop("disabled", false);
+          $downloadBtn.html(originalText);
+        });
+    }
+
+    /**
+     * Animate progress bar smoothly
+     */
+    animateProgress($progressBar, from, to, callback) {
+      if (!$progressBar.length) {
+        if (callback) callback();
+        return;
+      }
+      
+      const duration = 300; // Animation duration in ms
+      const startTime = Date.now();
+      const startValue = from;
+      const endValue = to;
+      
+      const update = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Easing function for smooth animation
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        const currentValue = startValue + (endValue - startValue) * easeOut;
+        
+        $progressBar.css("width", currentValue + "%");
+        
+        if (progress < 1) {
+          requestAnimationFrame(update);
+        } else {
+          $progressBar.css("width", endValue + "%");
+          if (callback) callback();
+        }
+      };
+      
+      requestAnimationFrame(update);
+    }
+
+    /**
+     * Upload a single image to WordPress
+     */
+    uploadSingleImage(imageUrl, altText, $button) {
+      const sourceUrl = State.get("scraped.url");
+      
+      if (!sourceUrl) {
+        Messages.error("No scraped content found. Please scrape a website first.");
+        return;
+      }
+
+      // Handle both jQuery object and DOM element
+      const $btn = typeof jQuery !== 'undefined' && $button instanceof jQuery ? $button : jQuery($button);
+      const isDOMElement = $button && !($button instanceof jQuery) && $button.nodeType;
+      
+      // Disable button and show loading
+      const originalText = $btn.length ? $btn.html() : (isDOMElement ? $button.innerHTML : '');
+      if ($btn.length) {
+        $btn.prop("disabled", true);
+        $btn.html('<span class="spinner is-active" style="float: none; margin: 0; width: 14px; height: 14px;"></span> Uploading...');
+      } else if (isDOMElement) {
+        $button.disabled = true;
+        $button.innerHTML = '<span class="spinner is-active" style="float: none; margin: 0; width: 14px; height: 14px;"></span> Uploading...';
+      }
+
+      const loadingMsg = Messages.loading(`Uploading image: ${altText || "image"}...`);
+
+      API.uploadSingleImage(imageUrl, altText, sourceUrl)
+        .then((response) => {
+          Messages.update(
+            loadingMsg,
+            response.message || "Image uploaded successfully!",
+            "success"
+          );
+
+          // Update button text to show it's uploaded
+          if ($btn.length) {
+            $btn.html('<span class="dashicons dashicons-yes-alt" style="color: #46b450;"></span> Uploaded');
+            $btn.addClass("uploaded");
+          } else if (isDOMElement) {
+            $button.innerHTML = '<span class="dashicons dashicons-yes-alt" style="color: #46b450;"></span> Uploaded';
+            $button.classList.add("uploaded");
+          }
+
+          // Update the image URL in the scraped data if available
+          if (response.wp_url && response.original_url) {
+            // Update state and refresh renderer
+            const data = State.get("scraped.data");
+            if (data && Array.isArray(data)) {
+              const updated = this.replaceImageUrlInData(data, response.original_url, response.wp_url);
+              State.actions.setScrapedData({ data: updated, url: sourceUrl }, sourceUrl);
+              
+              if (window.Renderer) {
+                Renderer.refresh();
+              }
+            }
+          }
+
+          // Re-enable button after delay
+          setTimeout(() => {
+            if ($btn.length) {
+              $btn.prop("disabled", false);
+              $btn.html(originalText);
+              $btn.removeClass("uploaded");
+            } else if (isDOMElement) {
+              $button.disabled = false;
+              $button.innerHTML = originalText;
+              $button.classList.remove("uploaded");
+            }
+          }, 3000);
+        })
+        .catch((error) => {
+          Messages.update(
+            loadingMsg,
+            error.message || "Failed to upload image",
+            "error"
+          );
+
+          // Re-enable button
+          if ($btn.length) {
+            $btn.prop("disabled", false);
+            $btn.html(originalText);
+          } else if (isDOMElement) {
+            $button.disabled = false;
+            $button.innerHTML = originalText;
+          }
+        });
+    }
+
+    /**
+     * Replace image URL in scraped data
+     */
+    replaceImageUrlInData(data, originalUrl, newUrl) {
+      return data.map(item => {
+        if (item.type === 'image' && item.url === originalUrl) {
+          return { ...item, url: newUrl, wp_uploaded: true };
+        }
+        if (item.type === 'group' && item.children) {
+          return {
+            ...item,
+            children: item.children.map(child => {
+              if (child.type === 'image' && child.url === originalUrl) {
+                return { ...child, url: newUrl, wp_uploaded: true };
+              }
+              return child;
+            })
+          };
+        }
+        return item;
+      });
+    }
+
+    /**
      * Initialize draggable items
      */
     initDraggableItems() {
       $(".item").each(function () {
         const $item = $(this);
-        const content =
-          $item.find(".item-text, .rendered-element").text() ||
-          $item.find("a[href]").text();
+        const itemType = $item.find(".item-type").text().toLowerCase();
+        const $textElement = $item.find(".item-text, .rendered-element");
+        const $linkElement = $item.find("a[href]");
+        const $imageElement = $item.find("img");
+        const $downloadBtn = $item.find(".download-btn");
+
+        let content = "";
+        let isHTML = false;
+
+        // Check if it's an image
+        if (itemType === "image" || $imageElement.length > 0) {
+          const imageUrl = $imageElement.attr("src") || $downloadBtn.data("url") || "";
+          const imageAlt = $imageElement.attr("alt") || $downloadBtn.data("alt") || "image";
+          
+          if (imageUrl) {
+            // Create image HTML for dragging
+            content = `<img src="${imageUrl}" alt="${imageAlt}" />`;
+            isHTML = true;
+          }
+        } 
+        // Check if it's a link
+        else if ($linkElement.length) {
+          content = $linkElement.text() + " - " + $linkElement.attr("href");
+        } 
+        // Check if it's text
+        else if ($textElement.length) {
+          content = $textElement.text();
+        }
 
         if (content && DragDrop) {
-          DragDrop.makeDraggable(this, content);
+          DragDrop.makeDraggable(this, content, isHTML);
         }
       });
 
       $(".copy-btn").each(function () {
         const text = $(this).data("text");
         if (text && DragDrop) {
-          DragDrop.makeDraggable(this, text);
+          DragDrop.makeDraggable(this, text, false);
         }
       });
     }

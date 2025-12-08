@@ -840,6 +840,810 @@ function migration_manager_handle_delete_multiple_groups()
     ));
 }
 
+/**
+ * Handle download images request via AJAX
+ */
+function migration_manager_handle_download_images()
+{
+    // Verify nonce for security
+    if (!wp_verify_nonce($_POST['nonce'], 'migration_manager_nonce')) {
+        wp_send_json_error(array(
+            'message' => __('Security check failed', 'migration-manager')
+        ));
+        return;
+    }
+
+    // Check user permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array(
+            'message' => __('Insufficient permissions', 'migration-manager')
+        ));
+        return;
+    }
+
+    $url = sanitize_url($_POST['url']);
+
+    if (empty($url)) {
+        wp_send_json_error(array(
+            'message' => __('URL is required', 'migration-manager')
+        ));
+        return;
+    }
+
+    // Get existing scrape data
+    $scrape_data = migration_manager_get_scrape_from_db($url);
+
+    if (!$scrape_data) {
+        wp_send_json_error(array(
+            'message' => __('No scrape data found for this URL', 'migration-manager')
+        ));
+        return;
+    }
+
+    $scraped_json = $scrape_data['scraped_data'];
+
+    // Check if data has the expected structure
+    if (!isset($scraped_json['data']) || !is_array($scraped_json['data'])) {
+        wp_send_json_error(array(
+            'message' => __('Invalid scrape data structure', 'migration-manager')
+        ));
+        return;
+    }
+
+    // Extract all image URLs from scraped data
+    $image_urls = migration_manager_extract_image_urls($scraped_json['data']);
+
+    if (empty($image_urls)) {
+        wp_send_json_success(array(
+            'message' => __('No images found in scraped content', 'migration-manager'),
+            'downloaded' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+            'total' => 0,
+            'processed' => 0,
+            'updated_data' => $scraped_json
+        ));
+        return;
+    }
+
+    // Check if this is a batch request
+    $batch_index = isset($_POST['batch_index']) ? intval($_POST['batch_index']) : 0;
+    $batch_size = isset($_POST['batch_size']) ? intval($_POST['batch_size']) : 5;
+    $url_mapping = isset($_POST['url_mapping']) ? json_decode(stripslashes($_POST['url_mapping']), true) : array();
+    
+    if (!is_array($url_mapping)) {
+        $url_mapping = array();
+    }
+
+    // Process batch
+    $total_images = count($image_urls);
+    $batch_start = $batch_index * $batch_size;
+    $batch_end = min($batch_start + $batch_size, $total_images);
+    $batch_images = array_slice($image_urls, $batch_start, $batch_size);
+    
+    // Process batch with progress updates
+    $batch_result = migration_manager_process_image_batch($batch_images, $url, $url_mapping, $batch_start, $total_images);
+    
+    // Merge URL mappings
+    $url_mapping = array_merge($url_mapping, $batch_result['url_mapping']);
+    
+    // Get accumulated totals from previous batches
+    $previous_downloaded = isset($_POST['previous_downloaded']) ? intval($_POST['previous_downloaded']) : 0;
+    $previous_skipped = isset($_POST['previous_skipped']) ? intval($_POST['previous_skipped']) : 0;
+    $previous_failed = isset($_POST['previous_failed']) ? intval($_POST['previous_failed']) : 0;
+    
+    // Accumulate totals
+    $total_downloaded = $previous_downloaded + $batch_result['total_downloaded'];
+    $total_skipped = $previous_skipped + $batch_result['total_skipped'];
+    $total_failed = $previous_failed + $batch_result['total_failed'];
+    
+    // Check if more batches needed
+    $processed = $batch_end;
+    $is_complete = $processed >= $total_images;
+    
+    if ($is_complete) {
+        // All images processed, update scraped data
+        $updated_data = migration_manager_replace_image_urls($scraped_json['data'], $url_mapping);
+        
+        // Save updated data back to database
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'migration_manager_scrapes';
+        
+        $scraped_json_updated = array(
+            'data' => $updated_data,
+            'url' => $url
+        );
+        
+        if (isset($scraped_json['stats'])) {
+            $scraped_json_updated['stats'] = $scraped_json['stats'];
+        }
+        
+        $wpdb->update(
+            $table_name,
+            array(
+                'scraped_data' => json_encode($scraped_json_updated),
+                'scraped_at' => current_time('mysql')
+            ),
+            array('url' => $url),
+            array('%s', '%s'),
+            array('%s')
+        );
+        
+        wp_send_json_success(array(
+            'message' => sprintf(
+                __('Downloaded %d images, skipped %d (already in library), failed %d', 'migration-manager'),
+                $total_downloaded,
+                $total_skipped,
+                $total_failed
+            ),
+            'downloaded' => $total_downloaded,
+            'skipped' => $total_skipped,
+            'failed' => $total_failed,
+            'total' => $total_images,
+            'processed' => $processed,
+            'complete' => true,
+            'updated_data' => $scraped_json_updated,
+            'url_mapping' => $url_mapping
+        ));
+        } else {
+            // More batches to process
+            // Get the last processed image detail for status
+            $last_detail = !empty($batch_result['processed_details']) ? end($batch_result['processed_details']) : null;
+            
+            wp_send_json_success(array(
+                'message' => sprintf(
+                    __('Processing batch %d/%d...', 'migration-manager'),
+                    $batch_index + 1,
+                    ceil($total_images / $batch_size)
+                ),
+                'downloaded' => $total_downloaded,
+                'skipped' => $total_skipped,
+                'failed' => $total_failed,
+                'total' => $total_images,
+                'processed' => $processed,
+                'complete' => false,
+                'batch_index' => $batch_index + 1,
+                'url_mapping' => $url_mapping,
+                'progress' => round(($processed / $total_images) * 100, 1),
+                'current_image' => $last_detail
+            ));
+        }
+}
+
+/**
+ * Process a batch of images
+ */
+function migration_manager_process_image_batch($image_urls, $source_url, $existing_url_mapping = array(), $start_index = 0, $total_images = 0)
+{
+    $downloaded = 0;
+    $skipped = 0;
+    $failed = 0;
+    $url_mapping = $existing_url_mapping;
+    $processed_details = array(); // Track individual image processing
+
+    require_once(ABSPATH . 'wp-admin/includes/file.php');
+    require_once(ABSPATH . 'wp-admin/includes/media.php');
+    require_once(ABSPATH . 'wp-admin/includes/image.php');
+
+    $image_index = $start_index;
+    foreach ($image_urls as $image_info) {
+        $image_index++;
+        $original_url = $image_info['url'];
+        $alt_text = $image_info['alt'];
+        $image_filename = basename(parse_url($original_url, PHP_URL_PATH)) ?: 'image';
+
+        // Skip if already processed in previous batch
+        if (isset($url_mapping[$original_url])) {
+            $skipped++;
+            $processed_details[] = array(
+                'index' => $image_index,
+                'total' => $total_images,
+                'filename' => $image_filename,
+                'status' => 'skipped',
+                'message' => 'Already processed'
+            );
+            continue;
+        }
+
+        // Check if image already exists in media library
+        $existing_attachment = migration_manager_find_attachment_by_url($original_url);
+
+        if ($existing_attachment) {
+            // Image already exists, use it
+            $wp_url = wp_get_attachment_url($existing_attachment);
+            $url_mapping[$original_url] = $wp_url;
+            $skipped++;
+            $processed_details[] = array(
+                'index' => $image_index,
+                'total' => $total_images,
+                'filename' => $image_filename,
+                'status' => 'skipped',
+                'message' => 'Already in media library'
+            );
+            continue;
+        }
+
+        // Track progress: downloading
+        $processed_details[] = array(
+            'index' => $image_index,
+            'total' => $total_images,
+            'filename' => $image_filename,
+            'status' => 'downloading',
+            'message' => 'Downloading image...'
+        );
+
+        // Try to download and upload the image
+        try {
+            // Make URL absolute if relative
+            $absolute_url = migration_manager_make_url_absolute($original_url, $source_url);
+
+            // Check file size before downloading (prevent memory issues)
+            $response = wp_remote_head($absolute_url, array('timeout' => 10));
+            if (!is_wp_error($response)) {
+                $content_length = wp_remote_retrieve_header($response, 'content-length');
+                if ($content_length) {
+                    $file_size_mb = $content_length / (1024 * 1024);
+                    $max_upload_size = wp_max_upload_size() / (1024 * 1024);
+                    
+                    if ($file_size_mb > $max_upload_size) {
+                        error_log("Migration Manager: Image {$absolute_url} exceeds upload limit ({$file_size_mb}MB > {$max_upload_size}MB)");
+                        $failed++;
+                        continue;
+                    }
+                }
+            }
+
+            // Download the image file
+            $tmp = download_url($absolute_url);
+            
+            if (is_wp_error($tmp)) {
+                error_log("Migration Manager: Failed to download image {$absolute_url}: " . $tmp->get_error_message());
+                $failed++;
+                continue;
+            }
+
+            // Get file extension and create proper filename
+            $file_array = array();
+            $file_array['name'] = basename(parse_url($absolute_url, PHP_URL_PATH));
+            
+            // If no extension, try to get from content type
+            if (!pathinfo($file_array['name'], PATHINFO_EXTENSION)) {
+                $file_array['name'] .= '.jpg'; // Default to jpg
+            }
+            
+            // Sanitize filename
+            $file_array['name'] = sanitize_file_name($file_array['name']);
+            $file_array['tmp_name'] = $tmp;
+
+            // Upload file to WordPress
+            $attachment_id = media_handle_sideload($file_array, 0, $alt_text);
+
+            // Clean up temp file if still exists
+            if (file_exists($tmp)) {
+                @unlink($tmp);
+            }
+
+            if (is_wp_error($attachment_id)) {
+                error_log("Migration Manager: Failed to upload image {$absolute_url}: " . $attachment_id->get_error_message());
+                $failed++;
+                continue;
+            }
+
+            // Ensure we have a valid attachment ID
+            if (!is_numeric($attachment_id)) {
+                error_log("Migration Manager: Invalid attachment ID returned for {$absolute_url}");
+                $failed++;
+                continue;
+            }
+
+            // Get the WordPress URL for the uploaded image
+            $wp_url = wp_get_attachment_url($attachment_id);
+            if (!$wp_url) {
+                error_log("Migration Manager: Failed to get URL for attachment {$attachment_id}");
+                $failed++;
+                continue;
+            }
+
+            $url_mapping[$original_url] = $wp_url;
+            $downloaded++;
+
+            // Store original URL in attachment meta for future duplicate detection
+            update_post_meta($attachment_id, '_migration_manager_original_url', $original_url);
+            
+            // Track progress: completed (this is the last status for this image)
+            $processed_details[] = array(
+                'index' => $image_index,
+                'total' => $total_images,
+                'filename' => $image_filename,
+                'status' => 'completed',
+                'message' => 'Uploaded successfully'
+            );
+
+        } catch (Exception $e) {
+            error_log("Migration Manager: Exception downloading image {$original_url}: " . $e->getMessage());
+            $failed++;
+            $processed_details[] = array(
+                'index' => $image_index,
+                'total' => $total_images,
+                'filename' => $image_filename,
+                'status' => 'failed',
+                'message' => 'Failed: ' . $e->getMessage()
+            );
+            continue;
+        }
+    }
+
+    return array(
+        'url_mapping' => $url_mapping,
+        'total_downloaded' => $downloaded,
+        'total_skipped' => $skipped,
+        'total_failed' => $failed,
+        'processed_details' => $processed_details
+    );
+}
+
+/**
+ * Extract all image URLs from scraped data
+ */
+function migration_manager_extract_image_urls($data)
+{
+    $image_urls = array();
+    $seen_urls = array();
+
+    foreach ($data as $item) {
+        // Check if item is an image
+        if (isset($item['type']) && $item['type'] === 'image' && isset($item['url'])) {
+            $image_url = $item['url'];
+            // Skip duplicates
+            if (!in_array($image_url, $seen_urls)) {
+                $image_urls[] = array(
+                    'url' => $image_url,
+                    'alt' => isset($item['alt']) ? $item['alt'] : '',
+                    'source' => isset($item['source']) ? $item['source'] : 'img_tag'
+                );
+                $seen_urls[] = $image_url;
+            }
+        }
+
+        // Check if item is a group with children
+        if (isset($item['type']) && $item['type'] === 'group' && isset($item['children']) && is_array($item['children'])) {
+            foreach ($item['children'] as $child) {
+                if (isset($child['type']) && $child['type'] === 'image' && isset($child['url'])) {
+                    $image_url = $child['url'];
+                    // Skip duplicates
+                    if (!in_array($image_url, $seen_urls)) {
+                        $image_urls[] = array(
+                            'url' => $image_url,
+                            'alt' => isset($child['alt']) ? $child['alt'] : '',
+                            'source' => isset($child['source']) ? $child['source'] : 'img_tag'
+                        );
+                        $seen_urls[] = $image_url;
+                    }
+                }
+            }
+        }
+    }
+
+    return $image_urls;
+}
+
+/**
+ * Download images and update scraped data
+ */
+function migration_manager_download_images($image_urls, $scraped_data, $source_url)
+{
+    $downloaded = 0;
+    $skipped = 0;
+    $failed = 0;
+    $url_mapping = array(); // Maps original URL to WordPress URL
+
+    require_once(ABSPATH . 'wp-admin/includes/file.php');
+    require_once(ABSPATH . 'wp-admin/includes/media.php');
+    require_once(ABSPATH . 'wp-admin/includes/image.php');
+
+    foreach ($image_urls as $image_info) {
+        $original_url = $image_info['url'];
+        $alt_text = $image_info['alt'];
+
+        // Check if image already exists in media library
+        $existing_attachment = migration_manager_find_attachment_by_url($original_url);
+
+        if ($existing_attachment) {
+            // Image already exists, use it
+            $wp_url = wp_get_attachment_url($existing_attachment);
+            $url_mapping[$original_url] = $wp_url;
+            $skipped++;
+            continue;
+        }
+
+        // Try to download and upload the image
+        try {
+            // Make URL absolute if relative
+            $absolute_url = migration_manager_make_url_absolute($original_url, $source_url);
+
+            // Check file size before downloading (prevent memory issues)
+            $response = wp_remote_head($absolute_url, array('timeout' => 10));
+            if (!is_wp_error($response)) {
+                $content_length = wp_remote_retrieve_header($response, 'content-length');
+                if ($content_length) {
+                    $file_size_mb = $content_length / (1024 * 1024);
+                    $max_upload_size = wp_max_upload_size() / (1024 * 1024);
+                    
+                    if ($file_size_mb > $max_upload_size) {
+                        error_log("Migration Manager: Image {$absolute_url} exceeds upload limit ({$file_size_mb}MB > {$max_upload_size}MB)");
+                        $failed++;
+                        continue;
+                    }
+                }
+            }
+
+            // Download the image file
+            $tmp = download_url($absolute_url);
+            
+            if (is_wp_error($tmp)) {
+                error_log("Migration Manager: Failed to download image {$absolute_url}: " . $tmp->get_error_message());
+                $failed++;
+                continue;
+            }
+
+            // Get file extension and create proper filename
+            $file_array = array();
+            $file_array['name'] = basename(parse_url($absolute_url, PHP_URL_PATH));
+            
+            // If no extension, try to get from content type
+            if (!pathinfo($file_array['name'], PATHINFO_EXTENSION)) {
+                $file_array['name'] .= '.jpg'; // Default to jpg
+            }
+            
+            // Sanitize filename
+            $file_array['name'] = sanitize_file_name($file_array['name']);
+            $file_array['tmp_name'] = $tmp;
+
+            // Upload file to WordPress
+            $attachment_id = media_handle_sideload($file_array, 0, $alt_text);
+
+            // Clean up temp file if still exists
+            if (file_exists($tmp)) {
+                @unlink($tmp);
+            }
+
+            if (is_wp_error($attachment_id)) {
+                error_log("Migration Manager: Failed to upload image {$absolute_url}: " . $attachment_id->get_error_message());
+                $failed++;
+                continue;
+            }
+
+            // Ensure we have a valid attachment ID
+            if (!is_numeric($attachment_id)) {
+                error_log("Migration Manager: Invalid attachment ID returned for {$absolute_url}");
+                $failed++;
+                continue;
+            }
+
+            // Get the WordPress URL for the uploaded image
+            $wp_url = wp_get_attachment_url($attachment_id);
+            if (!$wp_url) {
+                error_log("Migration Manager: Failed to get URL for attachment {$attachment_id}");
+                $failed++;
+                continue;
+            }
+
+            $url_mapping[$original_url] = $wp_url;
+            $downloaded++;
+
+            // Store original URL in attachment meta for future duplicate detection
+            update_post_meta($attachment_id, '_migration_manager_original_url', $original_url);
+
+        } catch (Exception $e) {
+            error_log("Migration Manager: Exception downloading image {$original_url}: " . $e->getMessage());
+            $failed++;
+            continue;
+        }
+    }
+
+    // Update scraped data with new URLs
+    $updated_data = migration_manager_replace_image_urls($scraped_data, $url_mapping);
+
+    // Save updated data back to database
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'migration_manager_scrapes';
+
+    $scraped_json = array(
+        'data' => $updated_data,
+        'url' => $source_url
+    );
+
+    if (isset($scraped_data['stats'])) {
+        $scraped_json['stats'] = $scraped_data['stats'];
+    }
+
+    $result = $wpdb->update(
+        $table_name,
+        array(
+            'scraped_data' => json_encode($scraped_json),
+            'scraped_at' => current_time('mysql')
+        ),
+        array('url' => $source_url),
+        array('%s', '%s'),
+        array('%s')
+    );
+
+    if ($result === false) {
+        error_log("Migration Manager: Failed to save updated data: " . $wpdb->last_error);
+    }
+
+    return array(
+        'message' => sprintf(
+            __('Downloaded %d images, skipped %d (already in library), failed %d', 'migration-manager'),
+            $downloaded,
+            $skipped,
+            $failed
+        ),
+        'downloaded' => $downloaded,
+        'skipped' => $skipped,
+        'failed' => $failed,
+        'updated_data' => $scraped_json
+    );
+}
+
+/**
+ * Find attachment by original URL
+ */
+function migration_manager_find_attachment_by_url($url)
+{
+    global $wpdb;
+
+    // First, try to find by meta key
+    $attachment_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_migration_manager_original_url' AND meta_value = %s LIMIT 1",
+        $url
+    ));
+
+    if ($attachment_id) {
+        return $attachment_id;
+    }
+
+    // Also check if URL matches any attachment URL
+    $attachments = get_posts(array(
+        'post_type' => 'attachment',
+        'post_mime_type' => 'image',
+        'posts_per_page' => -1,
+        'meta_query' => array(
+            array(
+                'key' => '_migration_manager_original_url',
+                'value' => $url,
+                'compare' => '='
+            )
+        )
+    ));
+
+    if (!empty($attachments)) {
+        return $attachments[0]->ID;
+    }
+
+    return false;
+}
+
+/**
+ * Make URL absolute if it's relative
+ */
+function migration_manager_make_url_absolute($url, $base_url)
+{
+    // If already absolute, return as is
+    if (filter_var($url, FILTER_VALIDATE_URL)) {
+        return $url;
+    }
+
+    // Parse base URL
+    $parsed_base = parse_url($base_url);
+    $scheme = isset($parsed_base['scheme']) ? $parsed_base['scheme'] : 'http';
+    $host = isset($parsed_base['host']) ? $parsed_base['host'] : '';
+
+    // If URL starts with //, add scheme
+    if (substr($url, 0, 2) === '//') {
+        return $scheme . ':' . $url;
+    }
+
+    // If URL starts with /, add scheme and host
+    if (substr($url, 0, 1) === '/') {
+        return $scheme . '://' . $host . $url;
+    }
+
+    // Otherwise, construct relative to base URL path
+    $path = isset($parsed_base['path']) ? dirname($parsed_base['path']) : '';
+    if ($path === '.') {
+        $path = '';
+    }
+    return $scheme . '://' . $host . $path . '/' . $url;
+}
+
+/**
+ * Replace image URLs in scraped data
+ */
+function migration_manager_replace_image_urls($data, $url_mapping)
+{
+    foreach ($data as &$item) {
+        // Replace URL if item is an image
+        if (isset($item['type']) && $item['type'] === 'image' && isset($item['url']) && isset($url_mapping[$item['url']])) {
+            $item['url'] = $url_mapping[$item['url']];
+            $item['wp_uploaded'] = true; // Mark as uploaded
+        }
+
+        // Replace URLs in group children
+        if (isset($item['type']) && $item['type'] === 'group' && isset($item['children']) && is_array($item['children'])) {
+            foreach ($item['children'] as &$child) {
+                if (isset($child['type']) && $child['type'] === 'image' && isset($child['url']) && isset($url_mapping[$child['url']])) {
+                    $child['url'] = $url_mapping[$child['url']];
+                    $child['wp_uploaded'] = true; // Mark as uploaded
+                }
+            }
+        }
+    }
+
+    return $data;
+  }
+
+/**
+ * Handle upload single image request via AJAX
+ */
+function migration_manager_handle_upload_single_image()
+{
+    // Verify nonce for security
+    if (!wp_verify_nonce($_POST['nonce'], 'migration_manager_nonce')) {
+        wp_send_json_error(array(
+            'message' => __('Security check failed', 'migration-manager')
+        ));
+        return;
+    }
+
+    // Check user permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array(
+            'message' => __('Insufficient permissions', 'migration-manager')
+        ));
+        return;
+    }
+
+    $image_url = sanitize_url($_POST['image_url']);
+    $alt_text = sanitize_text_field($_POST['alt_text'] ?? '');
+    $source_url = sanitize_url($_POST['source_url'] ?? '');
+
+    if (empty($image_url)) {
+        wp_send_json_error(array(
+            'message' => __('Image URL is required', 'migration-manager')
+        ));
+        return;
+    }
+
+    require_once(ABSPATH . 'wp-admin/includes/file.php');
+    require_once(ABSPATH . 'wp-admin/includes/media.php');
+    require_once(ABSPATH . 'wp-admin/includes/image.php');
+
+    // Check if image already exists in media library
+    $existing_attachment = migration_manager_find_attachment_by_url($image_url);
+
+    if ($existing_attachment) {
+        // Image already exists, return existing URL
+        $wp_url = wp_get_attachment_url($existing_attachment);
+        wp_send_json_success(array(
+            'message' => __('Image already exists in media library', 'migration-manager'),
+            'wp_url' => $wp_url,
+            'original_url' => $image_url,
+            'attachment_id' => $existing_attachment,
+            'skipped' => true
+        ));
+        return;
+    }
+
+    // Try to download and upload the image
+    try {
+        // Make URL absolute if relative
+        $absolute_url = migration_manager_make_url_absolute($image_url, $source_url);
+
+        // Check file size before downloading
+        $response = wp_remote_head($absolute_url, array('timeout' => 10));
+        if (!is_wp_error($response)) {
+            $content_length = wp_remote_retrieve_header($response, 'content-length');
+            if ($content_length) {
+                $file_size_mb = $content_length / (1024 * 1024);
+                $max_upload_size = wp_max_upload_size() / (1024 * 1024);
+                
+                if ($file_size_mb > $max_upload_size) {
+                    wp_send_json_error(array(
+                        'message' => sprintf(
+                            __('Image exceeds upload limit (%dMB > %dMB)', 'migration-manager'),
+                            round($file_size_mb, 2),
+                            round($max_upload_size, 2)
+                        )
+                    ));
+                    return;
+                }
+            }
+        }
+
+        // Download the image file
+        $tmp = download_url($absolute_url);
+        
+        if (is_wp_error($tmp)) {
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    __('Failed to download image: %s', 'migration-manager'),
+                    $tmp->get_error_message()
+                )
+            ));
+            return;
+        }
+
+        // Get file extension and create proper filename
+        $file_array = array();
+        $file_array['name'] = basename(parse_url($absolute_url, PHP_URL_PATH));
+        
+        // If no extension, try to get from content type
+        if (!pathinfo($file_array['name'], PATHINFO_EXTENSION)) {
+            $file_array['name'] .= '.jpg'; // Default to jpg
+        }
+        
+        // Sanitize filename
+        $file_array['name'] = sanitize_file_name($file_array['name']);
+        $file_array['tmp_name'] = $tmp;
+
+        // Upload file to WordPress
+        $attachment_id = media_handle_sideload($file_array, 0, $alt_text);
+
+        // Clean up temp file if still exists
+        if (file_exists($tmp)) {
+            @unlink($tmp);
+        }
+
+        if (is_wp_error($attachment_id)) {
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    __('Failed to upload image to media library: %s', 'migration-manager'),
+                    $attachment_id->get_error_message()
+                )
+            ));
+            return;
+        }
+
+        // Ensure we have a valid attachment ID
+        if (!is_numeric($attachment_id)) {
+            wp_send_json_error(array(
+                'message' => __('Invalid attachment ID returned', 'migration-manager')
+            ));
+            return;
+        }
+
+        // Get the WordPress URL for the uploaded image
+        $wp_url = wp_get_attachment_url($attachment_id);
+        if (!$wp_url) {
+            wp_send_json_error(array(
+                'message' => __('Failed to get URL for uploaded image', 'migration-manager')
+            ));
+            return;
+        }
+
+        // Store original URL in attachment meta for future duplicate detection
+        update_post_meta($attachment_id, '_migration_manager_original_url', $image_url);
+
+        wp_send_json_success(array(
+            'message' => __('Image uploaded successfully!', 'migration-manager'),
+            'wp_url' => $wp_url,
+            'original_url' => $image_url,
+            'attachment_id' => $attachment_id,
+            'downloaded' => true
+        ));
+
+    } catch (Exception $e) {
+        error_log("Migration Manager: Exception uploading image {$image_url}: " . $e->getMessage());
+        wp_send_json_error(array(
+            'message' => sprintf(
+                __('Error uploading image: %s', 'migration-manager'),
+                $e->getMessage()
+            )
+        ));
+    }
+}
+
 // Register AJAX actions
 add_action('wp_ajax_migration_manager_delete_group', 'migration_manager_handle_delete_group');
 add_action('wp_ajax_migration_manager_delete_multiple_groups', 'migration_manager_handle_delete_multiple_groups');
@@ -852,6 +1656,8 @@ add_action('wp_ajax_migration_manager_test_api', 'migration_manager_test_api_con
 add_action('wp_ajax_migration_manager_cleanup_data', 'migration_manager_handle_cleanup_data');
 add_action('wp_ajax_migration_manager_clear_all_data', 'migration_manager_handle_clear_all_data');
 add_action('wp_ajax_migration_manager_export_all_data', 'migration_manager_handle_export_all_data');
+add_action('wp_ajax_migration_manager_download_images', 'migration_manager_handle_download_images');
+add_action('wp_ajax_migration_manager_upload_single_image', 'migration_manager_handle_upload_single_image');
 
 // Register auto cleanup hook
 add_action('migration_manager_auto_cleanup_hook', 'migration_manager_auto_cleanup');

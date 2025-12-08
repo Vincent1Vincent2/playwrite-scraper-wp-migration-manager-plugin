@@ -258,6 +258,56 @@
     },
 
     /**
+     * Image download endpoints
+     */
+    downloadImages(url) {
+      EventBus.emit(EventBus.events.UI_LOADING_START);
+
+      return this.request({
+        data: {
+          action: "migration_manager_download_images",
+          url: url || State.get("scraped.url"),
+        },
+      })
+        .then((response) => {
+          if (response.success) {
+            EventBus.emit(EventBus.events.IMAGES_DOWNLOADED, response.data);
+            return response.data;
+          }
+          throw new Error(response.data?.message || "Failed to download images");
+        })
+        .catch((error) => {
+          EventBus.emit(EventBus.events.ERROR_IMAGE_DOWNLOAD, error);
+          throw error;
+        })
+        .finally(() => {
+          EventBus.emit(EventBus.events.UI_LOADING_END);
+        });
+    },
+
+    uploadSingleImage(imageUrl, altText, sourceUrl) {
+      return this.request({
+        data: {
+          action: "migration_manager_upload_single_image",
+          image_url: imageUrl,
+          alt_text: altText || "",
+          source_url: sourceUrl || State.get("scraped.url"),
+        },
+      })
+        .then((response) => {
+          if (response.success) {
+            EventBus.emit(EventBus.events.IMAGES_DOWNLOADED, response.data);
+            return response.data;
+          }
+          throw new Error(response.data?.message || "Failed to upload image");
+        })
+        .catch((error) => {
+          EventBus.emit(EventBus.events.ERROR_IMAGE_DOWNLOAD, error);
+          throw error;
+        });
+    },
+
+    /**
      * Export/Import endpoints
      */
     exportJSON(data) {

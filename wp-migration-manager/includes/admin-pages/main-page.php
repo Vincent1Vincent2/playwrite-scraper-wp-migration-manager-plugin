@@ -156,6 +156,19 @@ $api_url = migration_manager()->getApiBaseUrl();
                                 <span class="dashicons dashicons-visibility" aria-hidden="true"></span>
                                 <?php _e('Preview Mode', 'migration-manager'); ?>
                             </button>
+
+                            <button type="button" class="button button-secondary" id="download-images" disabled>
+                                <span class="dashicons dashicons-images-alt" aria-hidden="true"></span>
+                                <?php _e('Upload Images', 'migration-manager'); ?>
+                            </button>
+                        </div>
+                        
+                        <!-- Image Download Progress -->
+                        <div id="image-download-progress" style="display: none; margin-top: 15px;">
+                            <div class="progress-bar-container" style="background: #f0f0f0; border-radius: 4px; padding: 2px;">
+                                <div id="progress-bar" style="background: #2271b1; height: 20px; border-radius: 2px; width: 0%; transition: width 0.3s ease;"></div>
+                            </div>
+                            <p id="progress-text" style="margin-top: 10px; font-size: 13px;"></p>
                         </div>
 
                         <!-- Advanced Options -->

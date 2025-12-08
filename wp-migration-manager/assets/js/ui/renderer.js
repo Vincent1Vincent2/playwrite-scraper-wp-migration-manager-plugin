@@ -469,19 +469,20 @@
           );
           break;
         case "image":
-          if (!isCompact) {
-            actions.push(
-              `<button class="button button-small download-btn" data-url="${this.escapeHtml(
-                item.url
-              )}" data-filename="${this.escapeHtml(
-                item.alt || "image"
-              )}">Download Image</button>`
-            );
-          }
+          // Always show upload button, with shorter text in compact mode
+          actions.push(
+            `<button class="button button-small download-btn" data-url="${this.escapeHtml(
+              item.url
+            )}" data-filename="${this.escapeHtml(
+              item.alt || "image"
+            )}" data-alt="${this.escapeHtml(
+              item.alt || ""
+            )}">${isCompact ? "Upload" : "Upload to WordPress"}</button>`
+          );
           actions.push(
             `<button class="button button-small copy-btn" data-text="${this.escapeHtml(
               item.url
-            )}">Copy URL</button>`
+            )}">${isCompact ? "Copy" : "Copy URL"}</button>`
           );
           break;
         case "video":
@@ -606,6 +607,11 @@
      * Post-render tasks
      */
     afterRender(context) {
+      // Enable action buttons when data is rendered (main context only)
+      if (context === "main") {
+        $("#create-posts, #create-pages, #save-draft, #download-images").prop("disabled", false);
+      }
+
       // Trigger event for other modules to hook into
       if (window.EventBus) {
         window.EventBus.emit("contentRendered", { context });
@@ -663,11 +669,27 @@
       // Download buttons
       $(".download-btn").on("click.renderer", function (e) {
         e.preventDefault();
+        e.stopPropagation();
         const url = $(this).data("url");
         const filename = $(this).data("filename");
-        if (window.downloadImage) {
-          window.downloadImage(url, filename);
+        const alt = $(this).data("alt") || filename || "image";
+        
+        // Upload to WordPress instead of downloading to computer
+        if (window.MigrationManagerApp && window.MigrationManagerApp.getInstance) {
+          const app = window.MigrationManagerApp.getInstance();
+          if (app.uploadSingleImage) {
+            app.uploadSingleImage(url, alt, $(this));
+            return false;
+          }
         }
+        
+        // If upload method not available, show error instead of downloading
+        if (window.Messages) {
+          Messages.error("Upload functionality not available. Please refresh the page.");
+        } else {
+          alert("Upload functionality not available. Please refresh the page.");
+        }
+        return false;
       });
     },
 
@@ -680,60 +702,97 @@
 
       $(".item").each(function () {
         const $item = $(this);
+        const itemType = $item.find(".item-type").text().toLowerCase();
         const $textElement = $item.find(".item-text, .rendered-element");
         const $linkElement = $item.find("a[href]");
+        const $imageElement = $item.find("img");
+        const $downloadBtn = $item.find(".download-btn");
 
-        let dragText = "";
-        if ($linkElement.length) {
-          dragText = $linkElement.text() + " - " + $linkElement.attr("href");
-        } else if ($textElement.length) {
-          dragText = $textElement.text();
+        let dragContent = "";
+        let isHTML = false;
+
+        // Check if it's an image
+        if (itemType === "image" || $imageElement.length > 0) {
+          const imageUrl = $imageElement.attr("src") || $downloadBtn.data("url") || "";
+          const imageAlt = $imageElement.attr("alt") || $downloadBtn.data("alt") || "image";
+          
+          if (imageUrl) {
+            // Create image HTML for dragging
+            dragContent = `<img src="${imageUrl}" alt="${imageAlt}" />`;
+            isHTML = true;
+            console.log("Making image draggable:", { imageUrl, imageAlt });
+          }
+        } 
+        // Check if it's a link
+        else if ($linkElement.length) {
+          dragContent = $linkElement.text() + " - " + $linkElement.attr("href");
+        } 
+        // Check if it's text
+        else if ($textElement.length) {
+          dragContent = $textElement.text();
         }
 
-        if (dragText) {
+        if (dragContent) {
           console.log(
             "init make draggable for",
             "element",
             $item[0],
-            "text",
-            dragText
+            "content",
+            dragContent.substring(0, 50) + "...",
+            "isHTML",
+            isHTML
           );
-          self.makeDraggable($item[0], dragText); // Use self instead of this
+          self.makeDraggable($item[0], dragContent, isHTML); // Use self instead of this
         } else {
-          console.log("no dragText");
+          console.log("no dragContent for item");
         }
       });
 
       $(".rendered-element").each(function () {
-        const text = $(this).text() || $(this)[0].innerText;
-        if (text) {
-          self.makeDraggable(this, text); // Use self instead of this
+        const $elem = $(this);
+        const $img = $elem.find("img");
+        
+        if ($img.length > 0) {
+          // It's an image element
+          const imageUrl = $img.attr("src") || "";
+          const imageAlt = $img.attr("alt") || "image";
+          if (imageUrl) {
+            const imageHTML = `<img src="${imageUrl}" alt="${imageAlt}" />`;
+            self.makeDraggable(this, imageHTML, true);
+          }
         } else {
-          console.log("no text");
+          // It's text
+          const text = $elem.text() || $elem[0].innerText;
+          if (text) {
+            self.makeDraggable(this, text, false);
+          } else {
+            console.log("no text");
+          }
         }
       });
 
       $(".copy-btn").each(function () {
         const text = $(this).data("text");
         if (text) {
-          self.makeDraggable(this, text); // Use self instead of this
+          self.makeDraggable(this, text, false);
         }
       });
     },
 
     /**
-     * Make an element draggable with specified text
+     * Make an element draggable with specified content (text or HTML)
      */
-    makeDraggable(element, text) {
-      console.log("called");
+    makeDraggable(element, content, isHTML = false) {
+      console.log("called makeDraggable", { isHTML, contentPreview: content.substring(0, 50) });
       const $element = $(element);
-      let draggedText = text; // Declare the variable that will be used in drag events
+      let draggedContent = content; // Declare the variable that will be used in drag events
 
       console.log("Making element draggable:", {
         tag: element.tagName,
         id: element.id,
         className: element.className,
-        textPreview: text.substring(0, 50) + (text.length > 50 ? "..." : ""),
+        contentPreview: content.substring(0, 50) + (content.length > 50 ? "..." : ""),
+        isHTML: isHTML
       });
 
       $element.addClass("draggable-item").attr("draggable", "true").css({
@@ -762,12 +821,13 @@
 
       // Drag events
       $element.on("dragstart", function (e) {
-        draggedText = text;
+        draggedContent = content;
         console.log("Drag start:", {
           element: this.tagName + (this.id ? "#" + this.id : ""),
-          draggedText:
-            draggedText.substring(0, 100) +
-            (draggedText.length > 100 ? "..." : ""),
+          contentPreview:
+            draggedContent.substring(0, 100) +
+            (draggedContent.length > 100 ? "..." : ""),
+          isHTML: isHTML
         });
 
         $(this).addClass("dragging").css({
@@ -777,7 +837,14 @@
         });
 
         // Set the drag data
-        e.originalEvent.dataTransfer.setData("text/plain", draggedText);
+        if (isHTML) {
+          // For HTML content (like images), set both HTML and text formats
+          e.originalEvent.dataTransfer.setData("text/html", draggedContent);
+          e.originalEvent.dataTransfer.setData("text/plain", draggedContent);
+        } else {
+          // For plain text
+          e.originalEvent.dataTransfer.setData("text/plain", draggedContent);
+        }
         e.originalEvent.dataTransfer.effectAllowed = "copy";
       });
 

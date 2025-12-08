@@ -276,6 +276,10 @@
       // Message events
       MESSAGE_SHOWN: "message:shown",
       MESSAGE_DISMISSED: "message:dismissed",
+
+      // Image events
+      IMAGES_DOWNLOADED: "images:downloaded",
+      ERROR_IMAGE_DOWNLOAD: "error:image:download",
       MESSAGE_UPDATED: "message:updated",
 
       // Action events

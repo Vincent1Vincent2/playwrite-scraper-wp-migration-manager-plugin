@@ -549,6 +549,7 @@
     $("#create-pages").on("click", createPages);
     $("#save-draft").on("click", saveDraft);
     $("#preview-mode").on("click", togglePreviewMode);
+    $("#download-images").on("click", handleDownloadImages);
 
     // Recent scrapes load buttons (works for both main page and editor)
     $(document).on(
@@ -904,9 +905,18 @@
           item.alt || ""
         }" style="max-width: 100%; height: auto; max-height: 60px; border-radius: 4px;" />
         </div>`;
-        actionButtons = `<button class="button button-small copy-btn" data-text="${escapeHtml(
-          item.url
-        )}">Copy URL</button>`;
+        actionButtons = `
+          <button class="button button-small download-btn" data-url="${escapeHtml(
+            item.url
+          )}" data-filename="${escapeHtml(
+            item.alt || "image"
+          )}" data-alt="${escapeHtml(
+            item.alt || ""
+          )}">Upload</button>
+          <button class="button button-small copy-btn" data-text="${escapeHtml(
+            item.url
+          )}">Copy</button>
+        `;
         break;
 
       case "video":
@@ -964,18 +974,37 @@
     // Make all sidebar items draggable
     $(".item").each(function () {
       const $item = $(this);
+      const itemType = $item.find(".item-type").text().toLowerCase();
       const $textElement = $item.find(".item-text, .item-link");
       const $linkElement = $item.find("a[href]");
+      const $imageElement = $item.find("img");
+      const $downloadBtn = $item.find(".download-btn");
 
-      let dragText = "";
-      if ($linkElement.length) {
-        dragText = $linkElement.text() + " - " + $linkElement.attr("href");
-      } else if ($textElement.length) {
-        dragText = $textElement.text();
+      let dragContent = "";
+      let isHTML = false;
+
+      // Check if it's an image
+      if (itemType === "image" || $imageElement.length > 0) {
+        const imageUrl = $imageElement.attr("src") || $downloadBtn.data("url") || "";
+        const imageAlt = $imageElement.attr("alt") || $downloadBtn.data("alt") || "image";
+        
+        if (imageUrl) {
+          // Create image HTML for dragging
+          dragContent = `<img src="${imageUrl}" alt="${imageAlt}" />`;
+          isHTML = true;
+        }
+      } 
+      // Check if it's a link
+      else if ($linkElement.length) {
+        dragContent = $linkElement.text() + " - " + $linkElement.attr("href");
+      } 
+      // Check if it's text
+      else if ($textElement.length) {
+        dragContent = $textElement.text();
       }
 
-      if (dragText) {
-        makeDraggable($item[0], dragText);
+      if (dragContent) {
+        makeDraggable($item[0], dragContent, isHTML);
       }
     });
 
@@ -983,7 +1012,7 @@
     $(".copy-btn").each(function () {
       const text = $(this).data("text");
       if (text) {
-        makeDraggable(this, text);
+        makeDraggable(this, text, false);
       }
     });
   }
@@ -2184,6 +2213,21 @@
       const element = $target[0];
       const currentValue = $target.val() || "";
 
+      // Check if content is HTML (like an image)
+      let insertContent = content;
+      if (content.trim().startsWith("<")) {
+        // Try to extract image URL from HTML
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = content;
+        const img = tempDiv.querySelector("img");
+        if (img) {
+          // For images, insert the URL or alt text into text inputs
+          const imageUrl = img.getAttribute("src") || "";
+          const imageAlt = img.getAttribute("alt") || "";
+          insertContent = imageUrl || imageAlt || content;
+        }
+      }
+
       // Get cursor position if possible
       let cursorPos = element.selectionStart || currentValue.length;
 
@@ -2192,20 +2236,20 @@
       if (typeof cursorPos === "number" && cursorPos >= 0) {
         newValue =
           currentValue.slice(0, cursorPos) +
-          content +
+          insertContent +
           currentValue.slice(cursorPos);
 
         // Set new value
         $target.val(newValue);
 
         // Move cursor to end of inserted content
-        const newCursorPos = cursorPos + content.length;
+        const newCursorPos = cursorPos + insertContent.length;
         if (element.setSelectionRange) {
           element.setSelectionRange(newCursorPos, newCursorPos);
         }
       } else {
         // Fallback: append with newline if there's existing content
-        newValue = currentValue ? currentValue + "\n" + content : content;
+        newValue = currentValue ? currentValue + "\n" + insertContent : insertContent;
         $target.val(newValue);
       }
 
@@ -2289,14 +2333,15 @@
   /**
    * Make an element draggable with specified text
    */
-  function makeDraggable(element, text) {
+  function makeDraggable(element, content, isHTML = false) {
     const $element = $(element);
 
     debugLog("Making element draggable:", {
       tag: element.tagName,
       id: element.id,
       className: element.className,
-      textPreview: text.substring(0, 50) + (text.length > 50 ? "..." : ""),
+      contentPreview: content.substring(0, 50) + (content.length > 50 ? "..." : ""),
+      isHTML: isHTML
     });
 
     $element.addClass("draggable-item").attr("draggable", "true").css({
@@ -2325,12 +2370,13 @@
 
     // Drag events
     $element.on("dragstart", function (e) {
-      draggedText = text;
+      draggedText = content;
       debugLog("Drag start:", {
         element: this.tagName + (this.id ? "#" + this.id : ""),
-        draggedText:
+        draggedContent:
           draggedText.substring(0, 100) +
           (draggedText.length > 100 ? "..." : ""),
+        isHTML: isHTML
       });
 
       $(this).addClass("dragging").css({
@@ -2338,7 +2384,16 @@
         opacity: "0.7",
         transform: "rotate(2deg)",
       });
+      
       e.originalEvent.dataTransfer.effectAllowed = "copy";
+      
+      // Set drag data - support both HTML and plain text
+      if (isHTML) {
+        e.originalEvent.dataTransfer.setData("text/html", content);
+        e.originalEvent.dataTransfer.setData("text/plain", content);
+      } else {
+        e.originalEvent.dataTransfer.setData("text/plain", content);
+      }
     });
 
     $element.on("dragend", function () {
@@ -2357,25 +2412,58 @@
   function addDragFunctionality() {
     $(".item").each(function () {
       const $item = $(this);
+      const itemType = $item.find(".item-type").text().toLowerCase();
       const $textElement = $item.find(".item-text, .rendered-element");
       const $linkElement = $item.find("a[href]");
+      const $imageElement = $item.find("img");
+      const $downloadBtn = $item.find(".download-btn");
 
-      let dragText = "";
-      if ($linkElement.length) {
-        dragText = $linkElement.text() + " - " + $linkElement.attr("href");
-      } else if ($textElement.length) {
-        dragText = $textElement.text();
+      let dragContent = "";
+      let isHTML = false;
+
+      // Check if it's an image
+      if (itemType === "image" || $imageElement.length > 0) {
+        const imageUrl = $imageElement.attr("src") || $downloadBtn.data("url") || "";
+        const imageAlt = $imageElement.attr("alt") || $downloadBtn.data("alt") || "image";
+        
+        if (imageUrl) {
+          // Create image HTML for dragging
+          dragContent = `<img src="${imageUrl}" alt="${imageAlt}" />`;
+          isHTML = true;
+        }
+      } 
+      // Check if it's a link
+      else if ($linkElement.length) {
+        dragContent = $linkElement.text() + " - " + $linkElement.attr("href");
+      } 
+      // Check if it's text
+      else if ($textElement.length) {
+        dragContent = $textElement.text();
       }
 
-      if (dragText) {
-        makeDraggable($item[0], dragText);
+      if (dragContent) {
+        makeDraggable($item[0], dragContent, isHTML);
       }
     });
 
     $(".rendered-element").each(function () {
-      const text = $(this).text() || $(this)[0].innerText;
-      if (text) {
-        makeDraggable(this, text);
+      const $elem = $(this);
+      const $img = $elem.find("img");
+      
+      if ($img.length > 0) {
+        // It's an image element
+        const imageUrl = $img.attr("src") || "";
+        const imageAlt = $img.attr("alt") || "image";
+        if (imageUrl) {
+          const imageHTML = `<img src="${imageUrl}" alt="${imageAlt}" />`;
+          makeDraggable(this, imageHTML, true);
+        }
+      } else {
+        // It's text
+        const text = $elem.text() || $elem[0].innerText;
+        if (text) {
+          makeDraggable(this, text, false);
+        }
       }
     });
 
@@ -2470,10 +2558,24 @@
   }
 
   function displayResults(data, sourceUrl) {
+    // Store the current scrape URL for later use
+    currentScrapedUrl = sourceUrl || currentScrapedUrl;
+    currentScrapedData = data;
+    
     $("#migration-results").show();
     $("#source-url-link").attr("href", sourceUrl).text(sourceUrl);
     renderResults(data.data || [], sourceUrl);
     enableActionButtons(true);
+    
+    // Enable upload images button if there are images
+    const hasImages = (data.data || []).some(item => {
+      if (item.type === 'image') return true;
+      if (item.type === 'group' && item.children) {
+        return item.children.some(child => child.type === 'image');
+      }
+      return false;
+    });
+    $("#download-images").prop("disabled", !hasImages);
 
     $("html, body").animate(
       {
@@ -2530,7 +2632,11 @@
       </div>
     `;
 
-    $("#migration-stats").html(statsHtml);
+    if (typeof $ !== 'undefined') {
+      $("#migration-stats").html(statsHtml);
+    } else if (typeof jQuery !== 'undefined') {
+      jQuery("#migration-stats").html(statsHtml);
+    }
 
     let html = "";
     data.forEach((item, index) => {
@@ -2545,7 +2651,7 @@
     addButtonEventListeners();
     // Add delete functionality
     setTimeout(() => {
-      addDeleteButtonsToGroups(context);
+      addDeleteButtonsToGroups("main");
     }, 100);
   }
 
@@ -2721,7 +2827,9 @@
                 item.url
               )}" data-filename="${escapeHtml(
           item.alt || "image"
-        )}">Download Image</button>
+        )}" data-alt="${escapeHtml(
+          item.alt || ""
+        )}">Upload to WordPress</button>
               <button class="button button-small copy-btn" data-text="${escapeHtml(
                 item.url
               )}">Copy URL</button>
@@ -2866,10 +2974,48 @@
     });
 
     document.querySelectorAll(".download-btn").forEach((btn) => {
-      btn.addEventListener("click", function () {
+      // Remove any existing listeners to prevent duplicates
+      const newBtn = btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+      
+      newBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
         const url = this.getAttribute("data-url");
         const filename = this.getAttribute("data-filename");
-        downloadImage(url, filename);
+        const alt = this.getAttribute("data-alt") || filename || "image";
+        
+        console.log("Upload button clicked:", { url, alt, filename });
+        
+        // Upload to WordPress instead of downloading to computer
+        // Try new modular system first
+        if (window.MigrationManagerApp && window.MigrationManagerApp.getInstance) {
+          try {
+            const app = window.MigrationManagerApp.getInstance();
+            if (app && app.uploadSingleImage) {
+              console.log("Using MigrationManagerApp.uploadSingleImage");
+              app.uploadSingleImage(url, alt, this);
+              return false;
+            }
+          } catch (e) {
+            console.error("Error accessing MigrationManagerApp:", e);
+          }
+        }
+        
+        // Try direct API call if MigrationManagerApp not available
+        // uploadImageDirect is defined in this file, so we can call it directly
+        console.log("Using uploadImageDirect fallback");
+        if (typeof uploadImageDirect === 'function') {
+          uploadImageDirect(url, alt, this);
+        } else {
+          console.error("uploadImageDirect function not found");
+          if (typeof showMessage === 'function') {
+            showMessage("error", "Upload function not available. Please refresh the page.");
+          } else {
+            alert("Upload function not available. Please refresh the page.");
+          }
+        }
+        return false;
       });
     });
 
@@ -2961,6 +3107,97 @@
     URL.revokeObjectURL(url);
 
     showMessage("success", "JSON exported successfully");
+  }
+
+  /**
+   * Upload image directly to WordPress (fallback if MigrationManagerApp not available)
+   */
+  async function uploadImageDirect(imageUrl, altText, button) {
+    // Check if migrationManager is available
+    if (typeof migrationManager === 'undefined') {
+      console.error("migrationManager is not defined");
+      if (typeof showMessage === 'function') {
+        showMessage("error", "Migration Manager configuration not loaded. Please refresh the page.");
+      } else {
+        alert("Migration Manager configuration not loaded. Please refresh the page.");
+      }
+      return;
+    }
+    
+    // Validate required parameters
+    if (!imageUrl) {
+      console.error("Image URL is required");
+      if (typeof showMessage === 'function') {
+        showMessage("error", "Image URL is missing");
+      }
+      return;
+    }
+    
+    const messageContext = isEditorMode
+      ? stickySidebarOpen
+        ? "sticky"
+        : "editor"
+      : "main";
+    
+    // Disable button
+    if (button) {
+      const originalText = button.innerHTML || button.textContent || "";
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner is-active" style="float: none; margin: 0; width: 14px; height: 14px;"></span> Uploading...';
+      
+      // Get source URL from current scrape
+      const sourceUrl = currentScrapedUrl || "";
+      
+      try {
+        const response = await fetch(migrationManager.ajaxUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            action: "migration_manager_upload_single_image",
+            image_url: imageUrl,
+            alt_text: altText || "",
+            source_url: sourceUrl,
+            nonce: migrationManager.nonce,
+          }),
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          if (messageContext === "main") {
+            showMessage("success", data.data.message || "Image uploaded successfully!");
+          } else {
+            showEditorMessage(messageContext, "success", data.data.message || "Image uploaded successfully!");
+          }
+          
+          // Update button
+          button.innerHTML = '<span style="color: #46b450;">✓ Uploaded</span>';
+          button.classList.add("uploaded");
+          
+          // Re-enable after delay
+          setTimeout(() => {
+            button.disabled = false;
+            button.innerHTML = originalText;
+            button.classList.remove("uploaded");
+          }, 3000);
+        } else {
+          throw new Error(data.data?.message || "Upload failed");
+        }
+      } catch (error) {
+        console.error("Upload error:", error);
+        if (messageContext === "main") {
+          showMessage("error", error.message || "Failed to upload image");
+        } else {
+          showEditorMessage(messageContext, "error", error.message || "Failed to upload image");
+        }
+        
+        // Re-enable button
+        button.disabled = false;
+        button.innerHTML = originalText;
+      }
+    }
   }
 
   async function downloadImage(url, filename) {
@@ -3056,7 +3293,7 @@
   }
 
   function enableActionButtons(enable) {
-    $("#create-posts, #create-pages, #save-draft").prop("disabled", !enable);
+    $("#create-posts, #create-pages, #save-draft, #download-images").prop("disabled", !enable);
   }
 
   function createPosts() {
@@ -3073,6 +3310,234 @@
 
   function togglePreviewMode() {
     showMessage("info", "Preview mode functionality will be implemented next");
+  }
+
+  /**
+   * Animate progress bar smoothly
+   */
+  function animateProgress($progressBar, from, to, callback) {
+    if (!$progressBar.length) {
+      if (callback) callback();
+      return;
+    }
+    
+    const duration = 300; // Animation duration in ms
+    const startTime = Date.now();
+    const startValue = from;
+    const endValue = to;
+    
+    function update() {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function for smooth animation
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const currentValue = startValue + (endValue - startValue) * easeOut;
+      
+      $progressBar.css("width", currentValue + "%");
+      
+      if (progress < 1) {
+        requestAnimationFrame(update);
+      } else {
+        $progressBar.css("width", endValue + "%");
+        if (callback) callback();
+      }
+    }
+    
+    requestAnimationFrame(update);
+  }
+
+  /**
+   * Round number to decimal places
+   */
+  function round(num, decimals) {
+    return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
+  }
+
+  /**
+   * Handle bulk image upload
+   */
+  function handleDownloadImages() {
+    console.log("Upload Images button clicked", { currentScrapedData, currentScrapedUrl });
+    
+    if (!currentScrapedData || !currentScrapedUrl) {
+      console.error("Missing data:", { currentScrapedData: !!currentScrapedData, currentScrapedUrl: !!currentScrapedUrl });
+      showMessage("error", "No scraped content found. Please scrape a website first.");
+      return;
+    }
+
+    // Check if there are images
+    const hasImages = (currentScrapedData.data || []).some(item => {
+      if (item.type === 'image') return true;
+      if (item.type === 'group' && item.children) {
+        return item.children.some(child => child.type === 'image');
+      }
+      return false;
+    });
+
+    if (!hasImages) {
+      showMessage("error", "No images found in scraped content.");
+      return;
+    }
+
+    // Show progress UI
+    const $progressContainer = $("#image-download-progress");
+    const $progressBar = $("#progress-bar");
+    const $progressText = $("#progress-text");
+    
+    if ($progressContainer.length) {
+      $progressContainer.show();
+      $progressBar.css("width", "0%");
+      $progressText.text("Preparing to upload images...");
+    }
+
+    // Disable button during upload
+    const $downloadBtn = $("#download-images");
+    const originalText = $downloadBtn.html();
+    $downloadBtn.prop("disabled", true);
+    $downloadBtn.html('<span class="spinner is-active" style="float: none; margin: 0;"></span> Uploading...');
+
+    // Process images in batches
+    processImageBatchesAdmin(currentScrapedUrl, 0, {}, $progressBar, $progressText, $downloadBtn, originalText, $progressContainer);
+  }
+
+  /**
+   * Process images in batches (admin.js version)
+   */
+  function processImageBatchesAdmin(url, batchIndex, urlMapping, $progressBar, $progressText, $downloadBtn, originalText, $progressContainer, accumulatedStats = { downloaded: 0, skipped: 0, failed: 0 }, lastProgress = 0) {
+    const batchSize = 5;
+    
+    $.ajax({
+      url: migrationManager.ajaxUrl,
+      type: "POST",
+      data: {
+        action: "migration_manager_download_images",
+        url: url,
+        batch_index: batchIndex,
+        batch_size: batchSize,
+        url_mapping: JSON.stringify(urlMapping),
+        previous_downloaded: accumulatedStats.downloaded,
+        previous_skipped: accumulatedStats.skipped,
+        previous_failed: accumulatedStats.failed,
+        nonce: migrationManager.nonce
+      },
+      success: function(response) {
+        if (!response.success) {
+          showMessage("error", response.data?.message || "Failed to process images");
+          $progressBar.css("width", "0%");
+          $progressText.html(`<strong>Error:</strong> ${response.data?.message || "Unknown error"}`);
+          $downloadBtn.prop("disabled", false);
+          $downloadBtn.html(originalText);
+          return;
+        }
+
+        const data = response.data;
+        const total = data.total || 0;
+        const processed = data.processed || 0;
+        const downloaded = data.downloaded || 0;
+        const skipped = data.skipped || 0;
+        const failed = data.failed || 0;
+        const currentImage = data.current_image || null;
+
+        // Update accumulated stats
+        accumulatedStats.downloaded = downloaded;
+        accumulatedStats.skipped = skipped;
+        accumulatedStats.failed = failed;
+
+        // Calculate smooth progress (animate from last progress to current)
+        const targetProgress = total > 0 ? Math.min(Math.round((processed / total) * 100 * 10) / 10, 100) : 0;
+        
+        console.log("Progress update:", { 
+          processed, total, targetProgress, lastProgress, 
+          currentImage, batchIndex, downloaded, skipped, failed 
+        });
+        
+        // Update progress text immediately with current image info
+        let statusText = '';
+        if (currentImage && currentImage.index) {
+          const statusMessages = {
+            'downloading': `Downloading image ${currentImage.index}/${total}: ${currentImage.filename}...`,
+            'uploading': `Uploading image ${currentImage.index}/${total}: ${currentImage.filename}...`,
+            'completed': `Completed image ${currentImage.index}/${total}: ${currentImage.filename}`,
+            'skipped': `Skipped image ${currentImage.index}/${total}: ${currentImage.filename} (${currentImage.message})`,
+            'failed': `Failed image ${currentImage.index}/${total}: ${currentImage.filename}`
+          };
+          statusText = statusMessages[currentImage.status] || `Processing image ${currentImage.index}/${total}...`;
+        } else {
+          statusText = `Processing batch ${batchIndex + 1}/${Math.ceil(total / batchSize)}... (${processed}/${total} images)`;
+        }
+        
+        // Update text immediately (before animation)
+        if ($progressText.length) {
+          $progressText.html(
+            `<strong>${statusText}</strong><br>` +
+            `<small>Progress: ${processed}/${total} images | ` +
+            `Downloaded: ${downloaded} | Skipped: ${skipped} | Failed: ${failed}</small>`
+          );
+        }
+        
+        // Animate progress bar smoothly
+        animateProgress($progressBar, lastProgress, targetProgress);
+
+        // Merge URL mappings
+        const newUrlMapping = data.url_mapping || {};
+        const mergedMapping = { ...urlMapping, ...newUrlMapping };
+
+        // Check if complete
+        if (data.complete) {
+          showMessage("success", data.message || "Images uploaded successfully!");
+
+          // Update progress to 100%
+          if ($progressBar.length) {
+            $progressBar.css("width", "100%");
+            $progressText.html(
+              `<strong>Complete!</strong> Downloaded: ${downloaded}, ` +
+              `Skipped: ${skipped}, Failed: ${failed}`
+            );
+          }
+
+          // Update current scraped data if available
+          if (data.updated_data && data.updated_data.data) {
+            currentScrapedData = data.updated_data;
+            // Refresh the display
+            displayResults(data.updated_data, url);
+          }
+
+          // Re-enable button after a delay
+          setTimeout(() => {
+            $downloadBtn.prop("disabled", false);
+            $downloadBtn.html(originalText);
+            if ($progressContainer.length) {
+              $progressContainer.fadeOut(3000);
+            }
+          }, 2000);
+        } else {
+          // Process next batch
+          setTimeout(() => {
+            processImageBatchesAdmin(
+              url,
+              data.batch_index,
+              mergedMapping,
+              $progressBar,
+              $progressText,
+              $downloadBtn,
+              originalText,
+              $progressContainer,
+              accumulatedStats
+            );
+          }, 500);
+        }
+      },
+      error: function(xhr, status, error) {
+        showMessage("error", "Failed to upload images: " + error);
+        if ($progressBar.length) {
+          $progressBar.css("width", "0%");
+          $progressText.html(`<strong>Error:</strong> ${error}`);
+        }
+        $downloadBtn.prop("disabled", false);
+        $downloadBtn.html(originalText);
+      }
+    });
   }
 
   function handleLoadScrape(e) {
@@ -3197,10 +3662,8 @@
       return map[m];
     });
   }
-})(jQuery);
-
-// CSS styles for delete functionality (add to your admin.css)
-const deleteGroupStyles = `
+  // CSS styles for delete functionality
+  const deleteGroupStyles = `
 <style>
 .bulk-delete-controls {
     transition: border-left-color 0.3s ease;
@@ -3244,11 +3707,12 @@ const deleteGroupStyles = `
 </style>
 `;
 
-// Inject styles
-if ($("#migration-manager-delete-styles").length === 0) {
-  $("head").append(
-    '<style id="migration-manager-delete-styles">' +
-      deleteGroupStyles +
-      "</style>"
-  );
-}
+  // Inject styles
+  if ($("#migration-manager-delete-styles").length === 0) {
+    $("head").append(
+      '<style id="migration-manager-delete-styles">' +
+        deleteGroupStyles +
+        "</style>"
+    );
+  }
+})(jQuery);
