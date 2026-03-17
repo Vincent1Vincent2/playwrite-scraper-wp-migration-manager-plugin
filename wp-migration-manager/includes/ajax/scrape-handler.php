@@ -68,9 +68,36 @@ function migration_manager_handle_scrape_request()
 function migration_manager_call_scraper_api($url)
 {
     $api_base_url = get_option('migration_manager_api_url', 'http://localhost:8000');
-    $api_url = rtrim($api_base_url, '/') . '/scrape?url=' . urlencode($url);
+    $api_url = rtrim($api_base_url, '/') . '/scrape';
 
     error_log("Migration Manager: Calling API: " . $api_url);
+
+    // Load AI settings from plugin options
+    $ai_enabled  = (bool) get_option('migration_manager_ai_enabled', false);
+    $ai_provider = get_option('migration_manager_ai_provider', 'none');
+    $ai_api_key  = get_option('migration_manager_ai_api_key', '');
+    $ai_model    = get_option('migration_manager_ai_model', '');
+
+    // If AI is enabled but no key is configured for a real provider, fail fast with a clear message
+    if ($ai_enabled && $ai_provider !== 'none' && empty($ai_api_key)) {
+        $msg = __('AI processing is enabled, but no API key is configured. Please add an API key in the Migration Manager settings or disable AI.', 'migration-manager');
+        error_log('Migration Manager: ' . $msg);
+
+        return array(
+            'success' => false,
+            'message' => $msg,
+        );
+    }
+
+    $body = array(
+        'url' => $url,
+        'ai'  => array(
+            'enabled'  => $ai_enabled,
+            'provider' => $ai_provider,
+            'api_key'  => $ai_api_key,
+            'model'    => $ai_model,
+        ),
+    );
 
     // Set up request args
     $args = array(
@@ -78,11 +105,13 @@ function migration_manager_call_scraper_api($url)
         'headers' => array(
             'Content-Type' => 'application/json',
             'User-Agent' => 'WordPress Migration Manager Plugin v' . MIGRATION_MANAGER_VERSION
-        )
+        ),
+        'body'    => wp_json_encode($body),
+        'method'  => 'POST',
     );
 
     // Make the API request
-    $response = wp_remote_get($api_url, $args);
+    $response = wp_remote_request($api_url, $args);
 
     // Check for errors
     if (is_wp_error($response)) {
@@ -301,10 +330,102 @@ function migration_manager_test_api_connection()
     }
 }
 
+/**
+ * Test AI connection
+ */
+function migration_manager_test_ai_connection()
+{
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['nonce'], 'migration_manager_settings_nonce')) {
+        wp_send_json_error(array(
+            'message' => __('Security check failed', 'migration-manager')
+        ));
+    }
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array(
+            'message' => __('Insufficient permissions', 'migration-manager')
+        ));
+    }
+
+    $api_base_url = get_option('migration_manager_api_url', 'http://localhost:8000');
+    $api_url      = rtrim($api_base_url, '/') . '/ai-test';
+
+    // Load AI settings
+    $ai_enabled  = (bool) get_option('migration_manager_ai_enabled', false);
+    $ai_provider = get_option('migration_manager_ai_provider', 'none');
+    $ai_api_key  = get_option('migration_manager_ai_api_key', '');
+    $ai_model    = get_option('migration_manager_ai_model', '');
+
+    if (!$ai_enabled || $ai_provider === 'none') {
+        wp_send_json_error(array(
+            'message' => __('AI is disabled or provider is set to None. Enable AI and choose a provider first.', 'migration-manager'),
+        ));
+    }
+
+    if (empty($ai_api_key)) {
+        wp_send_json_error(array(
+            'message' => __('No AI API key configured. Please add an API key in the AI settings.', 'migration-manager'),
+        ));
+    }
+
+    $body = array(
+        'ai' => array(
+            'provider' => $ai_provider,
+            'api_key'  => $ai_api_key,
+            'model'    => $ai_model,
+        ),
+    );
+
+    $args = array(
+        'timeout' => 30,
+        'headers' => array(
+            'Content-Type' => 'application/json',
+            'User-Agent'   => 'WordPress Migration Manager Plugin v' . MIGRATION_MANAGER_VERSION,
+        ),
+        'body'   => wp_json_encode($body),
+        'method' => 'POST',
+    );
+
+    $response = wp_remote_request($api_url, $args);
+
+    if (is_wp_error($response)) {
+        wp_send_json_error(array(
+            'message' => sprintf(__('AI test request failed: %s', 'migration-manager'), $response->get_error_message()),
+        ));
+    }
+
+    $status_code = wp_remote_retrieve_response_code($response);
+    $body        = wp_remote_retrieve_body($response);
+    $data        = json_decode($body, true);
+
+    if ($status_code !== 200 || !isset($data['success']) || !$data['success']) {
+        $error_detail = isset($data['detail']['error']) ? $data['detail']['error'] : ($data['detail'] ?? 'Unknown error');
+        wp_send_json_error(array(
+            'message' => sprintf(
+                __('AI test failed (HTTP %d): %s', 'migration-manager'),
+                $status_code,
+                $error_detail
+            ),
+        ));
+    }
+
+    wp_send_json_success(array(
+        'message' => sprintf(
+            __('AI test successful! Provider: %s, Model: %s, Reply: %s', 'migration-manager'),
+            esc_html($data['provider']),
+            esc_html($data['model']),
+            esc_html($data['reply'])
+        ),
+    ));
+}
+
 // Register AJAX actions
 add_action('wp_ajax_migration_manager_scrape', 'migration_manager_handle_scrape_request');
 add_action('wp_ajax_migration_manager_load_scrape', 'migration_manager_handle_load_scrape');
 add_action('wp_ajax_migration_manager_test_api', 'migration_manager_test_api_connection');
+add_action('wp_ajax_migration_manager_test_ai', 'migration_manager_test_ai_connection');
 /**
  * Handle manual cleanup of old data
  */

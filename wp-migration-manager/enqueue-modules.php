@@ -2,7 +2,6 @@
 
 /**
  * Enqueue Migration Manager Modular Scripts
- * Add this to your main plugin file or include it
  */
 
 // Hook into admin enqueue scripts

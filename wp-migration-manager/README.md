@@ -49,6 +49,7 @@ Table: `wp_migration_manager_scrapes`
 - Default: `http://localhost:8000`
 - API returns JSON with content items: text, links, images, videos
 - Supports grouped/wrapper elements with children
+- Supports optional **AI post-processing** of section groups (labeling and reordering) via OpenAI or Anthropic
 
 ### **Content Types Handled:**
 
@@ -68,6 +69,11 @@ Table: `wp_migration_manager_scrapes`
 ## ⚙️ **Settings & Configuration**
 
 - **API Configuration**: Base URL, timeout settings, connection testing
+- **AI Settings**:
+  - Enable/disable AI post-processing
+  - Choose provider (`None`, `OpenAI`, `Anthropic`)
+  - Configure provider API key and optional model name
+  - Test AI connection from the settings page with a small prompt ("Are you ready?")
 - **Storage Limits**: Max scrapes to store, auto-cleanup rules
 - **Database Management**: Manual cleanup, export all data, clear all data
 - **Statistics Dashboard**: Shows total, successful, failed scrapes with dates
@@ -84,7 +90,8 @@ Table: `wp_migration_manager_scrapes`
 
 - `migration_manager_scrape` - Main scraping function
 - `migration_manager_load_scrape` - Load previous scrape data
-- `migration_manager_test_api` - Test API connection
+- `migration_manager_test_api` - Test Python API connection/health
+- `migration_manager_test_ai` - Test AI provider connectivity (uses `/ai-test` on the scraper)
 - `migration_manager_cleanup_data` - Manual data cleanup
 - `migration_manager_clear_all_data` - Clear all scrape data
 - `migration_manager_export_all_data` - Export all data as JSON

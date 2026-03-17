@@ -51,6 +51,17 @@ if (isset($_POST['submit']) && wp_verify_nonce($_POST['settings_nonce'], 'migrat
         if ($cleanup_days > 365) $cleanup_days = 365; // Maximum 1 year
         update_option('migration_manager_cleanup_days', $cleanup_days);
     }
+
+    // AI settings
+    $ai_enabled  = isset($_POST['migration_manager_ai_enabled']) ? 1 : 0;
+    $ai_provider = isset($_POST['migration_manager_ai_provider']) ? sanitize_text_field($_POST['migration_manager_ai_provider']) : 'none';
+    $ai_api_key  = isset($_POST['migration_manager_ai_api_key']) ? trim(sanitize_text_field($_POST['migration_manager_ai_api_key'])) : '';
+    $ai_model    = isset($_POST['migration_manager_ai_model']) ? trim(sanitize_text_field($_POST['migration_manager_ai_model'])) : '';
+
+    update_option('migration_manager_ai_enabled', $ai_enabled);
+    update_option('migration_manager_ai_provider', $ai_provider);
+    update_option('migration_manager_ai_api_key', $ai_api_key);
+    update_option('migration_manager_ai_model', $ai_model);
 }
 
 // Get current settings
@@ -59,6 +70,12 @@ $timeout = get_option('migration_manager_timeout', 60);
 $max_scrapes = get_option('migration_manager_max_scrapes', 100);
 $auto_cleanup = get_option('migration_manager_auto_cleanup', 0);
 $cleanup_days = get_option('migration_manager_cleanup_days', 30);
+
+// AI settings
+$ai_enabled  = get_option('migration_manager_ai_enabled', 0);
+$ai_provider = get_option('migration_manager_ai_provider', 'none');
+$ai_api_key  = get_option('migration_manager_ai_api_key', '');
+$ai_model    = get_option('migration_manager_ai_model', '');
 
 // Get database statistics
 global $wpdb;
@@ -138,8 +155,108 @@ $oldest_scrape = $wpdb->get_var("SELECT MIN(scraped_at) FROM $table_name");
             </div>
         </div>
 
-        <!-- Storage Settings -->
+     
+
+        <!-- AI Settings -->
         <div class="postbox">
+            <div class="postbox-header">
+                <h2 class="hndle">
+                    <span><?php _e('AI Settings', 'migration-manager'); ?></span>
+                </h2>
+            </div>
+            <div class="inside">
+                <table class="form-table" role="presentation">
+                    <tbody>
+                        <tr>
+                            <th scope="row">
+                                <label for="migration_manager_ai_enabled"><?php _e('Enable AI processing', 'migration-manager'); ?></label>
+                            </th>
+                            <td>
+                                <label>
+                                    <input
+                                        type="checkbox"
+                                        id="migration_manager_ai_enabled"
+                                        name="migration_manager_ai_enabled"
+                                        value="1"
+                                        <?php checked($ai_enabled, 1); ?> />
+                                    <?php _e('Use AI to label and reorder sections after scraping.', 'migration-manager'); ?>
+                                </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="migration_manager_ai_provider"><?php _e('AI Provider', 'migration-manager'); ?></label>
+                            </th>
+                            <td>
+                                <select
+                                    id="migration_manager_ai_provider"
+                                    name="migration_manager_ai_provider">
+                                    <option value="none" <?php selected($ai_provider, 'none'); ?>><?php _e('None', 'migration-manager'); ?></option>
+                                    <option value="openai" <?php selected($ai_provider, 'openai'); ?>>OpenAI</option>
+                                    <option value="anthropic" <?php selected($ai_provider, 'anthropic'); ?>>Anthropic</option>
+                                </select>
+                                <p class="description">
+                                    <?php _e('Choose which AI provider to use for optional refinement.', 'migration-manager'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="migration_manager_ai_api_key"><?php _e('API Key', 'migration-manager'); ?></label>
+                            </th>
+                            <td>
+                                <input
+                                    type="password"
+                                    id="migration_manager_ai_api_key"
+                                    name="migration_manager_ai_api_key"
+                                    value="<?php echo esc_attr($ai_api_key); ?>"
+                                    class="regular-text"
+                                    autocomplete="off" />
+                                <p class="description">
+                                    <?php _e('Your API key for the selected provider. Stored in the WordPress options table.', 'migration-manager'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="migration_manager_ai_model"><?php _e('Model (optional)', 'migration-manager'); ?></label>
+                            </th>
+                            <td>
+                                <input
+                                    type="text"
+                                    id="migration_manager_ai_model"
+                                    name="migration_manager_ai_model"
+                                    value="<?php echo esc_attr($ai_model); ?>"
+                                    class="regular-text"
+                                    placeholder="<?php esc_attr_e('e.g. gpt-4.1-mini or claude-haiku-4-5', 'migration-manager'); ?>" />
+                                <p class="description">
+                                    <?php _e('Override the default model for the selected provider. Leave empty to use the backend default.', 'migration-manager'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label><?php _e('Test AI Connection', 'migration-manager'); ?></label>
+                            </th>
+                            <td>
+                                <button type="button" class="button button-secondary" id="test-ai-connection">
+                                    <span class="dashicons dashicons-admin-tools" aria-hidden="true"></span>
+                                    <?php _e('Send "Are you ready?"', 'migration-manager'); ?>
+                                </button>
+                                <span class="spinner" id="ai-test-spinner"></span>
+                                <div id="ai-test-result" style="margin-top: 10px;"></div>
+                                <p class="description">
+                                    <?php _e('Tests the configured AI provider by sending the prompt "Are you ready?" and showing the reply.', 'migration-manager'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+           <!-- Storage Settings -->
+           <div class="postbox">
             <div class="postbox-header">
                 <h2 class="hndle">
                     <span><?php _e('Storage Settings', 'migration-manager'); ?></span>
@@ -473,6 +590,36 @@ $oldest_scrape = $wpdb->get_var("SELECT MIN(scraped_at) FROM $table_name");
                 complete: function() {
                     $button.prop('disabled', false);
                 }
+            });
+        });
+        $("#test-ai-connection").on("click", function (e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var $spinner = $("#ai-test-spinner");
+            var $result = $("#ai-test-result");
+
+            $result.empty();
+            $spinner.addClass("is-active");
+            $btn.prop("disabled", true);
+
+            $.post(ajaxurl, {
+                action: "migration_manager_test_ai",
+                nonce: $("#settings_nonce").val()
+            })
+            .done(function (response) {
+                if (response.success && response.data && response.data.message) {
+                    $result.html('<div style="color: #46b450; font-weight: 600;"><span class="dashicons dashicons-yes-alt"></span> ' + response.data.message + '</div>');
+                } else {
+                    var msg = (response.data && response.data.message) || "<?php echo esc_js(__('Unknown AI test error', 'migration-manager')); ?>";
+                    $result.html('<div style="color: #dc3232; font-weight: 600;"><span class="dashicons dashicons-dismiss"></span> ' + msg + '</div>');
+                }
+            })
+            .fail(function () {
+                $result.html('<div style="color: #dc3232; font-weight: 600;"><span class="dashicons dashicons-dismiss"></span> <?php echo esc_js(__('Network error while testing AI connection', 'migration-manager')); ?></div>');
+            })
+            .always(function () {
+                $spinner.removeClass("is-active");
+                $btn.prop("disabled", false);
             });
         });
     });
