@@ -224,18 +224,52 @@ source .venv/bin/activate
 pip install -r requirements.txt
 python -m playwright install --with-deps
 ```
+or
+```
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m playwright install --with-deps
+```
 
 2. Start the server:
 
 ```
 uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
+or
+```
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
 
 3. Try endpoints:
 
 - Health: `curl http://localhost:8000/`
-- Scrape: `curl "http://localhost:8000/scrape?url=https://example.com" | jq .`
+- Scrape (JSON POST):
+  ```bash
+  curl -X POST "http://localhost:8000/scrape" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "url": "https://example.com",
+         "ai": {
+           "enabled": false
+         }
+       }' | jq .
+  ```
 - Extract URLs: `curl "http://localhost:8000/extract-urls?url=https://example.com" | jq .`
+- AI test (optional):
+  ```bash
+  curl -X POST "http://localhost:8000/ai-test" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "ai": {
+           "provider": "anthropic",
+           "api_key": "YOUR_KEY",
+           "model": "claude-haiku-4-5"
+         }
+       }' | jq .
+  ```
 
 ### Local (Docker)
 
@@ -284,6 +318,59 @@ Put behind an HTTPS reverse proxy (Nginx/Traefik) with rate limiting and optiona
 - Run with read-only filesystem and a tmpfs for `/tmp`
 - Add proxy-level rate limits and timeouts; consider API keys/allowlists
 - Log and monitor errors/timeouts; respect robots.txt and site terms
+
+---
+
+## AI Integration Overview
+
+### Request structure
+
+The `/scrape` endpoint now accepts a JSON body of the form:
+
+```json
+{
+  "url": "https://example.com",
+  "ai": {
+    "enabled": true,
+    "provider": "openai | anthropic | none",
+    "api_key": "YOUR_KEY",
+    "model": "optional-model-name"
+  }
+}
+```
+
+- If `ai.enabled` is `false` or `ai` is omitted, the scraper only performs heuristic grouping.
+- If `ai.enabled` is `true` and a supported `provider`/`api_key` are supplied, the backend will:
+  - Build section-level groups in Python.
+  - Call the selected provider (OpenAI / Anthropic) to **label** sections (`hero`, `services`, `testimonials`, `faq`, `contact`, `footer`, `other`) and optionally **reorder** them.
+  - Never drop or duplicate sections – only change order and `pattern` labels.
+
+### Providers
+
+- **OpenAI**
+  - Requires `openai` in `requirements.txt` and a valid `api_key`.
+  - Uses `OPENAI_MODEL` env var or the `ai.model` field, defaulting to `gpt-4.1-mini` if not provided.
+- **Anthropic**
+  - Requires `anthropic` in `requirements.txt` and a valid `api_key`.
+  - Uses `ANTHROPIC_MODEL` env var or the `ai.model` field, defaulting to `claude-haiku-4-5` if not provided.
+
+### Testing AI connectivity
+
+Use the `/ai-test` endpoint with your desired provider/model:
+
+```bash
+curl -X POST "http://localhost:8000/ai-test" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "ai": {
+         "provider": "openai",
+         "api_key": "YOUR_OPENAI_KEY",
+         "model": "gpt-4.1-mini"
+       }
+     }' | jq .
+```
+
+The test sends the prompt `"Are you ready?"` and returns either the model's reply or a detailed error to help diagnose configuration issues.
 
 ---
 

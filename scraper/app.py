@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from playwright.async_api import async_playwright
 import asyncio
 import logging
@@ -43,8 +43,8 @@ async def root():
     """Health check endpoint"""
     return {"status": "ok", "message": "Web Scraper API is running"}
 
-@app.get("/scrape")
-async def scrape_url(url: str):
+@app.post("/scrape")
+async def scrape_url(payload: dict = Body(...)):
     """
     Scrape a URL using adaptive content-weighted grouping algorithm
     Usage: http://localhost:8000/scrape?url=https://example.com
@@ -52,8 +52,11 @@ async def scrape_url(url: str):
     if not browser:
         raise HTTPException(status_code=500, detail="Browser not initialized")
     
-    if not url:
-        raise HTTPException(status_code=400, detail="URL parameter is required")
+    url = payload.get("url")
+    if not isinstance(url, str) or not url:
+        raise HTTPException(status_code=400, detail="URL field is required in JSON body")
+
+    ai_config = payload.get("ai") or None
     
     try:
         # Create a new page for this request
@@ -249,6 +252,65 @@ async def scrape_url(url: str):
               return hasDirectTextContent(el);
             }
 
+            // === STRUCTURAL CONTEXT HELPERS ===
+            function getAncestors(el) {
+              const ancestors = [];
+              let current = el.parentElement;
+              while (current && current !== document.body && current !== document.documentElement) {
+                ancestors.push({
+                  tag: current.tagName.toLowerCase(),
+                  id: current.id || null,
+                  class: (current.className && current.className.toString)
+                    ? current.className.toString()
+                    : (current.className || null)
+                });
+                current = current.parentElement;
+              }
+              return ancestors;
+            }
+
+            function findClosestAncestor(el, predicate) {
+              let current = el;
+              while (current && current !== document.body && current !== document.documentElement) {
+                if (predicate(current)) return current;
+                current = current.parentElement;
+              }
+              return null;
+            }
+
+            function getKeyAncestors(el) {
+              const section = findClosestAncestor(el, n => n.tagName.toLowerCase() === 'section');
+              const grid = findClosestAncestor(el, n => {
+                const cls = (n.className && n.className.toString) ? n.className.toString() : (n.className || '');
+                return cls.includes('grid ');
+              });
+              const area = findClosestAncestor(el, n => {
+                const cls = (n.className && n.className.toString) ? n.className.toString() : (n.className || '');
+                return cls.includes('area ');
+              });
+              const block = findClosestAncestor(el, n => {
+                const cls = (n.className && n.className.toString) ? n.className.toString() : (n.className || '');
+                return cls.includes('block-wrapper');
+              });
+
+              return {
+                section_id: section ? (section.id || null) : null,
+                grid_id: grid ? (grid.id || null) : null,
+                area_id: area ? (area.id || null) : null,
+                block_id: block ? (block.id || null) : null
+              };
+            }
+
+            function getDepthFromBody(el) {
+              let depth = 0;
+              let current = el;
+              while (current && current !== document.body && current !== document.documentElement) {
+                depth++;
+                current = current.parentElement;
+              }
+              return depth;
+            }
+
             function extractContentData(el) {
               const tag = el.tagName.toLowerCase();
               const relevanceScore = getContentRelevanceScore(el);
@@ -268,9 +330,44 @@ async def scrape_url(url: str):
               };
               
               // Extract specific content types
-              if (tag === 'img' && el.src) {
+              if (tag === 'img') {
+                // Handle lazy-loaded / placeholder images by preferring non-data URLs
+                const srcAttr = el.getAttribute('src') || '';
+                const dataSrc = el.getAttribute('data-src') || el.getAttribute('data-lazy-src') || '';
+                const cookieSrc = el.getAttribute('data-cookieblock-src') || '';
+                const srcset = el.getAttribute('srcset') || '';
+
+                const srcCandidates = [];
+                if (srcAttr) srcCandidates.push(srcAttr);
+                if (dataSrc) srcCandidates.push(dataSrc);
+                if (cookieSrc) srcCandidates.push(cookieSrc);
+
+                // Add first URL from srcset if present
+                if (srcset) {
+                  const firstSrc = srcset.split(',')[0].trim().split(' ')[0].trim();
+                  if (firstSrc) srcCandidates.push(firstSrc);
+                }
+
+                // Prefer the first non-placeholder (non data: svg) URL
+                let chosenSrc = null;
+                for (const candidate of srcCandidates) {
+                  if (!candidate) continue;
+                  if (candidate.startsWith('data:image/svg+xml')) continue;
+                  chosenSrc = candidate;
+                  break;
+                }
+
+                // Fallback to original src if everything looks like a placeholder
+                if (!chosenSrc && el.src) {
+                  chosenSrc = el.src;
+                }
+
+                if (!chosenSrc) {
+                  return null;
+                }
+
                 item.type = 'image';
-                item.url = el.src;
+                item.url = chosenSrc;
                 item.alt = el.alt || '';
               } else if (tag === 'video' && el.src) {
                 item.type = 'video';
@@ -311,6 +408,24 @@ async def scrape_url(url: str):
               // Add styling info
               if (el.className) item.class = el.className;
               if (el.id) item.id = el.id;
+
+              // Add structural context to help downstream grouping/AI
+              const rect = el.getBoundingClientRect();
+              item.position = {
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+                bottom: rect.bottom,
+                right: rect.right
+              };
+              item.depth = getDepthFromBody(el);
+              const keyAncestors = getKeyAncestors(el);
+              item.section_id = keyAncestors.section_id;
+              item.grid_id = keyAncestors.grid_id;
+              item.area_id = keyAncestors.area_id;
+              item.block_id = keyAncestors.block_id;
+              item.ancestors = getAncestors(el);
               
               return item;
             }
@@ -1228,6 +1343,11 @@ async def scrape_url(url: str):
                 
                 if (item.class) result.class = item.class;
                 if (item.id) result.id = item.id;
+                if (item.section_id) result.section_id = item.section_id;
+                if (item.grid_id) result.grid_id = item.grid_id;
+                if (item.area_id) result.area_id = item.area_id;
+                if (item.block_id) result.block_id = item.block_id;
+                if (typeof item.depth === 'number') result.depth = item.depth;
                 
                 return result;
               } else {
@@ -1255,6 +1375,11 @@ async def scrape_url(url: str):
                   
                   if (item.class) child.class = item.class;
                   if (item.id) child.id = item.id;
+                  if (item.section_id) child.section_id = item.section_id;
+                  if (item.grid_id) child.grid_id = item.grid_id;
+                  if (item.area_id) child.area_id = item.area_id;
+                  if (item.block_id) child.block_id = item.block_id;
+                  if (typeof item.depth === 'number') child.depth = item.depth;
                   
                   return child;
                 });
@@ -1297,19 +1422,107 @@ async def scrape_url(url: str):
                     logger.info(debug_entry['message'])
             logger.info("=== END DEBUG INFO ===")
         
+        raw_items = result.get('results', [])
+
+        # Simple Python-side post-processing: group items by section
+        section_groups = postprocess_groups(raw_items)
+
+        # Optional AI refinement (label / reorder sections) driven by request payload
+        if ai_config:
+            section_groups = refine_with_ai(url, section_groups, ai_config)
+
         return {
             "url": url,
-            "data": result.get('results', []),
+            "data": section_groups,
             "status": "success"
         }
-        
+
     except Exception as e:
         logger.error(f"Scraping failed for {url}: {e}")
         if 'page' in locals():
             await page.close()
         raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
 
+@app.post("/ai-test")
+async def ai_test(payload: dict = Body(...)):
+    """
+    Simple AI connectivity test endpoint.
+    Expects: { "ai": { "provider": "...", "api_key": "...", "model": "..." } }
+    Sends a tiny prompt ("Are you ready?") and returns the provider's reply or an error.
+    """
+    ai_config = payload.get("ai") or {}
+    result = test_ai_connection(ai_config)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+from collections import defaultdict
 from urllib.parse import urlparse
+from ai import refine_with_ai, test_ai_connection
+
+
+def postprocess_groups(items):
+    """
+    Very simple Python-side post-processing:
+    - Group items by section_id (derived from item or its children)
+    - For each section, create a single group containing all its items
+    - Items without any section_id are returned as-is (no extra grouping)
+    This keeps logic fast and straightforward while improving section-level grouping.
+    """
+    sections = defaultdict(list)
+    section_order = []
+
+    for item in items:
+        section_id = item.get("section_id")
+
+        # If group has no section_id, try to infer from first child that has one
+        if not section_id and item.get("type") == "group":
+            for child in item.get("children", []):
+                section_id = child.get("section_id")
+                if section_id:
+                    break
+
+        key = section_id or "__no_section__"
+        if key not in sections:
+            section_order.append(key)
+        sections[key].append(item)
+
+    final = []
+
+    for key in section_order:
+        section_items = sections[key]
+
+        # Items without a section_id: keep them exactly as JS produced
+        if key == "__no_section__":
+            final.extend(section_items)
+            continue
+
+        # If section already yielded a single group, just keep it
+        if len(section_items) == 1 and section_items[0].get("type") == "group":
+            final.append(section_items[0])
+            continue
+
+        # Otherwise, create one section-level group and flatten its children
+        children = []
+        for item in section_items:
+            if item.get("type") == "group":
+                children.extend(item.get("children", []))
+            else:
+                children.append(item)
+
+        section_group = {
+            "type": "group",
+            "element": "section",
+            "wrapper": True,
+            "children": children,
+            "pattern": "section",
+            "score": 0,
+            "section_id": key,
+        }
+
+        final.append(section_group)
+
+    return final
 
 @app.get("/extract-urls")
 async def extract_urls(url: str, same_domain: bool = True, unique: bool = True):
