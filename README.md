@@ -1,18 +1,34 @@
-# migration-manager + scraper
+# migration-manager + ai scraper
 
 ## Overview
 
-This repository contains two components:
+This repository contains two tightly integrated components that together form an **AI‑assisted migration toolkit**:
 
-- `wp-migration-manager/`: a WordPress installation containing the migration manager plugin and site files.
-- `scraper/`: a Python FastAPI service that uses Playwright (Chromium) to scrape pages and extract structured content groups.
+- `wp-migration-manager/`: a WordPress installation containing the Migration Manager plugin and site files.
+- `scraper/`: a Python FastAPI service that uses Playwright (Chromium) to scrape pages and extract structured content groups, with **optional AI refinement (OpenAI / Anthropic)**.
 
 Use this guide to:
 
 - Test the scraper locally
-- Exercise the API endpoints
+- Exercise the API and AI endpoints
+- Wire the scraper to the WordPress plugin
 - Deploy the scraper safely to a server (Docker-based)
 - Understand environment and security requirements
+
+---
+
+## High‑Level Features
+
+- **Smart scraping & grouping**
+  - Playwright + custom DOM analysis to extract meaningful text, links, images, and section groups.
+  - Adaptive heuristics to avoid over‑grouping or missing key content.
+- **AI‑assisted structure understanding (optional)**
+  - Section‑level groups can be sent to OpenAI or Anthropic.
+  - AI labels sections (e.g. `hero`, `services`, `testimonials`, `faq`, `contact`, `footer`, `other`) and can refine section order.
+  - Strict contracts: AI is **not** allowed to drop or duplicate sections; it only annotates and reorders.
+- **WordPress‑native workflow**
+  - Scraped + (optionally) AI‑refined sections are rendered in the WP admin UI with drag‑and‑drop into any editor field.
+  - Scrapes are stored in a custom table with statistics, cleanup, and export tools.
 
 ---
 
@@ -54,8 +70,44 @@ uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 4. Test endpoints:
 
 - Health check: `curl http://localhost:8000/`
-- Scrape a page: `curl "http://localhost:8000/scrape?url=https://example.com" | jq .`
+- Scrape a page (JSON POST, without AI):
+  ```bash
+  curl -X POST "http://localhost:8000/scrape" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "url": "https://example.com",
+         "ai": {
+           "enabled": false
+         }
+       }' | jq .
+  ```
+- Scrape a page (JSON POST, with AI enabled – usually driven by WordPress settings):
+  ```bash
+  curl -X POST "http://localhost:8000/scrape" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "url": "https://example.com",
+         "ai": {
+           "enabled": true,
+           "provider": "openai",
+           "api_key": "YOUR_OPENAI_KEY",
+           "model": "gpt-4.1-mini"
+         }
+       }' | jq .
+  ```
 - Extract URLs (same domain): `curl "http://localhost:8000/extract-urls?url=https://example.com" | jq .`
+- AI connectivity test (debugging / validation):
+  ```bash
+  curl -X POST "http://localhost:8000/ai-test" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "ai": {
+           "provider": "anthropic",
+           "api_key": "YOUR_KEY",
+           "model": "claude-haiku-4-5"
+         }
+       }' | jq .
+  ```
 
 ### Option B: Run with Docker
 

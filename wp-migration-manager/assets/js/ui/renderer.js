@@ -96,13 +96,37 @@
      * Calculate statistics from data
      */
     calculateStats(data) {
+      let total = 0;
+      let text = 0;
+      let links = 0;
+      let images = 0;
+      let videos = 0;
+      let groups = 0;
+
+      const countItem = (item) => {
+        total += 1;
+        if (item.type === "text") text += 1;
+        else if (item.type === "link") links += 1;
+        else if (item.type === "image") images += 1;
+        else if (item.type === "video") videos += 1;
+      };
+
+      data.forEach((item) => {
+        if (item && item.wrapper === true && Array.isArray(item.children)) {
+          groups += 1;
+          item.children.forEach((child) => countItem(child));
+        } else if (item) {
+          countItem(item);
+        }
+      });
+
       return {
-        total: data.length,
-        text: data.filter((item) => item.type === "text").length,
-        links: data.filter((item) => item.type === "link").length,
-        images: data.filter((item) => item.type === "image").length,
-        videos: data.filter((item) => item.type === "video").length,
-        groups: data.filter((item) => item.wrapper === true).length,
+        total,
+        text,
+        links,
+        images,
+        videos,
+        groups,
       };
     },
 
