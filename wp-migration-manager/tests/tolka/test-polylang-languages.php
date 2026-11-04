@@ -1808,6 +1808,56 @@ PHP
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_an_empty_term_query_still_reads_stored_languages()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function get_terms($args = array())
+{
+    return array();
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false && strpos($query, "'term_language'") === false) {
+            return array((object) array(
+                'term_id' => 9,
+                'name' => 'Norsk',
+                'slug' => 'no',
+                'term_group' => 0,
+                'description' => 'a:2:{s:6:"locale";s:5:"nb_NO";s:9:"flag_code";s:2:"no";}',
+                'count' => 0,
+            ));
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return 'a:1:{s:12:"default_lang";s:2:"no";}';
+    }
+};
+PHP
+        );
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('no', $result['items'][0]['slug']);
+        $this->assertSame('Norsk', $result['items'][0]['name']);
+        $this->assertSame('nb_NO', $result['items'][0]['locale']);
+        $this->assertSame(9, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_filtered_term_query_still_keeps_languages_with_no_posts()
     {
         $result = $this->export_isolated(<<<'PHP'
