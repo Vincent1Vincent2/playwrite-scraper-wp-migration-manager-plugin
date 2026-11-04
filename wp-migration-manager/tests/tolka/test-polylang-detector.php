@@ -81,6 +81,16 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
         }
     }
 
+    class Polylang_Detector_Warning_Fixture extends Polylang_Detector_Fixture
+    {
+        protected static function is_active(): bool
+        {
+            trigger_error('noisy detector', E_USER_WARNING);
+
+            return false;
+        }
+    }
+
     class Polylang_Detector_Throwing_Fixture extends WMM\Tolka\Polylang_Detector
     {
         protected static function is_active(): bool
@@ -796,6 +806,36 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame(2, Polylang_Detector_Fixture::expose_rank('/var/www/wp-content/mu-plugins/polylang.php'));
         $this->assertSame(3, Polylang_Detector_Fixture::expose_rank('/var/www/wp-content/plugins/custom/polylang-pro.php'));
         $this->assertSame(4, Polylang_Detector_Fixture::expose_rank('/var/www/wp-content/plugins/custom-polylang/plugin.php'));
+    }
+
+    public function test_warning_during_the_check_stays_off_the_screen(): void
+    {
+        Polylang_Detector_Warning_Fixture::$directories = array($this->temp_dir());
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '',
+                'errors' => array(self::INACTIVE_ABSENT),
+            ),
+            Polylang_Detector_Warning_Fixture::status()
+        );
+    }
+
+    public function test_uppercase_pro_name_is_polylang_pro(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin(
+            $root,
+            'polylang-pro/polylang.php',
+            $this->wordpress_header('POLYLANG PRO', '3.2.0')
+        );
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('3.2.0', $status['version']);
+        $this->assertSame(array(sprintf(self::INACTIVE_INSTALLED_PRO, '3.2.0')), $status['errors']);
     }
 
     public function test_status_check_failure_is_a_finished_sentence(): void

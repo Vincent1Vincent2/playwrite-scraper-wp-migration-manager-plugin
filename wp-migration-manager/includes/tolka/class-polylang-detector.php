@@ -30,6 +30,25 @@ class Polylang_Detector
      */
     public static function status(): array
     {
+        // Warnings from plugin files or autoloaders must not print on the screen.
+        set_error_handler(
+            static function () {
+                return true;
+            }
+        );
+
+        try {
+            return self::collect_status();
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * @return array{active: bool, version: string, errors: string[]}
+     */
+    private static function collect_status(): array
+    {
         try {
             $active = static::is_active();
         } catch (\Throwable $throwable) {
