@@ -277,6 +277,12 @@ class Tolka_Writer
                     continue;
                 }
 
+                $negative = self::explicit_negative($translation);
+                if ($negative !== null) {
+                    self::add_error($errors, $hidden, $copy['negative_id'], array($lang, $group, $negative));
+                    continue;
+                }
+
                 $id = self::entity_id($translation);
                 if ($id < 1) {
                     self::add_error($errors, $hidden, $copy['no_id'], array($lang, $group));
@@ -322,6 +328,7 @@ class Tolka_Writer
                 'no_id' => 'A term translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
                 'zero_id' => 'Term id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
                 'zero_id_titled' => 'Term id 0, named "%3$s", for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
+                'negative_id' => 'Term id %3$d for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
                 'conflict' => 'Term %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
                 'lang_failed' => 'Tolka could not save the language "%1$s" on term %2$d.',
                 'group_failed' => 'Tolka could not save the group "%1$s" on term %2$d.',
@@ -339,6 +346,7 @@ class Tolka_Writer
             'no_id' => 'A post translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
             'zero_id' => 'Post id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
             'zero_id_titled' => 'Post id 0, titled "%3$s", for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
+            'negative_id' => 'Post id %3$d for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
             'conflict' => 'Post %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
             'lang_failed' => 'Tolka could not save the language "%1$s" on post %2$d.',
             'group_failed' => 'Tolka could not save the group "%1$s" on post %2$d.',
@@ -482,10 +490,52 @@ class Tolka_Writer
         }
 
         if (is_string($value)) {
+            $value = str_replace("\0", '', $value);
             return trim($value) === '0';
         }
 
         return false;
+    }
+
+    /**
+     * Negative whole-number id, or null when the value is not negative.
+     *
+     * @param mixed $translation Translation payload.
+     * @return int|null
+     */
+    private static function explicit_negative($translation)
+    {
+        $value = null;
+        if (is_int($translation) || is_float($translation) || is_string($translation)) {
+            $value = $translation;
+        } elseif (is_array($translation)) {
+            if (array_key_exists('id', $translation)) {
+                $value = $translation['id'];
+            } elseif (array_key_exists('ID', $translation)) {
+                $value = $translation['ID'];
+            }
+        }
+
+        if (is_bool($value) || $value === null) {
+            return null;
+        }
+
+        if (is_int($value)) {
+            return $value < 0 ? $value : null;
+        }
+
+        if (is_float($value) && is_finite($value) && $value < 0 && floor($value) === $value && $value >= -PHP_INT_MAX) {
+            return (int) $value;
+        }
+
+        if (is_string($value) && preg_match('/^-[1-9][0-9]*$/', trim($value))) {
+            $number = (int) trim($value);
+            if ($number < 0 && (string) $number === trim($value)) {
+                return $number;
+            }
+        }
+
+        return null;
     }
 
     /**
