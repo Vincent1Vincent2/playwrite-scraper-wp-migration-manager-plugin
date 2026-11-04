@@ -309,6 +309,14 @@ HTML;
         $this->assertSame(2, $both['hreflang_count']);
         $this->assertSame(2, $both['language_count']);
         $this->assertTrue($both['has_polylang_switcher']);
+
+        $capped = $combined . str_repeat(' ', 2000000 - strlen($combined));
+        $this->assertSame(2000000, strlen($capped));
+        $capped_result = $this->analyze($capped);
+        $this->assertTrue($capped_result['truncated']);
+        $this->assertSame(2, $capped_result['hreflang_count']);
+        $this->assertSame(2, $capped_result['language_count']);
+        $this->assertTrue($capped_result['has_polylang_switcher']);
     }
 
     public function test_hreflang_x_default_does_not_increase_language_count()
