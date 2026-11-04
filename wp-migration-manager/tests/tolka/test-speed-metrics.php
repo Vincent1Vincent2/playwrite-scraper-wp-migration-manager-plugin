@@ -808,6 +808,37 @@ HTML;
         $this->assertSame(2, $previous['hreflang_count']);
     }
 
+    public function test_corrupt_html_does_not_fatal()
+    {
+        $state = 20261104;
+
+        for ($n = 0; $n < 80; $n++) {
+            $length = $state % 240;
+            $html = '';
+
+            for ($i = 0; $i < $length; $i++) {
+                $state = (int) (($state * 1103515245 + 12345) & 0x7fffffff);
+                $html .= chr($state % 256);
+            }
+
+            $state = (int) (($state * 1103515245 + 12345) & 0x7fffffff);
+            $result = $this->analyze_measurement(array(
+                'html' => $html,
+                'html_bytes' => ($state % 400) - 5,
+                'truncated' => ($state % 5 === 0) ? 'false' : ($state % 2 === 0),
+                'error' => 'The response was cut off.',
+            ));
+
+            if ($result['hreflang_count'] > 0) {
+                $this->assertSame($result['hreflang_count'], $result['language_count'], 'case ' . $n);
+            } elseif ($result['has_polylang_switcher']) {
+                $this->assertSame(2, $result['language_count'], 'case ' . $n);
+            } else {
+                $this->assertSame(1, $result['language_count'], 'case ' . $n);
+            }
+        }
+    }
+
     public function test_result_repeats_for_the_same_measurement()
     {
         $measurement = array(
