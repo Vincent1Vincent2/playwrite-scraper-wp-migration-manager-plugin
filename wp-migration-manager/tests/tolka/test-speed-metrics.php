@@ -265,6 +265,30 @@ HTML;
         $this->assertSame(2, $result['language_count']);
     }
 
+    public function test_hreflang_x_default_does_not_increase_language_count()
+    {
+        $languages = '<link rel="alternate" hreflang="en" href="/"><link rel="alternate" hreflang="sv" href="/sv/">';
+        $with_default = $languages
+            . '<link rel="alternate" hreflang="x-default" href="/">'
+            . '<link rel="alternate" hreflang="X-Default" href="/home/">';
+
+        $plain = $this->analyze($languages);
+        $with = $this->analyze($with_default);
+
+        $this->assertSame(2, $plain['language_count']);
+        $this->assertSame(2, $plain['hreflang_count']);
+        $this->assertSame($plain['language_count'], $with['language_count']);
+        $this->assertSame($plain['hreflang_count'], $with['hreflang_count']);
+
+        $only_default = $this->analyze('<link rel="alternate" hreflang="x-default" href="/">');
+        $this->assertSame(0, $only_default['hreflang_count']);
+        $this->assertSame(1, $only_default['language_count']);
+
+        $spaced = $this->analyze($languages . '<link rel="alternate" hreflang=" x-default " href="/">');
+        $this->assertSame(2, $spaced['language_count']);
+        $this->assertSame(2, $spaced['hreflang_count']);
+    }
+
     public function test_duplicate_hreflang_values_that_differ_only_by_case_count_once()
     {
         $html = <<<'HTML'
@@ -412,6 +436,40 @@ HTML;
         $result = $this->analyze($html);
 
         $this->assertSame(2, $result['stylesheet_count']);
+    }
+
+    public function test_one_script_tag_and_one_stylesheet_link_are_counted()
+    {
+        $html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script></head><body></body></html>';
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(1, $result['stylesheet_count']);
+        $this->assertSame(0, $result['image_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertFalse($result['truncated']);
+    }
+
+    public function test_html_of_exactly_2000000_bytes_sets_truncated()
+    {
+        $html = str_repeat('a', 2000000);
+
+        $this->assertSame(2000000, strlen($html));
+
+        $result = $this->analyze($html, array(
+            'html_bytes' => 2000000,
+            'ok' => true,
+        ));
+
+        $this->assertTrue($result['truncated']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(0, $result['script_count']);
+        $this->assertSame(0, $result['stylesheet_count']);
+        $this->assertSame(0, $result['image_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
     }
 
     public function test_html_at_the_byte_cap_is_truncated_and_still_counted()
@@ -673,6 +731,29 @@ HTML;
         $this->assertFalse($only_inside_script['has_polylang_switcher']);
         $this->assertSame(1, $only_inside_script['language_count']);
         $this->assertSame(1, $only_inside_script['script_count']);
+    }
+
+    public function test_greater_than_inside_an_attribute_does_not_hide_the_rest()
+    {
+        $script = $this->analyze('<script data-note="a>b"></script><nav class="lang-item"></nav><img src="/shown.png">');
+        $this->assertSame(1, $script['script_count']);
+        $this->assertSame(1, $script['image_count']);
+        $this->assertTrue($script['has_polylang_switcher']);
+        $this->assertSame(2, $script['language_count']);
+
+        $style = $this->analyze('<style data-note="a>b">x</style><link rel="stylesheet" href="/a.css"><img src="/a.png">');
+        $this->assertSame(0, $style['script_count']);
+        $this->assertSame(1, $style['stylesheet_count']);
+        $this->assertSame(1, $style['image_count']);
+        $this->assertFalse($style['has_polylang_switcher']);
+
+        $hidden = $this->analyze('<script data-note="a>b"><img src="/hidden.png"></script><img src="/shown.png">');
+        $this->assertSame(1, $hidden['script_count']);
+        $this->assertSame(1, $hidden['image_count']);
+
+        $language = $this->analyze('<a title="a>b" hreflang="sv" href="/sv/"></a>');
+        $this->assertSame(1, $language['hreflang_count']);
+        $this->assertSame(1, $language['language_count']);
     }
 
     public function test_comment_syntax_inside_an_attribute_is_not_a_switcher()
