@@ -1289,6 +1289,20 @@ p.wmm-tolka-speed-tolka {
     color: var(--wmm-tolka-body);
 }
 
+.wmm-tolka-preview-notes,
+.wmm-tolka-report-extra {
+    margin: 0 0 14px;
+}
+
+.wmm-tolka-preview-notes .wmm-tolka-error,
+.wmm-tolka-report-extra .wmm-tolka-error {
+    margin-top: 0;
+}
+
+.wmm-tolka-preview-samples {
+    margin-top: 4px;
+}
+
 .wmm-tolka-section {
     margin-top: 16px;
 }
