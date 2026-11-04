@@ -104,11 +104,11 @@ class Polylang_Detector_Test extends TestCase
 
     const INACTIVE_INSTALLED = 'Polylang %s is installed but not active. Activate Polylang, then return to Migrate to Tolka.';
 
-    const INACTIVE_LISTED = 'Polylang %s is listed as active, but it is not loaded. Reload Migrate to Tolka. If Polylang is switched off, activate it and open this page again.';
+    const INACTIVE_LISTED = 'Polylang %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.';
 
     const INACTIVE_HEADER = 'A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. Activate Polylang, then return to Migrate to Tolka.';
 
-    const INACTIVE_LISTED_HEADER = 'Polylang is listed as active, but its plugin file has no readable Version header, and Polylang is not loaded. Reload Migrate to Tolka. If Polylang is switched off, activate it and open this page again.';
+    const INACTIVE_LISTED_HEADER = 'Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.';
 
     const ACTIVE_HEADER = 'Polylang is active, but its plugin file has no readable Version header. You can continue. The migration uses the Polylang data already loaded on this site.';
 
@@ -529,6 +529,28 @@ class Polylang_Detector_Test extends TestCase
         Polylang_Detector_Fixture::$origin = $root . '/polylang-pro/includes/api.php';
 
         $this->assertSame('5.1.0', Polylang_Detector_Fixture::status()['version']);
+    }
+
+    public function test_loaded_file_several_directories_down_still_finds_the_header(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'running/l1/l2/l3/l4/l5/l6/api.php', "<?php\n");
+        $this->write_plugin($root, 'running/polylang.php', $this->wordpress_header('Polylang', '3.8.0'));
+        Polylang_Detector_Fixture::$active = true;
+        Polylang_Detector_Fixture::$use_loaded = true;
+        Polylang_Detector_Fixture::$origin = $root . '/running/l1/l2/l3/l4/l5/l6/api.php';
+
+        $this->assertSame('3.8.0', Polylang_Detector_Fixture::status()['version']);
+    }
+
+    public function test_tab_separated_header_fields_are_read(): void
+    {
+        $root = $this->temp_dir();
+        $contents = "<?php\n/**\n * Plugin Name:\tPolylang\n * Version:\t3.4.2\n */\n";
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $this->assertSame('3.4.2', Polylang_Detector_Fixture::status()['version']);
     }
 
     public function test_loaded_must_use_file_is_its_own_header(): void

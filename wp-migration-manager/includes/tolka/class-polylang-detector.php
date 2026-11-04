@@ -123,7 +123,7 @@ class Polylang_Detector
         $names = array('polylang.php', 'polylang-pro.php');
 
         $directory = dirname($origin);
-        for ($depth = 0; $depth < 6; $depth++) {
+        for ($depth = 0; $depth < 8; $depth++) {
             if (!is_string($directory) || $directory === '' || self::is_walk_boundary($directory)) {
                 break;
             }
@@ -415,7 +415,7 @@ class Polylang_Detector
 
         if (!$active && $version !== '' && $listed_active) {
             $errors[] = self::fill_version(
-                self::translate('Polylang %s is listed as active, but it is not loaded. Reload Migrate to Tolka. If Polylang is switched off, activate it and open this page again.'),
+                self::translate('Polylang %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'),
                 $version
             );
         } elseif (!$active && $version !== '') {
@@ -424,7 +424,7 @@ class Polylang_Detector
                 $version
             );
         } elseif (!$active && $header_found && $listed_active) {
-            $errors[] = self::translate('Polylang is listed as active, but its plugin file has no readable Version header, and Polylang is not loaded. Reload Migrate to Tolka. If Polylang is switched off, activate it and open this page again.');
+            $errors[] = self::translate('Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.');
         } elseif (!$active && $header_found) {
             $errors[] = self::translate('A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. Activate Polylang, then return to Migrate to Tolka.');
         } elseif (!$active) {
