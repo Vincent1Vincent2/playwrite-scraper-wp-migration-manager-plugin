@@ -963,7 +963,9 @@ class Migration_Report
         }
 
         if ($status === 'problems') {
-            $parts = array();
+            $parts = array(
+                self::partial_title(),
+            );
 
             if (!empty($description['shortfall'])) {
                 $parts[] = $description['mismatch'];
