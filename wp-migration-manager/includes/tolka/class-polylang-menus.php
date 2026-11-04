@@ -504,6 +504,7 @@ class Polylang_Menus
             }
             $items[] = array(
                 'location' => '',
+                'label' => $this->location_label(''),
                 'translations' => $translations,
             );
         }
@@ -565,6 +566,7 @@ class Polylang_Menus
 
         return array(
             'location' => $location,
+            'label' => $this->location_label($location),
             'translations' => $translations,
         );
     }
@@ -586,6 +588,7 @@ class Polylang_Menus
                 'name' => '',
                 'slug' => '',
                 'items' => array(),
+                'link_count' => 0,
             );
         }
 
@@ -621,7 +624,43 @@ class Polylang_Menus
             'name' => $this->entity_text($name),
             'slug' => $slug,
             'items' => $items,
+            'link_count' => $this->link_count($items),
         );
+    }
+
+    /**
+     * Human label for a theme location, or a sentence for menus with no location.
+     *
+     * @param string $location Location slug.
+     * @return string
+     */
+    private function location_label($location)
+    {
+        if ($location === '') {
+            return $this->message_unassigned_location();
+        }
+        if (isset($this->location_labels[$location]) && $this->location_labels[$location] !== '') {
+            return $this->location_labels[$location];
+        }
+        return $location;
+    }
+
+    /**
+     * Count this menu's links, including links nested in submenus.
+     *
+     * @param array<int, array> $items Nested items.
+     * @return int
+     */
+    private function link_count(array $items)
+    {
+        $count = 0;
+        foreach ($items as $item) {
+            $count++;
+            if (! empty($item['children']) && is_array($item['children'])) {
+                $count += $this->link_count($item['children']);
+            }
+        }
+        return $count;
     }
 
     /**
@@ -731,6 +770,7 @@ class Polylang_Menus
         }
         if ($language === '' && $menu_id > 0) {
             $language = 'unknown';
+            $this->warn($this->message_unknown_language());
         }
         if ($language === '') {
             return;
@@ -829,6 +869,7 @@ class Polylang_Menus
             }
             if ($language === '') {
                 $language = 'unknown';
+                $this->warn($this->message_unknown_language());
             }
             if (! isset($groups[$key][$language])) {
                 $groups[$key][$language] = $menu_id;
@@ -1076,6 +1117,7 @@ class Polylang_Menus
         if ($normalized['url'] === '') {
             $normalized['url'] = $this->resolve_url($normalized);
         }
+        $normalized['switcher'] = ($normalized['url'] === '#pll_switcher');
 
         return $normalized;
     }
@@ -1763,14 +1805,13 @@ class Polylang_Menus
             return array();
         }
 
-        $previous = set_error_handler(function () {
+        set_error_handler(function () {
             return true;
         });
-        $decoded = unserialize($value, array('allowed_classes' => false));
-        if ($previous === null) {
+        try {
+            $decoded = unserialize($value, array('allowed_classes' => false));
+        } finally {
             restore_error_handler();
-        } else {
-            set_error_handler($previous);
         }
 
         return is_array($decoded) ? $decoded : array();
@@ -1881,6 +1922,30 @@ class Polylang_Menus
         $text = 'Polylang menu assignments could not be read because the stored nav_menus value is invalid. Theme locations are still listed.';
         if (function_exists('__')) {
             $text = __('Polylang menu assignments could not be read because the stored nav_menus value is invalid. Theme locations are still listed.', 'migration-manager');
+        }
+        return $text;
+    }
+
+    /**
+     * @return string
+     */
+    private function message_unassigned_location()
+    {
+        $text = 'Not assigned to a theme location';
+        if (function_exists('__')) {
+            $text = __('Not assigned to a theme location', 'migration-manager');
+        }
+        return $text;
+    }
+
+    /**
+     * @return string
+     */
+    private function message_unknown_language()
+    {
+        $text = 'A menu has no Polylang language, so it was exported under "unknown".';
+        if (function_exists('__')) {
+            $text = __('A menu has no Polylang language, so it was exported under "unknown".', 'migration-manager');
         }
         return $text;
     }

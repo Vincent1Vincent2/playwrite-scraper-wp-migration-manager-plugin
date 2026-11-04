@@ -87,7 +87,7 @@ class Polylang_Menus_Test extends TestCase
                     'flavor' => array(
                         'primary' => array(
                             'en' => 10,
-                            'sv' => '11',
+                            'sv' => ' 11 ',
                         ),
                     ),
                     'other' => array(
@@ -140,6 +140,7 @@ class Polylang_Menus_Test extends TestCase
                         'object' => 'page',
                         'object_id' => 6,
                         'position' => 3,
+                        'classes' => 'team current',
                     ),
                 ),
                 11 => array(
@@ -165,10 +166,14 @@ class Polylang_Menus_Test extends TestCase
         $this->assertNotContains('primary___sv', $this->locations($result));
 
         $primary = $this->location($result, 'primary');
+        $this->assertSame('Primary', $primary['label']);
+        $this->assertSame('Footer', $this->location($result, 'footer')['label']);
         $this->assertSame(array('en', 'sv'), array_keys($primary['translations']));
 
         $english = $primary['translations']['en'];
         $this->assertSame(10, $english['menu_id']);
+        $this->assertSame(3, $english['link_count']);
+        $this->assertFalse($english['items'][0]['switcher']);
         $this->assertSame('Fish & Chips', $english['name']);
         $this->assertSame('fish-chips', $english['slug']);
         $this->assertSame('Home', $english['items'][0]['title']);
@@ -184,8 +189,13 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(5, $english['items'][0]['children'][0]['object_id']);
         $this->assertSame('Our & story', $english['items'][0]['children'][0]['description']);
         $this->assertSame('Team', $english['items'][0]['children'][0]['children'][0]['title']);
+        $this->assertSame(array('team', 'current'), $english['items'][0]['children'][0]['children'][0]['classes']);
         $this->assertSame(1, $english['items'][0]['children'][0]['parent']);
+        $this->assertSame(11, $primary['translations']['sv']['menu_id']);
+        $this->assertSame(1, $primary['translations']['sv']['link_count']);
         $this->assertSame('#pll_switcher', $primary['translations']['sv']['items'][0]['url']);
+        $this->assertTrue($primary['translations']['sv']['items'][0]['switcher']);
+        $this->assertSame(0, $this->location($result, 'footer')['translations']['en']['link_count']);
 
         $footer = $this->location($result, 'footer');
         $this->assertSame(0, $footer['translations']['en']['menu_id']);
@@ -254,6 +264,7 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(array('Cycle A', 'Orphan', 'Self', 'First', 'Second', 'Third'), $titles);
         $this->assertSame('Cycle B', $items[0]['children'][0]['title']);
         $this->assertSame(array(), $items[0]['children'][0]['children']);
+        $this->assertSame('/orphan', $items[1]['url']);
         $this->assertSame(99, $items[1]['parent']);
         $this->assertSame(0, $items[2]['parent']);
         $this->assertSame(array(), $items[2]['children']);
@@ -295,6 +306,7 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(0, $primary['translations']['sv']['menu_id']);
         $this->assertSame('Swedish', $this->location($result, '')['translations']['sv']['name']);
         $this->assertSame(11, $this->location($result, '')['translations']['sv']['menu_id']);
+        $this->assertSame('Not assigned to a theme location', $this->location($result, '')['label']);
     }
 
     public function test_translation_sibling_joins_its_location(): void
@@ -578,6 +590,41 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame('Hem', $this->location($result, 'primary')['translations']['sv']['items'][0]['title']);
         $this->assertSame(0, $this->location($result, 'footer')['translations']['en']['menu_id']);
         $this->assertSame(0, $this->location($result, 'footer')['translations']['sv']['menu_id']);
+        $this->assertSame(0, $this->location($result, 'footer')['translations']['en']['link_count']);
+        $this->assertSame(3, $english['link_count']);
+        $this->assertFalse($english['items'][0]['switcher']);
+        $this->assertSame('Primary', $this->location($result, 'primary')['label']);
+        $this->assertSame('Footer', $this->location($result, 'footer')['label']);
+    }
+
+    public function test_menu_without_a_language_is_exported_as_unknown(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'registered' => array(
+                'primary' => 'Primary',
+            ),
+            'theme_locations' => array(
+                'primary' => 8,
+            ),
+            'menus' => array(
+                8 => 'Plain',
+            ),
+            'slugs' => array(
+                8 => 'plain',
+            ),
+        ));
+
+        $result = $fixture->run();
+        $primary = $this->location($result, 'primary');
+
+        $this->assertSame(array('unknown'), array_keys($primary['translations']));
+        $this->assertSame(8, $primary['translations']['unknown']['menu_id']);
+        $this->assertSame('Plain', $primary['translations']['unknown']['name']);
+        $this->assertSame(
+            array('A menu has no Polylang language, so it was exported under "unknown".'),
+            $result['errors']
+        );
     }
 
     public function test_option_table_is_read_when_wordpress_functions_are_missing(): void
