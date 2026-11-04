@@ -642,6 +642,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('typeof request.then', $html);
             $this->assertStringContainsString('removeAttribute("aria-describedby")', $html);
             $this->assertStringContainsString('The request could not be completed.', $html);
+            $this->assertStringContainsString('username or password', $html);
             $this->assertStringContainsString('Enter', $html);
             $this->assertStringContainsString('Enable JavaScript', $html);
             $this->assertStringNotContainsString('secret-html', $html);

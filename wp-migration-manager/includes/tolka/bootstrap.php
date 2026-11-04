@@ -1491,6 +1491,7 @@ function wmm_tolka_fallback_copy()
         'yes' => __('Yes', 'migration-manager'),
         'no' => __('No', 'migration-manager'),
         'needUrl' => __('Enter a public site URL to measure. Nothing was changed.', 'migration-manager'),
+        'userinfo' => __('That address includes a username or password, so it was not measured. Nothing was changed.', 'migration-manager'),
         'timeoutMeasure' => __('The speed check took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutPreview' => __('The preview took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutRun' => __('The migration took too long to answer. Reload this screen before trying again. Polylang data was not deleted.', 'migration-manager'),
@@ -1561,6 +1562,26 @@ function wmm_tolka_fallback_script()
         });
     }
 
+    function urlHasUserinfo(value) {
+        if (!value) {
+            return false;
+        }
+        try {
+            if (window.URL) {
+                var parsed = new window.URL(value);
+                return parsed.username !== "" || parsed.password !== "";
+            }
+        } catch (ignore) {
+            return false;
+        }
+        var authority = value.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+        var end = authority.search(/[/?#]/);
+        if (end !== -1) {
+            authority = authority.slice(0, end);
+        }
+        return authority.indexOf("@") !== -1;
+    }
+
     function onClick(job) {
         if (active) {
             return;
@@ -1576,6 +1597,10 @@ function wmm_tolka_fallback_script()
             var url = input && input.value ? input.value.replace(/^\s+|\s+$/g, "") : "";
             if (!url) {
                 showError(document.getElementById(job.target), text("needUrl", "Enter a public site URL to measure. Nothing was changed."));
+                return;
+            }
+            if (urlHasUserinfo(url)) {
+                showError(document.getElementById(job.target), text("userinfo", "That address includes a username or password, so it was not measured. Nothing was changed."));
                 return;
             }
             body.set("url", url);
