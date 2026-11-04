@@ -345,6 +345,42 @@ class Speed_Loader_Test extends TestCase
         );
     }
 
+    /**
+     * URLs the shared Tolka suite rejects. Keep this list in step with that check.
+     */
+    public function test_shared_suite_rejects_non_public_urls()
+    {
+        $urls = array(
+            '',
+            '   ',
+            '/wp-admin',
+            'ftp://example.com/file',
+            'file:///etc/passwd',
+            'http://localhost/',
+            'http://localhost:8080/path',
+            'HTTP://LOCALHOST/',
+            'http://127.0.0.1/',
+            'https://127.0.0.2/admin',
+            'http://10.1.2.3/',
+            'http://172.16.0.1/',
+            'http://172.31.255.255/',
+            'http://192.168.1.20/page',
+            'http://169.254.1.1/',
+            'http://[::1]/',
+            'http://',
+            'https://',
+        );
+
+        foreach ($urls as $url) {
+            $result = Speed_Loader::measure($url);
+            $this->assertFalse($result['ok'], $url);
+            $this->assertSame('', $result['html'], $url);
+            $this->assertNull($result['ttfb_ms'], $url);
+            $this->assertNotSame('', $result['error'], $url);
+            $this->assertSame(0, $result['total_ms'], $url);
+        }
+    }
+
     public function test_private_literals_do_not_wait_on_the_network()
     {
         $started = microtime(true);
