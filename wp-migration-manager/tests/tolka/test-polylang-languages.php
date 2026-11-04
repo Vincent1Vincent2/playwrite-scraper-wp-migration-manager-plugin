@@ -218,6 +218,22 @@ PHP
         $this->assertSame('eco', $result['items'][1]['slug']);
     }
 
+    public function test_a_blank_entity_name_uses_the_language_slug()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(6, '&nbsp;', 'fr', 'fr_FR', 'fr', 0, 0),
+            $this->language_term(4, '&nbsp;English&nbsp;', 'en', 'en_US', 'us', 1, 1),
+        ), 'fr');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame('fr', $result['items'][0]['slug']);
+        $this->assertSame('fr', $by_slug['fr']['name']);
+        $this->assertTrue($by_slug['fr']['is_default']);
+        $this->assertSame('English', $by_slug['en']['name']);
+    }
+
     public function test_html_entities_in_a_language_name_are_decoded()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
