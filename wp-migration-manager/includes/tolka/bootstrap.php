@@ -1740,6 +1740,7 @@ function wmm_tolka_fallback_copy()
         'userinfo' => __('That address includes a username or password, so it was not measured. Nothing was changed.', 'migration-manager'),
         'tooLong' => __('That address is longer than 2000 characters, so it was not measured. Nothing was changed.', 'migration-manager'),
         'blockedScheme' => __('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'),
+        'localAddress' => __('That address is on a local or private network, so it was not measured.', 'migration-manager'),
         'timeoutMeasure' => __('The speed check took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutPreview' => __('The preview took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutRun' => __('The migration took too long to answer. Reload this screen before trying again. Polylang data was not deleted.', 'migration-manager'),
@@ -1843,6 +1844,59 @@ function wmm_tolka_fallback_script()
         return "";
     }
 
+    function urlIsLocal(value) {
+        var host = "";
+        try {
+            if (window.URL) {
+                host = new window.URL(value).hostname || "";
+            }
+        } catch (ignore) {
+            return false;
+        }
+        host = host.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+        if (!host) {
+            return false;
+        }
+        if (host === "localhost" || host.slice(-10) === ".localhost") {
+            return true;
+        }
+        if (host.indexOf("::ffff:") === 0) {
+            host = host.slice(7);
+        }
+        if (host === "::1" || host === "0:0:0:0:0:0:0:1") {
+            return true;
+        }
+        var parts = host.split(".");
+        if (parts.length === 4) {
+            var numbers = [];
+            var index;
+            for (index = 0; index < 4; index++) {
+                if (!/^\d+$/.test(parts[index])) {
+                    numbers = [];
+                    break;
+                }
+                numbers.push(parseInt(parts[index], 10));
+            }
+            if (numbers.length === 4) {
+                var first = numbers[0];
+                var second = numbers[1];
+                if (first === 0 || first === 10 || first === 127) {
+                    return true;
+                }
+                if (first === 192 && second === 168) {
+                    return true;
+                }
+                if (first === 172 && second >= 16 && second <= 31) {
+                    return true;
+                }
+                if (first === 169 && second === 254) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     function onClick(job) {
         if (active) {
             return;
@@ -1871,6 +1925,10 @@ function wmm_tolka_fallback_script()
             }
             if (blocked) {
                 showError(document.getElementById(job.target), text("blockedScheme", "javascript: and data: addresses are not measured. Nothing was changed."));
+                return;
+            }
+            if (urlIsLocal(url)) {
+                showError(document.getElementById(job.target), text("localAddress", "That address is on a local or private network, so it was not measured."));
                 return;
             }
             body.set("url", url);
