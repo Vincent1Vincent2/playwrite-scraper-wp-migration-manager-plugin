@@ -1509,6 +1509,8 @@ class Harness_Test extends Tolka_Test_Case
      */
     public function test_two_missing_classes_produce_two_skips_and_exit_successfully()
     {
+        $this->assert_overhead_cap_is_465_70_78();
+
         $binary = $this->phpunit_binary();
 
         if ($binary === null) {
@@ -1533,17 +1535,18 @@ class Harness_Test extends Tolka_Test_Case
         $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary)
             . ' -c ' . escapeshellarg(WMM_TOLKA_PLUGIN_DIR . '/phpunit.xml.dist')
             . ' --do-not-cache-result' . $extra
-            . ' --filter ' . escapeshellarg('test_first_missing_class_is_its_own_skip|test_second_missing_class_is_its_own_skip');
+            . ' --filter ' . escapeshellarg('test_first_missing_class_is_its_own_skip|test_second_missing_class_is_its_own_skip|test_overhead_cap_uses_integer_milliseconds$');
         $output = array();
         $status = 1;
         exec($command . ' 2>&1', $output, $status);
         $text = implode("\n", $output);
 
         $this->assertSame(0, $status, $text);
+        $this->assertMatchesRegularExpression('/Tests:\s+3\b/', $text);
         $this->assertMatchesRegularExpression('/Skipped:\s+2\b/', $text);
         $this->assertStringContainsString('WMM\\Tolka\\First_Missing_Slice', $text);
         $this->assertStringContainsString('WMM\\Tolka\\Second_Missing_Slice', $text);
-        $this->assertGreaterThanOrEqual(2, substr_count($text, 'is not loaded, so this test was skipped'));
+        $this->assertGreaterThanOrEqual(2, substr_count($text, 'so this test was skipped.'));
         $this->assertStringNotContainsString('Fatal error', $text);
         $this->assertStringNotContainsString('FAILURES', $text);
     }

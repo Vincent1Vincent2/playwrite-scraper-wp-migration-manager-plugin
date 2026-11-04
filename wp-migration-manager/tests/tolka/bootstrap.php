@@ -312,7 +312,33 @@ if (!function_exists('wmm_tolka_skip_without_class')) {
             $message .= $note;
         }
 
-        wmm_tolka_mark_skipped($message);
+        wmm_tolka_mark_skipped(wmm_tolka_finish_named_skip($message, $missing));
+    }
+}
+
+if (!function_exists('wmm_tolka_finish_named_skip')) {
+    /**
+     * Keep every missing class name in a skip reason, then end the sentence.
+     *
+     * @param string $message Draft reason.
+     * @param string[] $names Missing class names.
+     * @return string
+     */
+    function wmm_tolka_finish_named_skip($message, $names)
+    {
+        $message = wmm_tolka_skip_sentence($message);
+
+        foreach ($names as $name) {
+            if (!is_string($name) || $name === '' || $name === '(blank class name)') {
+                continue;
+            }
+
+            if (strpos($message, $name) === false) {
+                $message = $name . ' is not loaded, so this test was skipped. ' . $message;
+            }
+        }
+
+        return wmm_tolka_finish_sentence($message);
     }
 }
 
