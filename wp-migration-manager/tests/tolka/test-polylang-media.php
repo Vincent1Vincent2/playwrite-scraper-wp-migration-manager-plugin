@@ -1125,6 +1125,38 @@ class Test_Polylang_Media extends TestCase
         $this->assertStringNotContainsString("\0", $result['items'][0]['alt']['fr']);
     }
 
+    public function test_null_byte_in_a_file_name_does_not_split_the_same_file()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'fr'),
+        ), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => "2024/05/hero\0.jpg", 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertStringNotContainsString("\0", $result['items'][0]['file']);
+        $this->assertSame(array('en', 'fr'), array_keys($result['items'][0]['title']));
+    }
+
+    public function test_line_breaks_in_alt_text_and_titles_are_kept()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+        ), array(10), array('en'), 'en', array(
+            10 => array(
+                'file' => '2024/05/hero.jpg',
+                'alt' => "Line one\nLine two",
+                'title' => "Hero\r\n<em>kept</em>",
+            ),
+        ));
+
+        $this->assertSame("Line one\nLine two", $result['items'][0]['alt']['en']);
+        $this->assertSame("Hero\r\n<em>kept</em>", $result['items'][0]['title']['en']);
+    }
+
     public function test_second_export_returns_the_same_items_when_media_exists()
     {
         if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('get_posts') || function_exists('get_post_meta') || function_exists('pll_get_post_translations')) {
@@ -1217,21 +1249,25 @@ class Test_Polylang_Media extends TestCase
             $media = new Polylang_Media();
             $first = $media->export();
             $second = $media->export();
+            $first['items'][0]['title']['en'] = 'changed by the caller';
+            $third = $media->export();
         } finally {
             unset($GLOBALS['wpdb']);
         }
 
-        $this->assertSame($first, $second);
-        $this->assertSame(array(), $first['errors']);
-        $this->assertCount(1, $first['items']);
-        $this->assertSame(10, $first['items'][0]['attachment_id']);
-        $this->assertSame('2024/05/hero.jpg', $first['items'][0]['file']);
-        $this->assertSame('<em>Hero</em>', $first['items'][0]['title']['en']);
-        $this->assertSame('Visuel <span>FR</span>', $first['items'][0]['title']['fr']);
-        $this->assertSame('Harbor <strong>view</strong>', $first['items'][0]['alt']['en']);
-        $this->assertSame('<img alt="quai"> Port', $first['items'][0]['alt']['fr']);
-        $this->assertStringNotContainsString("\0", $first['items'][0]['title']['en']);
-        $this->assertStringNotContainsString("\0", $first['items'][0]['alt']['en']);
+        $this->assertSame($second, $third);
+        $this->assertSame('<em>Hero</em>', $third['items'][0]['title']['en']);
+        $this->assertSame('changed by the caller', $first['items'][0]['title']['en']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame(10, $second['items'][0]['attachment_id']);
+        $this->assertSame('2024/05/hero.jpg', $second['items'][0]['file']);
+        $this->assertSame('<em>Hero</em>', $second['items'][0]['title']['en']);
+        $this->assertSame('Visuel <span>FR</span>', $second['items'][0]['title']['fr']);
+        $this->assertSame('Harbor <strong>view</strong>', $second['items'][0]['alt']['en']);
+        $this->assertSame('<img alt="quai"> Port', $second['items'][0]['alt']['fr']);
+        $this->assertStringNotContainsString("\0", $second['items'][0]['title']['en']);
+        $this->assertStringNotContainsString("\0", $second['items'][0]['alt']['en']);
         $this->assertStringNotContainsString("\0", $second['items'][0]['title']['fr']);
     }
 
