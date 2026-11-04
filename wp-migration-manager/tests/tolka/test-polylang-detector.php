@@ -558,9 +558,27 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($first, $second);
         $this->assertStringContainsString('3.9.1', $first['errors'][0]);
         $this->assertStringContainsString('3.9.10', $first['errors'][0]);
+        $this->assertSame(1, substr_count($first['errors'][0], 'Polylang 3.9.1 is installed but not active.'));
+        $this->assertSame(1, substr_count($first['errors'][0], 'Polylang Pro 3.9.10 is also installed.'));
+        $this->assertSame(1, substr_count($second['errors'][0], 'Polylang 3.9.1 is installed but not active.'));
         $this->assertSame($first['errors'], array_values(array_unique($first['errors'])));
         $this->assertSame($second['errors'], array_values(array_unique($second['errors'])));
         $this->assertCount(count($first['errors']), $second['errors']);
+    }
+
+    public function test_version_3_9_1_without_a_space_after_the_colon_is_unchanged(): void
+    {
+        $root = $this->temp_dir();
+        $contents = "<?php\n/**\n * Plugin Name: Polylang\n * Version:3.9.1\n */\n";
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $first = Polylang_Detector_Fixture::status();
+        $second = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertSame($first, $second);
+        $this->assertSame(1, substr_count($second['errors'][0], '3.9.1'));
     }
 
     public function test_version_3_9_1_with_a_comment_closer_is_unchanged(): void
