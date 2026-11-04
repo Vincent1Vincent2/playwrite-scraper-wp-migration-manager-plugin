@@ -418,6 +418,21 @@ class Polylang_Detector
                     $other_missing_label = $entry_label;
                 }
             }
+        } else {
+            foreach ($pool as $entry) {
+                if (!isset($entry['file']) || !is_string($entry['file'])) {
+                    continue;
+                }
+                $entry_label = (isset($entry['label']) && $entry['label'] === 'Polylang Pro') ? 'Polylang Pro' : 'Polylang';
+                if ($entry_label === $label) {
+                    continue;
+                }
+                $rank = static::rank_plugin_file($entry['file']);
+                if ($rank < $other_missing_rank) {
+                    $other_missing_rank = $rank;
+                    $other_missing_label = $entry_label;
+                }
+            }
         }
 
         return array(
@@ -557,13 +572,13 @@ class Polylang_Detector
                 $pro
                     ? 'Polylang Pro is listed as active, but its plugin file has no readable Version header and Polylang Pro is not loaded yet. Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.'
                     : 'Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
-            );
+            ) . $also;
         } elseif (!$active && $header_found) {
             $errors[] = self::translate(
                 $pro
                     ? 'A Polylang Pro plugin file was found, but it has no readable Version header, and Polylang Pro is not active. Activate Polylang Pro, then return to Migrate to Tolka.'
                     : 'A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. Activate Polylang, then return to Migrate to Tolka.'
-            );
+            ) . $also;
         } elseif (!$active) {
             $errors[] = self::translate('Polylang is not active. Install and activate Polylang, then return to Migrate to Tolka.');
         } elseif ($version === '' && $header_found) {
