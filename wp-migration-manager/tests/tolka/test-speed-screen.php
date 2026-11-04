@@ -1346,6 +1346,60 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertStringNotContainsString("\0", $html);
     }
 
+    public function test_successful_zero_loads_are_not_unavailable_and_the_label_stays_escaped()
+    {
+        $label = '<script>alert(1)</script>';
+        $html = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 0,
+            'tolka_ms' => 0,
+            'faster_percent' => 0,
+            'faster_label' => $label,
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => '',
+        ));
+        $document = $this->document($html);
+
+        $this->assertSame('0 ms', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertSame('0 ms', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertNotSame('Unavailable', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertNotSame('Unavailable', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertSame('0', $document->getElementById('wmm-tolka-current-load')->getAttribute('data-ms'));
+        $this->assertSame('0', $document->getElementById('wmm-tolka-tolka-load')->getAttribute('data-ms'));
+        $this->assertSame($label, $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame(0, $this->element_child_count($document->getElementById('wmm-tolka-faster')));
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringContainsString('0 ms', $this->text($html, 'wmm-tolka-speed-summary'));
+
+        $failed = $this->render(true, array(
+            'ok' => false,
+            'current_ms' => 0,
+            'tolka_ms' => 0,
+            'faster_percent' => 0,
+            'faster_label' => $label,
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => 'The page could not be loaded.',
+        ));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-faster'));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-current-load'));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-tolka-load'));
+        $this->assertStringNotContainsString('<script', $failed);
+        $this->assertStringNotContainsString('0.0% faster', $failed);
+        $this->assertStringNotContainsString('0 ms', $this->text($failed, 'wmm-tolka-current-load'));
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($this->document($failed)->getElementById($id), $id);
+        }
+    }
+
     public function test_zero_millisecond_loads_are_shown_and_escaped_like_the_basis()
     {
         $basis = 'Basis <script>alert(1)</script>';

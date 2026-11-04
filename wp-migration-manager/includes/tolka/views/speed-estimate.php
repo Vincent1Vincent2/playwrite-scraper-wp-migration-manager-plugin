@@ -211,6 +211,12 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
         );
         $wmm_tolka_speed_view['current'] = $wmm_tolka_speed_plain($wmm_tolka_speed_format_ms($wmm_tolka_speed_current_number));
         $wmm_tolka_speed_view['tolka'] = $wmm_tolka_speed_plain($wmm_tolka_speed_format_ms($wmm_tolka_speed_tolka_number));
+        if (null !== $wmm_tolka_speed_current_number && 0.0 === (float) $wmm_tolka_speed_current_number && '' === $wmm_tolka_speed_view['current']) {
+            $wmm_tolka_speed_view['current'] = '0 ms';
+        }
+        if (null !== $wmm_tolka_speed_tolka_number && 0.0 === (float) $wmm_tolka_speed_tolka_number && '' === $wmm_tolka_speed_view['tolka']) {
+            $wmm_tolka_speed_view['tolka'] = '0 ms';
+        }
         $wmm_tolka_speed_view['current_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_current_number);
         $wmm_tolka_speed_view['tolka_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_tolka_number);
         // Show the supplied label. Do not derive a percent from the two load times.
