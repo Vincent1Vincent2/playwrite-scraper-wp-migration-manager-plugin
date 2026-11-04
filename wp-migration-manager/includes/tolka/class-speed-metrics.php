@@ -29,8 +29,10 @@ class Speed_Metrics
      *
      * A page with no hreflang counts as one language, or two when a Polylang
      * switcher is present. Unique hreflang values other than x-default replace
-     * that fallback. Empty or failed measurements return that one-language
-     * result and do not throw.
+     * that fallback. Five lang-item menu entries are still one switcher and
+     * do not raise language_count above that hreflang count. A plain
+     * menu-item class is not a switcher. Empty or failed measurements return
+     * that one-language result and do not throw.
      *
      * The result is truncated when the measurement says so, when the HTML
      * reaches the 2,000,000 byte cap, or when a non-empty body is shorter
