@@ -1356,8 +1356,8 @@ class Tolka_Writer
      * Force the saved header: tolka-migration, integer version 1, and Zulu time.
      *
      * A GMT timestamp written with +00:00 is rewritten so it ends with Z.
-     * The clock time stays the same. Any other timestamp becomes the current
-     * GMT time.
+     * The clock time stays the same. Any other header timestamp becomes the
+     * current GMT time. Timestamps inside string text are not rewritten.
      *
      * @param array $package Package about to be stored.
      * @return array
