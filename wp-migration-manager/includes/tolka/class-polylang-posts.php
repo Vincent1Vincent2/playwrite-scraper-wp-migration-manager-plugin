@@ -67,6 +67,9 @@ class Polylang_Posts
     /**
      * Export post translation groups.
      *
+     * Call this on an instance. Each call builds a new list, so a second
+     * call does not append the groups from the first.
+     *
      * @return array{items: array<int, array>, errors: string[]}
      */
     public function export()
@@ -653,11 +656,11 @@ class Polylang_Posts
             foreach ($loaded as $lang => $record) {
                 $translations[$lang] = array(
                     'id' => $record['id'],
-                    'title' => $record['title'],
-                    'slug' => $record['slug'],
-                    'status' => $record['status'],
-                    'excerpt' => $record['excerpt'],
-                    'content' => $record['content'],
+                    'title' => $this->clean_text(isset($record['title']) ? $record['title'] : ''),
+                    'slug' => $this->clean_text(isset($record['slug']) ? $record['slug'] : ''),
+                    'status' => isset($record['status']) ? (string) $record['status'] : '',
+                    'excerpt' => $this->clean_text(isset($record['excerpt']) ? $record['excerpt'] : ''),
+                    'content' => $this->clean_text(isset($record['content']) ? $record['content'] : ''),
                 );
                 $claimed[$record['id']] = $group;
             }
@@ -678,7 +681,49 @@ class Polylang_Posts
             return ($left_id < $right_id) ? -1 : 1;
         });
 
-        return $items;
+        return $this->unique_groups($items);
+    }
+
+    /**
+     * Drop a repeated group key. Export never accumulates groups across calls.
+     *
+     * @param array<int, array> $items
+     * @return array<int, array>
+     */
+    private function unique_groups(array $items)
+    {
+        $unique = array();
+        $seen = array();
+        foreach ($items as $item) {
+            if (!is_array($item) || !isset($item['group'])) {
+                continue;
+            }
+            $group = (string) $item['group'];
+            if ($group === '' || isset($seen[$group])) {
+                continue;
+            }
+            $seen[$group] = true;
+            $unique[] = $item;
+        }
+        return $unique;
+    }
+
+    /**
+     * Keep markup. Remove null bytes so a title or body cannot break storage.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function clean_text($value)
+    {
+        if (!is_string($value)) {
+            if (is_int($value) || is_float($value)) {
+                $value = (string) $value;
+            } else {
+                return '';
+            }
+        }
+        return str_replace("\0", '', $value);
     }
 
     /**
@@ -1858,11 +1903,11 @@ class Polylang_Posts
         return array(
             'id' => $post_id,
             'type' => isset($post->post_type) ? (string) $post->post_type : '',
-            'title' => isset($post->post_title) ? (string) $post->post_title : '',
-            'slug' => isset($post->post_name) ? (string) $post->post_name : '',
+            'title' => $this->clean_text(isset($post->post_title) ? $post->post_title : ''),
+            'slug' => $this->clean_text(isset($post->post_name) ? $post->post_name : ''),
             'status' => isset($post->post_status) ? (string) $post->post_status : '',
-            'excerpt' => isset($post->post_excerpt) ? (string) $post->post_excerpt : '',
-            'content' => isset($post->post_content) ? (string) $post->post_content : '',
+            'excerpt' => $this->clean_text(isset($post->post_excerpt) ? $post->post_excerpt : ''),
+            'content' => $this->clean_text(isset($post->post_content) ? $post->post_content : ''),
         );
     }
 
@@ -1884,11 +1929,11 @@ class Polylang_Posts
         return array(
             'id' => $post_id,
             'type' => isset($row['post_type']) ? (string) $row['post_type'] : '',
-            'title' => isset($row['post_title']) ? (string) $row['post_title'] : '',
-            'slug' => isset($row['post_name']) ? (string) $row['post_name'] : '',
+            'title' => $this->clean_text(isset($row['post_title']) ? $row['post_title'] : ''),
+            'slug' => $this->clean_text(isset($row['post_name']) ? $row['post_name'] : ''),
             'status' => isset($row['post_status']) ? (string) $row['post_status'] : '',
-            'excerpt' => isset($row['post_excerpt']) ? (string) $row['post_excerpt'] : '',
-            'content' => isset($row['post_content']) ? (string) $row['post_content'] : '',
+            'excerpt' => $this->clean_text(isset($row['post_excerpt']) ? $row['post_excerpt'] : ''),
+            'content' => $this->clean_text(isset($row['post_content']) ? $row['post_content'] : ''),
         );
     }
 
