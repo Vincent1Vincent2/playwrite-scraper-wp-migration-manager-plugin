@@ -742,7 +742,7 @@ PHP
         $db->post_translation_rows = array(
             (object) array(
                 'description' => serialize(array(
-                    'en' => '15',
+                    'EN' => '15',
                     'fr' => 16,
                 )),
             ),
