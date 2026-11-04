@@ -11,8 +11,8 @@
  * #wmm-tolka-current-load, #wmm-tolka-tolka-load, #wmm-tolka-faster,
  * #wmm-tolka-basis, and #wmm-tolka-provenance-note.
  * The provenance note is shown when provenance is placeholder.
- * Basis text, the faster label, and the provenance note are escaped
- * before they are printed.
+ * Basis text, the faster label, the provenance note, and the load
+ * times are escaped before they are printed.
  *
  * @package MigrationManager
  */
@@ -192,8 +192,8 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
         $wmm_tolka_speed_tolka_number = $wmm_tolka_speed_number(
             isset($wmm_tolka_speed_payload['tolka_ms']) ? $wmm_tolka_speed_payload['tolka_ms'] : null
         );
-        $wmm_tolka_speed_view['current'] = $wmm_tolka_speed_format_ms($wmm_tolka_speed_current_number);
-        $wmm_tolka_speed_view['tolka'] = $wmm_tolka_speed_format_ms($wmm_tolka_speed_tolka_number);
+        $wmm_tolka_speed_view['current'] = $wmm_tolka_speed_plain($wmm_tolka_speed_format_ms($wmm_tolka_speed_current_number));
+        $wmm_tolka_speed_view['tolka'] = $wmm_tolka_speed_plain($wmm_tolka_speed_format_ms($wmm_tolka_speed_tolka_number));
         $wmm_tolka_speed_view['current_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_current_number);
         $wmm_tolka_speed_view['tolka_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_tolka_number);
         $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_plain(
@@ -267,11 +267,11 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
             ) {
                 $wmm_tolka_speed_saved = $wmm_tolka_speed_current_number - $wmm_tolka_speed_tolka_number;
                 if ($wmm_tolka_speed_saved > 0) {
-                    $wmm_tolka_speed_view['savings'] = sprintf(
+                    $wmm_tolka_speed_view['savings'] = $wmm_tolka_speed_plain(sprintf(
                         /* translators: %s: time saved, such as "942 ms". */
                         __('The estimated Tolka load is %s shorter than the measured load.', 'migration-manager'),
                         $wmm_tolka_speed_format_ms($wmm_tolka_speed_saved)
-                    );
+                    ));
                     $wmm_tolka_speed_view['saved_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_saved);
                 }
             }
@@ -295,7 +295,7 @@ if ('error' === $wmm_tolka_speed_view['state']) {
     $wmm_tolka_speed_view['basis'] = '';
     $wmm_tolka_speed_detail = '';
     if (is_array($wmm_tolka_speed_payload)) {
-        $wmm_tolka_speed_detail = $wmm_tolka_speed_text(
+        $wmm_tolka_speed_detail = $wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['error']) ? $wmm_tolka_speed_payload['error'] : ''
         );
     }
