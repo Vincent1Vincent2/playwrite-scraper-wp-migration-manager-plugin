@@ -1633,6 +1633,110 @@ echo json_encode(array("clean" => $clean, "failed" => $failed));
         ));
     }
 
+    public function test_partial_title_section_order_and_clean_second_format()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+$GLOBALS["wmm_opt"] = null;
+function update_option($option, $value, $autoload = null) {
+    if ($GLOBALS["wmm_opt"] !== null && $GLOBALS["wmm_opt"] == $value) {
+        $GLOBALS["wmm_unchanged_false"] = true;
+        return false;
+    }
+    $GLOBALS["wmm_opt"] = $value;
+    return true;
+}
+function get_option($option, $default = false) {
+    return $GLOBALS["wmm_opt"] === null ? $default : $GLOBALS["wmm_opt"];
+}
+require ' . var_export($class, true) . ';
+$partial_run = array(
+    "ok" => true,
+    "counts" => array(
+        "media" => 8,
+        "menus" => 3,
+        "strings" => 0,
+        "terms" => 1,
+        "posts" => 4,
+        "languages" => 2,
+    ),
+    "write" => array(
+        "ok" => true,
+        "counts" => array(
+            "languages" => 2,
+            "posts" => 4,
+            "terms" => 1,
+            "strings" => 0,
+            "menus" => 3,
+            "media" => 8,
+        ),
+        "errors" => array("posts" => array("One post had no title")),
+    ),
+);
+$clean_run = array(
+    "ok" => true,
+    "counts" => array("posts" => 4, "languages" => 2),
+    "write" => array("ok" => true),
+);
+$partial = \\WMM\\Tolka\\Migration_Report::format($partial_run);
+$partial_again = \\WMM\\Tolka\\Migration_Report::format($partial_run);
+$clean = \\WMM\\Tolka\\Migration_Report::format($clean_run);
+$clean_again = \\WMM\\Tolka\\Migration_Report::format($clean_run);
+echo json_encode(array(
+    "unchanged_false" => !empty($GLOBALS["wmm_unchanged_false"]),
+    "partial" => $partial,
+    "partial_again" => $partial_again,
+    "clean" => $clean,
+    "clean_again" => $clean_again,
+));
+';
+        $decoded = $this->run_report_script($script);
+        $this->assertTrue($decoded['unchanged_false']);
+
+        foreach (array('partial', 'partial_again') as $key) {
+            $report = $decoded[$key];
+            $this->assertFalse($report['ok']);
+            $this->assertSame('The migration finished with problems.', $report['title']);
+            $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
+            $this->assertStringNotContainsString('complete', strtolower($report['title']));
+            $this->assertStringNotContainsString('could not be saved', $report['title']);
+            $this->assertStringNotContainsString('could not be saved', $report['summary']);
+            $this->assertSame(array(), $report['errors']);
+            $this->assert_section_order($report);
+            $this->assert_sections_are_contiguous($report);
+            $this->assertSame('2', $this->line($report, 'Languages'));
+            $this->assertSame('4', $this->line($report, 'Posts'));
+            $this->assertSame('1', $this->line($report, 'Terms'));
+            $this->assertSame('0', $this->line($report, 'Strings'));
+            $this->assertSame('3', $this->line($report, 'Menus'));
+            $this->assertSame('8', $this->line($report, 'Media'));
+        }
+
+        foreach (array('clean', 'clean_again') as $key) {
+            $report = $decoded[$key];
+            $this->assertTrue($report['ok']);
+            $this->assertSame('The migration is complete.', $report['title']);
+            $this->assertSame('The migration is complete.', $this->line($report, 'Outcome'));
+            $this->assertNotSame('The migration finished with problems.', $report['title']);
+            $this->assertStringNotContainsString('could not be saved', $report['title']);
+            $this->assertStringNotContainsString('could not be saved', $report['summary']);
+            $this->assertSame(array(), $report['errors']);
+            $this->assert_section_order($report);
+            $this->assert_sections_are_contiguous($report);
+            $this->assertSame('2', $this->line($report, 'Languages'));
+            $this->assertSame('4', $this->line($report, 'Posts'));
+            $this->assertSame('0', $this->line($report, 'Terms'));
+            $this->assertSame('0', $this->line($report, 'Strings'));
+            $this->assertSame('0', $this->line($report, 'Menus'));
+            $this->assertSame('0', $this->line($report, 'Media'));
+            foreach ($report['lines'] as $line) {
+                $this->assertStringNotContainsString('could not be saved', $line['label']);
+                $this->assertStringNotContainsString('could not be saved', $line['value']);
+            }
+        }
+    }
+
     public function test_second_format_does_not_add_an_error_when_the_value_is_unchanged()
     {
         $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
@@ -1853,6 +1957,28 @@ echo json_encode(array(
             array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'),
             $labels
         );
+    }
+
+    /**
+     * @param array $report Formatted report.
+     */
+    private function assert_sections_are_contiguous(array $report)
+    {
+        $wanted = array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media');
+        $indexes = array();
+        foreach ($report['lines'] as $index => $line) {
+            if (in_array($line['label'], $wanted, true)) {
+                $indexes[] = $index;
+            }
+        }
+
+        $this->assertCount(6, $indexes);
+        $this->assertSame(5, $indexes[5] - $indexes[0]);
+        $labels = array();
+        foreach ($indexes as $index) {
+            $labels[] = $report['lines'][$index]['label'];
+        }
+        $this->assertSame($wanted, $labels);
     }
 
     /**
