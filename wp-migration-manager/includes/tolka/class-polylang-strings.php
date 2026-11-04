@@ -182,7 +182,7 @@ class Polylang_Strings
                 foreach ($row['translations'] as $slug => $value) {
                     $slug = $this->clean_slug($slug);
                     $text = $this->to_text($value);
-                    if ($slug === '' || $text === null || $text === '') {
+                    if ($slug === '' || !$this->has_text($text)) {
                         continue;
                     }
                     if (!isset($languages[$slug])) {
@@ -1146,23 +1146,18 @@ class Polylang_Strings
             return false;
         }
         if ($this->is_list($row)) {
-            $string = $this->to_text(isset($row[0]) ? $row[0] : null);
-            return $string === null || $string === '';
+            return !$this->has_text(isset($row[0]) ? $row[0] : null);
         }
 
-        $name = isset($row['name']) ? $this->to_text($row['name']) : '';
-        if ($name === null) {
-            $name = '';
-        }
-        if ($name !== '') {
+        $name = isset($row['name']) ? $row['name'] : '';
+        if ($this->has_text($name)) {
             return false;
         }
         foreach (array('string', 'value', 'singular', 'original', 'source') as $key) {
             if (!array_key_exists($key, $row)) {
                 continue;
             }
-            $text = $this->to_text($row[$key]);
-            if ($text !== null && $text !== '') {
+            if ($this->has_text($row[$key])) {
                 return false;
             }
         }
@@ -1221,7 +1216,7 @@ class Polylang_Strings
                 continue;
             }
             $text = $this->to_text($row[$key]);
-            if ($text !== null && $text !== '') {
+            if ($this->has_text($text)) {
                 $string = $text;
                 break;
             }
@@ -1337,7 +1332,7 @@ class Polylang_Strings
                     continue;
                 }
                 $text = $this->to_text($row[$key]);
-                if ($text !== null && $text !== '') {
+                if ($this->has_text($text)) {
                     $source = $text;
                     break;
                 }
@@ -1348,7 +1343,7 @@ class Polylang_Strings
                     continue;
                 }
                 $text = $this->translation_text($row[$key]);
-                if ($text !== null && $text !== '') {
+                if ($this->has_text($text)) {
                     $translation = $text;
                     break;
                 }
@@ -1384,7 +1379,7 @@ class Polylang_Strings
     {
         $source = $this->to_text($source);
         $translation = $this->translation_text($translation);
-        if ($source === null || $source === '' || $translation === null || $translation === '') {
+        if (!$this->has_text($source) || !$this->has_text($translation)) {
             return null;
         }
 
@@ -1405,14 +1400,38 @@ class Polylang_Strings
         if (is_array($value)) {
             foreach ($value as $part) {
                 $text = $this->translation_text($part);
-                if ($text !== null && $text !== '') {
+                if ($this->has_text($text)) {
                     return $text;
                 }
             }
             return null;
         }
 
-        return $this->to_text($value);
+        $text = $this->to_text($value);
+        return $this->has_text($text) ? $text : null;
+    }
+
+    /**
+     * Spaces, tabs, and line breaks alone are not text. Letters such as å, ä, and ö are.
+     *
+     * @param mixed $value Raw or already cleaned text.
+     * @return bool
+     */
+    protected function has_text($value)
+    {
+        $text = $this->to_text($value);
+        if (!is_string($text) || $text === '') {
+            return false;
+        }
+        $found = preg_match('/\S/u', $text);
+        if ($found === 1) {
+            return true;
+        }
+        if ($found === 0) {
+            return false;
+        }
+
+        return trim($text) !== '';
     }
 
     /**
@@ -1488,11 +1507,14 @@ class Polylang_Strings
      */
     protected function add_item(&$items, &$index, &$by_source, $name, $string, $context, array $languages, array $translations)
     {
+        if (!$this->has_text($string)) {
+            return;
+        }
         $key = $context . "\0" . $name . "\0" . $string;
         if (isset($index[$key])) {
             $position = $index[$key];
             foreach ($translations as $slug => $text) {
-                if (!is_string($text) || $text === '') {
+                if (!$this->has_text($text)) {
                     continue;
                 }
                 if (!isset($items[$position]['translations'][$slug]) || $items[$position]['translations'][$slug] === '') {
@@ -1507,7 +1529,7 @@ class Polylang_Strings
             $map[$slug] = '';
         }
         foreach ($translations as $slug => $text) {
-            if (!is_string($slug) || $slug === '' || !is_string($text) || $text === '') {
+            if (!is_string($slug) || $slug === '' || !$this->has_text($text)) {
                 continue;
             }
             $map[$slug] = $text;
