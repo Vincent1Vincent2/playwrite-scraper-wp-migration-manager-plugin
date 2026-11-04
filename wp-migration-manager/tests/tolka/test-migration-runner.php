@@ -2225,5 +2225,85 @@ namespace {
             $this->assertSame(array(), $run['languages']['items']);
             $this->assertNotSame($run['sample']['posts'][0]['content'], \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
         }
+
+        public function test_blank_section_errors_do_not_fail_a_saved_package()
+        {
+            $this->reset_doubles();
+            $original = str_repeat('m', 430);
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array(array('name' => 'English', 'slug' => 'en')),
+                    'errors' => array('', '   ', "\n"),
+                ),
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Hello',
+                        'content' => $original,
+                    )),
+                    'errors' => '',
+                ),
+            );
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => true,
+                'errors' => array(),
+            );
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($run['write']['ok']);
+            $this->assertTrue($run['ok']);
+            $this->assertSame('saved', $run['state']);
+            $this->assertSame(array(), $run['errors']);
+            $this->assertSame('', $run['detail']);
+            $this->assertSame(array(), $run['languages']['errors']);
+            $this->assertSame(array(), $run['posts']['errors']);
+            $this->assertSame('ready', $run['sections']['languages']['status']);
+            $this->assertSame(0, $run['sections']['languages']['error_count']);
+            $this->assertSame('ready', $run['sections']['posts']['status']);
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertSame(str_repeat('m', 400) . '...', $run['sample']['posts'][0]['content']);
+            $this->assertStringContainsString('Migration finished', $run['message']);
+
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array(array('name' => 'English', 'slug' => 'en')),
+                    'errors' => array(''),
+                ),
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Hello',
+                        'content' => $original,
+                    )),
+                    'errors' => array('', 'One post body could not be copied.'),
+                ),
+            );
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => true,
+                'errors' => array(),
+            );
+
+            $failed = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($failed['write']['ok']);
+            $this->assertFalse($failed['ok']);
+            $this->assertSame('partial', $failed['state']);
+            $this->assertStringNotContainsString('Migration finished', $failed['message']);
+            $this->assertContains('Posts: One post body could not be copied.', $failed['errors']);
+            $this->assertSame(
+                array('Posts: One post body could not be copied.'),
+                $failed['posts']['errors']
+            );
+            $this->assertNotContains('', $failed['errors']);
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertSame(430, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']));
+            $this->assertSame(str_repeat('m', 400) . '...', $failed['sample']['posts'][0]['content']);
+            $this->assertSame(
+                'The Tolka package was saved, but Posts could not be read. Existing Polylang data was not changed.',
+                $failed['message']
+            );
+        }
     }
 }
