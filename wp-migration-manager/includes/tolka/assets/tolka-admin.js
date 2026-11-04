@@ -317,23 +317,48 @@
       .then(
         function () {},
         function (err) {
-          showError(
-            container,
-            err && err.message
-              ? err.message
-              : "The request failed. Try again."
-          );
+          try {
+            showError(
+              container,
+              err && err.message
+                ? err.message
+                : "The request failed. Try again."
+            );
+          } catch (ignore) {
+            /* The buttons still have to accept another click. */
+          }
         }
       )
       .then(release, release);
 
     function release() {
-      requestInFlight = false;
-      setBusy(button, false);
-      if (container) {
-        container.removeAttribute("aria-busy");
+      try {
+        requestInFlight = false;
+        enableActions();
+        if (container) {
+          container.removeAttribute("aria-busy");
+        }
+      } catch (ignore) {
+        requestInFlight = false;
+        enableActions();
       }
     }
+  }
+
+  function enableActions() {
+    requestInFlight = false;
+    actionButtons().forEach(function (button) {
+      if (!button) {
+        return;
+      }
+      button.disabled = false;
+      button.removeAttribute("disabled");
+      button.removeAttribute("data-wmm-tolka-pending");
+      button.removeAttribute("data-wmm-tolka-peer-disabled");
+      button.classList.remove("wmm-tolka-is-busy");
+      button.setAttribute("aria-busy", "false");
+      restoreButtonLabel(button);
+    });
   }
 
   function setBusy(button, busy, busyLabel) {
@@ -798,6 +823,17 @@
 
     removeGenerated(container);
 
+    var wroteIds = writeSpeedIds(container, {
+      current: currentText,
+      currentMs: estimate.current_ms,
+      tolka: tolkaText,
+      tolkaMs: estimate.tolka_ms,
+      faster: faster,
+      percent: estimate.faster_percent,
+      basis: basis,
+      note: note,
+      provenance: estimate.provenance || "",
+    });
     if (
       fillSpeedPanel(
         container,
@@ -808,8 +844,20 @@
         faster,
         basis,
         note
-      )
+      ) ||
+      wroteIds
     ) {
+      writeSpeedIds(container, {
+        current: currentText,
+        currentMs: estimate.current_ms,
+        tolka: tolkaText,
+        tolkaMs: estimate.tolka_ms,
+        faster: faster,
+        percent: estimate.faster_percent,
+        basis: basis,
+        note: note,
+        provenance: estimate.provenance || "",
+      });
       return;
     }
 
@@ -1004,6 +1052,69 @@
     }
     setText(slots.scope, SPEED_SCOPE);
     reveal(slots.scope);
+  }
+
+  function writeSpeedIds(container, values) {
+    var any = false;
+    function put(id, text, after) {
+      var node = speedNode(container, id);
+      if (!node) {
+        return;
+      }
+      any = true;
+      setText(node, text == null ? "" : text);
+      if (after) {
+        after(node);
+      }
+    }
+    put("wmm-tolka-current-load", values.current, function (node) {
+      setMs(node, values.currentMs);
+    });
+    put("wmm-tolka-tolka-load", values.tolka, function (node) {
+      setMs(node, values.tolkaMs);
+    });
+    put("wmm-tolka-faster", values.faster || "", function (node) {
+      if (values.percent != null && values.percent !== "" && isFinite(Number(values.percent))) {
+        node.setAttribute("data-faster-percent", Number(values.percent).toFixed(1));
+      }
+    });
+    put("wmm-tolka-basis", values.basis ? finishSentence(values.basis) : "", function (node) {
+      if (values.basis) {
+        reveal(node);
+      }
+    });
+    put("wmm-tolka-provenance-note", values.note || "", function (node) {
+      if (values.provenance) {
+        node.setAttribute("data-provenance", values.provenance);
+      }
+      if (values.note) {
+        reveal(node);
+        var parent = node.parentNode;
+        if (
+          parent &&
+          parent.classList &&
+          (parent.classList.contains("wmm-tolka-provenance") ||
+            parent.classList.contains("wmm-tolka-provenance-note"))
+        ) {
+          reveal(parent);
+        }
+      }
+    });
+    return any;
+  }
+
+  function speedNode(container, id) {
+    if (!container || typeof document === "undefined" || !document.getElementById) {
+      return null;
+    }
+    var node = document.getElementById(id);
+    if (!node) {
+      return null;
+    }
+    if (node === container || (container.contains && container.contains(node))) {
+      return node;
+    }
+    return null;
   }
 
   function fillSpeedPanel(container, estimate, metrics, currentText, tolkaText, faster, basis, note) {
@@ -2190,7 +2301,7 @@
     if (!container || container.id !== "wmm-tolka-speed") {
       return {};
     }
-    return {
+    var slots = {
       panel: findSlot(container, ".wmm-tolka-speed-panel"),
       summary: speedSlot(container, [
         "[data-field='summary']",
@@ -2232,9 +2343,34 @@
       scope: speedSlot(container, ["[data-field='scope']", "#wmm-tolka-speed-scope"]),
       basisLabel: findSlot(container, ".wmm-tolka-speed-basis-label"),
     };
+    var current = speedNode(container, "wmm-tolka-current-load");
+    var tolka = speedNode(container, "wmm-tolka-tolka-load");
+    var faster = speedNode(container, "wmm-tolka-faster");
+    var basis = speedNode(container, "wmm-tolka-basis");
+    var note = speedNode(container, "wmm-tolka-provenance-note");
+    if (current) {
+      slots.current = current;
+    }
+    if (tolka) {
+      slots.tolka = tolka;
+    }
+    if (faster) {
+      slots.faster = faster;
+    }
+    if (basis) {
+      slots.basis = basis;
+    }
+    if (note) {
+      slots.provenance = note;
+    }
+    return slots;
   }
 
   function speedValue(container, field, id, className, extras) {
+    var named = speedNode(container, id);
+    if (named) {
+      return named;
+    }
     var selectors = ["[data-field='" + field + "']", "#" + id].concat(extras || []);
     var direct = speedSlot(container, selectors);
     if (direct) {
