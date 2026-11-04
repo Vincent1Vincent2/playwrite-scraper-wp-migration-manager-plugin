@@ -155,6 +155,230 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(2, $this->location($result, 'primary')['translations']['en']['link_count']);
     }
 
+    public function test_one_menu_assigned_to_two_locations_appears_under_both(): void
+    {
+        $items = array(
+            10 => array(
+                array(
+                    'id' => 1,
+                    'parent' => 0,
+                    'title' => 'Home',
+                    'url' => 'https://example.com/',
+                    'object' => 'custom',
+                    'object_id' => 1,
+                    'position' => 1,
+                ),
+            ),
+        );
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'default_language' => 'en',
+            'registered' => array(
+                'primary' => 'Primary',
+                'footer' => 'Footer',
+            ),
+            'menus' => array(10 => 'Shared'),
+            'slugs' => array(10 => 'shared'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 10),
+                        'footer' => array('en' => 10),
+                    ),
+                ),
+            ),
+            'items' => $items,
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $primary = $this->location($second, 'primary')['translations']['en'];
+        $footer = $this->location($second, 'footer')['translations']['en'];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(1, $counts['primary']);
+        $this->assertSame(1, $counts['footer']);
+        $this->assertSame(10, $primary['menu_id']);
+        $this->assertSame(10, $footer['menu_id']);
+        $this->assertSame('Shared', $primary['name']);
+        $this->assertSame('Shared', $footer['name']);
+        $this->assertSame('Home', $primary['items'][0]['title']);
+        $this->assertSame('https://example.com/', $primary['items'][0]['url']);
+        $this->assertSame('Home', $footer['items'][0]['title']);
+        $this->assertSame('https://example.com/', $footer['items'][0]['url']);
+
+        $from_theme = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'default_language' => 'en',
+            'menus' => array(10 => 'Shared'),
+            'term_languages' => array(10 => 'en'),
+            'theme_locations' => array(
+                'primary' => 10,
+                'footer' => 10,
+            ),
+            'items' => $items,
+        ));
+        $theme_result = $from_theme->export();
+
+        $this->assertSame(10, $this->location($theme_result, 'primary')['translations']['en']['menu_id']);
+        $this->assertSame(10, $this->location($theme_result, 'footer')['translations']['en']['menu_id']);
+        $this->assertSame('Home', $this->location($theme_result, 'footer')['translations']['en']['items'][0]['title']);
+    }
+
+    public function test_menu_item_with_empty_url_keeps_its_title(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(6 => 'Main'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 6),
+                    ),
+                ),
+            ),
+            'items' => array(
+                6 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'About',
+                        'url' => '',
+                        'object' => 'page',
+                        'object_id' => 5,
+                        'position' => 1,
+                    ),
+                    array(
+                        'id' => 2,
+                        'parent' => 1,
+                        'title' => 'Team',
+                        'url' => '   ',
+                        'object' => 'custom',
+                        'object_id' => 0,
+                        'position' => 2,
+                    ),
+                ),
+            ),
+            'navigations' => array(
+                array(
+                    'id' => 50,
+                    'name' => 'Header',
+                    'slug' => 'header',
+                    'language' => 'en',
+                    'content' => '<!-- wp:navigation-link {"label":"Om oss","url":""} /-->',
+                ),
+            ),
+        ));
+
+        $items = $this->location($fixture->export(), 'primary')['translations']['en']['items'];
+        $navigation = $this->location($fixture->export(), 'navigation:header')['translations']['en']['items'][0];
+
+        $this->assertCount(1, $items);
+        $this->assertSame('About', $items[0]['title']);
+        $this->assertSame('', $items[0]['url']);
+        $this->assertSame('page', $items[0]['object']);
+        $this->assertSame(5, $items[0]['object_id']);
+        $this->assertSame('Team', $items[0]['children'][0]['title']);
+        $this->assertSame('', $items[0]['children'][0]['url']);
+        $this->assertSame('custom', $items[0]['children'][0]['object']);
+        $this->assertSame('Om oss', $navigation['title']);
+        $this->assertSame('', $navigation['url']);
+    }
+
+    public function test_database_menu_on_two_locations_keeps_an_empty_url(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->menu_posts[10] = array(
+            array(
+                'id' => 8,
+                'title' => 'About',
+                'attr_title' => '',
+                'description' => '',
+                'position' => 1,
+            ),
+            array(
+                'id' => 9,
+                'title' => 'Team',
+                'attr_title' => '',
+                'description' => '',
+                'position' => 2,
+            ),
+        );
+        $database->meta[8] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'page',
+            '_menu_item_object_id' => '5',
+            '_menu_item_menu_item_parent' => '0',
+            '_menu_item_url' => '',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[9] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '0',
+            '_menu_item_menu_item_parent' => '8',
+            '_menu_item_url' => '',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'en',
+            'nav_menus' => array(
+                'flavor' => array(
+                    'primary' => array('en' => 10),
+                    'footer' => array('en' => 10),
+                ),
+            ),
+        ));
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $menus = new Polylang_Menus();
+            $first = $menus->export();
+            $second = $menus->export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $primary = $this->location($second, 'primary')['translations']['en'];
+        $footer = $this->location($second, 'footer')['translations']['en'];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(1, $counts['primary']);
+        $this->assertSame(1, $counts['footer']);
+        $this->assertSame(10, $primary['menu_id']);
+        $this->assertSame(10, $footer['menu_id']);
+        $this->assertSame('About', $primary['items'][0]['title']);
+        $this->assertSame('', $primary['items'][0]['url']);
+        $this->assertSame('Team', $primary['items'][0]['children'][0]['title']);
+        $this->assertSame('', $primary['items'][0]['children'][0]['url']);
+        $this->assertSame('About', $footer['items'][0]['title']);
+        $this->assertSame('', $footer['items'][0]['url']);
+        $this->assertSame('Team', $footer['items'][0]['children'][0]['title']);
+        $this->assertSame('', $footer['items'][0]['children'][0]['url']);
+    }
+
     public function test_export_is_callable_on_an_instance(): void
     {
         $menus = new Polylang_Menus();
