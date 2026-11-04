@@ -189,8 +189,13 @@ class Speed_Estimate
         $tolka = max(1, $tolka);
 
         $faster_percent = round((($current - $tolka) / $current) * 100, 1);
-        if (!is_finite($faster_percent)) {
-            return self::too_large($benchmarks);
+        if (!is_finite($faster_percent) || $tolka > $current || $faster_percent > 100) {
+            return self::unavailable(
+                $benchmarks,
+                self::unavailable_message(array(
+                    self::translate('The calculated Tolka time does not fit the measured load.'),
+                ))
+            );
         }
 
         return self::result(
