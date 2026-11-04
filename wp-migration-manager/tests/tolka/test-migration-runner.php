@@ -2582,5 +2582,59 @@ namespace {
             $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][20]['content']);
             $this->assertSame(460, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][20]['content']));
         }
+
+        public function test_empty_counts_are_zero_and_twenty_five_items_sample_twenty()
+        {
+            $this->reset_doubles();
+            $full = 'FULL-TEXT-' . str_repeat('d', 500);
+            $posts = array();
+            for ($i = 0; $i < 25; $i++) {
+                $posts[] = array(
+                    'title' => 'Post ' . $i,
+                    'content' => ($i === 24) ? $full : 'body ' . $i,
+                );
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array('items' => $posts, 'errors' => array()),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            foreach (array('languages', 'terms', 'strings', 'menus', 'media') as $section) {
+                $this->assertIsInt($preview['counts'][$section]);
+                $this->assertSame(0, $preview['counts'][$section]);
+                $this->assertSame(0, $preview['sections'][$section]['count']);
+                $this->assertCount(0, $preview['sample'][$section]);
+            }
+            $this->assertIsInt($preview['counts']['posts']);
+            $this->assertSame(25, $preview['counts']['posts']);
+            $this->assertSame(25, $preview['sections']['posts']['count']);
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertSame('Post 0', $preview['sample']['posts'][0]['title']);
+            $this->assertSame('Post 19', $preview['sample']['posts'][19]['title']);
+            $titles = array();
+            foreach ($preview['sample']['posts'] as $item) {
+                $titles[] = $item['title'];
+            }
+            $this->assertNotContains('Post 20', $titles);
+            $this->assertNotContains('Post 24', $titles);
+            $this->assertStringNotContainsString('FULL-TEXT-', json_encode($preview['sample']));
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($run['ok']);
+            foreach (array('languages', 'terms', 'strings', 'menus', 'media') as $section) {
+                $this->assertIsInt($run['counts'][$section]);
+                $this->assertSame(0, $run['counts'][$section]);
+                $this->assertCount(0, $run['sample'][$section]);
+            }
+            $this->assertIsInt($run['counts']['posts']);
+            $this->assertSame(25, $run['counts']['posts']);
+            $this->assertCount(20, $run['sample']['posts']);
+            $this->assertCount(25, \WMM\Tolka\RunnerTest\Writer::$package['posts']);
+            $this->assertSame($full, \WMM\Tolka\RunnerTest\Writer::$package['posts'][24]['content']);
+            $this->assertSame(510, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][24]['content']));
+        }
     }
 }

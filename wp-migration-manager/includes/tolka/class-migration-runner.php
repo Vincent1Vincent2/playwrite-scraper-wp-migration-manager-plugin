@@ -480,6 +480,11 @@ class Migration_Runner
                 $presented[] = self::present_item($item, 0);
                 $labels[] = self::item_label($section, $item);
             }
+            $limit = (int) self::SAMPLE_LIMIT;
+            if (count($presented) > $limit) {
+                $presented = array_slice($presented, 0, $limit);
+                $labels = array_slice($labels, 0, $limit);
+            }
 
             $class = self::class_for($map, $section);
             $is_missing = ($class !== '' && in_array($class, $missing, true));
