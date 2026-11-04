@@ -798,6 +798,27 @@ PHP
         $this->assertFalse($result['items'][1]['is_default']);
     }
 
+    public function test_an_empty_default_language_is_ready_for_the_preview()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 5),
+            $this->language_term(6, 'Fran&ccedil;ais', 'FR', 'fr-FR', 'FR', 2, 0),
+        ), ' FR ');
+
+        $result = Polylang_Languages::export();
+        $french = $result['items'][0];
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('fr', $french['slug']);
+        $this->assertSame('Français', $french['name']);
+        $this->assertSame('fr_FR', $french['locale']);
+        $this->assertSame('fr', $french['flag']);
+        $this->assertSame(6, $french['term_id']);
+        $this->assertTrue($french['is_default']);
+        $this->assertSame('en', $result['items'][1]['slug']);
+        $this->assertFalse($result['items'][1]['is_default']);
+    }
+
     public function test_an_empty_language_can_be_the_default()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
@@ -1123,6 +1144,47 @@ PHP
         $this->assertTrue($by_slug['no']['is_default']);
         $this->assertFalse($by_slug['en']['is_default']);
         $this->assertSame('nb_NO', $by_slug['no']['locale']);
+    }
+
+    public function test_a_failed_api_and_database_tell_the_owner_nothing_was_changed()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    throw new RuntimeException('Polylang is not ready.');
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return null;
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return '';
+    }
+};
+PHP
+        );
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            'Polylang languages could not be read. Nothing was changed. Preview the migration again.',
+            $result['errors'][0]
+        );
     }
 
     public function test_api_failure_still_reads_stored_languages()
