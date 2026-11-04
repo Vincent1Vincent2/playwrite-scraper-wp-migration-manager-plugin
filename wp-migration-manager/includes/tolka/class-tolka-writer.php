@@ -237,6 +237,9 @@ class Tolka_Writer
     private static function operations(array $items, $kind, array &$errors, &$hidden)
     {
         $ops = array();
+        if ($kind !== 'post' && $kind !== 'term') {
+            return $ops;
+        }
         $copy = self::kind_copy($kind);
 
         foreach ($items as $item) {
