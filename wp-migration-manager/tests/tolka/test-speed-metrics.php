@@ -402,6 +402,16 @@ HTML;
         $this->assertFalse($ordinary['has_polylang_switcher']);
         $this->assertSame(0, $ordinary['hreflang_count']);
         $this->assertSame(1, $ordinary['language_count']);
+
+        $hidden = $this->analyze('<link rel="alternate" hreflang="en" href="/"><noscript><ul>' . $items . '</ul></noscript>');
+        $this->assertFalse($hidden['has_polylang_switcher']);
+        $this->assertSame(1, $hidden['hreflang_count']);
+        $this->assertSame(1, $hidden['language_count']);
+
+        $both = $this->analyze('<link rel="alternate" hreflang="sv" href="/sv/"><ul>' . $items . '</ul><noscript><ul>' . $items . '</ul></noscript>');
+        $this->assertTrue($both['has_polylang_switcher']);
+        $this->assertSame(1, $both['hreflang_count']);
+        $this->assertSame(1, $both['language_count']);
     }
 
     public function test_menu_lang_item_counts_once_not_per_item()
