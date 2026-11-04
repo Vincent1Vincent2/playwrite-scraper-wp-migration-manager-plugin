@@ -309,6 +309,33 @@ PHP
         $this->assertTrue($by_slug['en']['is_default']);
     }
 
+    public function test_an_internal_slug_is_not_used_as_a_locale()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'pll_en', 'us', 0, 1),
+            $this->language_term(3, 'Polski', 'pl', 'pl_PL', 'pl', 1, 0),
+        ), 'en');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame('', $by_slug['en']['locale']);
+        $this->assertSame('us', $by_slug['en']['flag']);
+        $this->assertSame('pl_PL', $by_slug['pl']['locale']);
+        $this->assertSame('pl', $by_slug['pl']['flag']);
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+
+        $broken = $this->database_with_languages(array(
+            $this->language_term(12, 'Broken', 'xx', 'en_GB', 'pll_en', 0, 1),
+        ), 'xx');
+        $GLOBALS['wpdb'] = $broken;
+        $broken_result = Polylang_Languages::export();
+
+        $this->assertSame('xx', $broken_result['items'][0]['slug']);
+        $this->assertSame('', $broken_result['items'][0]['flag']);
+        $this->assertSame('en_GB', $broken_result['items'][0]['locale']);
+    }
+
     public function test_a_blank_entity_name_uses_the_language_slug()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
