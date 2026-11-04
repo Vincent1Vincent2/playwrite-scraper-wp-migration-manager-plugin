@@ -654,6 +654,35 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(0, $result['items'][0]['translations']['sv']['parent']);
     }
 
+    public function test_blank_and_fractional_parents_become_zero(): void
+    {
+        $exporter = new Polylang_Terms(function () {
+            return array(
+                'state' => 'ok',
+                'default_lang' => 'en',
+                'groups' => array(
+                    array(
+                        'taxonomy' => 'category',
+                        'translations' => array(
+                            'en' => array('id' => 7, 'name' => 'Kept', 'slug' => 'kept', 'parent' => '7'),
+                            'de' => array('id' => 8, 'name' => 'Blank', 'slug' => 'blank', 'parent' => ''),
+                            'fr' => array('id' => 9, 'name' => 'Flag', 'slug' => 'flag', 'parent' => true),
+                            'es' => array('id' => 10, 'name' => 'Fraction', 'slug' => 'fraction', 'parent' => 4.5),
+                        ),
+                    ),
+                ),
+            );
+        });
+
+        $result = $exporter->export();
+        $translations = $result['items'][0]['translations'];
+
+        $this->assertSame(7, $translations['en']['parent']);
+        $this->assertSame(0, $translations['de']['parent']);
+        $this->assertSame(0, $translations['fr']['parent']);
+        $this->assertSame(0, $translations['es']['parent']);
+    }
+
     public function test_a_term_with_no_translation_is_exported_on_its_own(): void
     {
         if (!$this->canUseDatabaseStub()) {
