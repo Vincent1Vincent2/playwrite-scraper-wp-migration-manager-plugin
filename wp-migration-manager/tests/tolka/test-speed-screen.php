@@ -262,7 +262,10 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame('51.1% faster', $this->text($html, 'wmm-tolka-faster'));
         $this->assertSame('51.1', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
         $this->assertSame('1842', $document->getElementById('wmm-tolka-current-load')->getAttribute('data-ms'));
-        $this->assertSame('wmm-tolka-speed-scope', $document->getElementById('wmm-tolka-faster')->getAttribute('aria-describedby'));
+        $this->assertSame(
+            'wmm-tolka-speed-scope wmm-tolka-provenance-note',
+            $document->getElementById('wmm-tolka-faster')->getAttribute('aria-describedby')
+        );
         $this->assertSame(
             'The estimated Tolka load is 942 ms shorter than the measured load.',
             $this->text($html, 'wmm-tolka-speed-savings')

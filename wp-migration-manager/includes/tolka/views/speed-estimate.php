@@ -324,6 +324,14 @@ $wmm_tolka_speed_summary_class = 'wmm-tolka-speed-summary';
 if ('empty' === $wmm_tolka_speed_view['state']) {
     $wmm_tolka_speed_summary_class .= ' description';
 }
+
+$wmm_tolka_speed_described_by = array();
+if ($wmm_tolka_speed_view['show_scope']) {
+    $wmm_tolka_speed_described_by[] = 'wmm-tolka-speed-scope';
+}
+if ($wmm_tolka_speed_view['show_note']) {
+    $wmm_tolka_speed_described_by[] = 'wmm-tolka-provenance-note';
+}
 ?>
 
 <div
@@ -345,7 +353,7 @@ if ('empty' === $wmm_tolka_speed_view['state']) {
     <dl class="wmm-tolka-speed-figures">
         <div class="wmm-tolka-speed-figure">
             <dt class="wmm-tolka-speed-label" id="wmm-tolka-faster-label"><?php esc_html_e('Percent faster', 'migration-manager'); ?></dt>
-            <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-faster" id="wmm-tolka-faster" data-wmm-tolka="faster" data-field="faster_label" data-faster-percent="<?php echo esc_attr($wmm_tolka_speed_view['faster_percent']); ?>" aria-labelledby="wmm-tolka-faster-label"<?php echo $wmm_tolka_speed_view['show_scope'] ? ' aria-describedby="wmm-tolka-speed-scope"' : ''; ?>>
+            <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-faster" id="wmm-tolka-faster" data-wmm-tolka="faster" data-field="faster_label" data-faster-percent="<?php echo esc_attr($wmm_tolka_speed_view['faster_percent']); ?>" aria-labelledby="wmm-tolka-faster-label"<?php echo array() !== $wmm_tolka_speed_described_by ? ' aria-describedby="' . esc_attr(implode(' ', $wmm_tolka_speed_described_by)) . '"' : ''; ?>>
                 <?php echo esc_html($wmm_tolka_speed_view['faster']); ?>
             </dd>
         </div>
@@ -405,5 +413,6 @@ unset(
     $wmm_tolka_speed_saved,
     $wmm_tolka_speed_detail,
     $wmm_tolka_speed_classes,
-    $wmm_tolka_speed_summary_class
+    $wmm_tolka_speed_summary_class,
+    $wmm_tolka_speed_described_by
 );
