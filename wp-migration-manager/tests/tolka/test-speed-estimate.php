@@ -2018,6 +2018,56 @@ class Test_Speed_Estimate extends TestCase
         }
     }
 
+    public function test_shipped_file_provenance_is_the_contract_sentence()
+    {
+        $note = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
+        $decoded = json_decode((string) file_get_contents(self::benchmarksPath()), true);
+        $this->assertIsArray($decoded);
+        $this->assertSame('placeholder', $decoded['provenance']);
+        $this->assertSame($note, $decoded['provenance_note']);
+
+        $first = Speed_Estimate::benchmarks();
+        $second = Speed_Estimate::benchmarks();
+        $this->assertSame('placeholder', $first['provenance']);
+        $this->assertSame($note, $first['provenance_note']);
+        $this->assertSame($first['provenance'], $second['provenance']);
+        $this->assertSame($first['provenance_note'], $second['provenance_note']);
+        $this->assertSame(35, $second['polylang_extra_ms_per_language']);
+        $this->assertSame(25, $second['polylang_switcher_ms']);
+        $this->assertSame(8, $second['polylang_extra_ms_per_script']);
+        $this->assertSame(6, $second['tolka_ms_per_language']);
+        $this->assertSame(0.7, $second['max_overhead_ratio']);
+
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $first
+        );
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame('placeholder', $estimate['provenance']);
+        $this->assertSame($note, $estimate['provenance_note']);
+        $this->assertSame(14.4, $estimate['faster_percent']);
+        $this->assertSame('14.4% faster', $estimate['faster_label']);
+        $this->assertArrayNotHasKey('provenance_note', $estimate['coefficients']);
+
+        $zero = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 0),
+            array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $second
+        );
+        $this->assertTrue($zero['ok']);
+        $this->assertSame(1, $zero['current_ms']);
+        $this->assertSame(0.0, $zero['faster_percent']);
+        $this->assertSame('0.0% faster', $zero['faster_label']);
+        $this->assertSame('placeholder', $zero['provenance']);
+        $this->assertSame($note, $zero['provenance_note']);
+        $third = Speed_Estimate::benchmarks();
+        $this->assertSame('placeholder', $third['provenance']);
+        $this->assertSame($note, $third['provenance_note']);
+        $this->assertSame(35, $third['polylang_extra_ms_per_language']);
+        $this->assertSame(0.7, $third['max_overhead_ratio']);
+    }
+
     public function test_failure_sentences_use_the_plugin_text_domain()
     {
         $script = '<?php' . "\n"
@@ -2030,9 +2080,11 @@ class Test_Speed_Estimate extends TestCase
             . '}' . "\n"
             . 'define("ABSPATH", __DIR__);' . "\n"
             . 'require ' . var_export(self::classPath(), true) . ';' . "\n"
+            . '$loaded = \\WMM\\Tolka\\Speed_Estimate::benchmarks();' . "\n"
             . '$estimate = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false, "total_ms" => 5000), array(), array());' . "\n"
             . '$with_url = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false, "url" => "https://example.com/start"), array(), array());' . "\n"
-            . 'echo $estimate["error"], "\n", $with_url["error"], "\n", $estimate["basis"], "\n", $estimate["faster_label"], "\n", $estimate["faster_percent"], "\n", $estimate["current_ms"];' . "\n";
+            . '$copied = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => true, "total_ms" => 1000), array("language_count" => 1, "script_count" => 0, "has_polylang_switcher" => false), $loaded);' . "\n"
+            . 'echo $estimate["error"], "\n", $with_url["error"], "\n", $estimate["basis"], "\n", $estimate["faster_label"], "\n", $estimate["faster_percent"], "\n", $estimate["current_ms"], "\n", $loaded["provenance"], "\n", $loaded["provenance_note"], "\n", $copied["provenance"], "\n", $copied["provenance_note"], "\n", $copied["faster_label"];' . "\n";
 
         $path = tempnam(sys_get_temp_dir(), 'tolka-i18n-');
         file_put_contents($path, $script);
@@ -2049,7 +2101,12 @@ class Test_Speed_Estimate extends TestCase
             . "Measured page load plus coefficients from benchmarks.json\n"
             . "\n"
             . "0\n"
-            . '0',
+            . "0\n"
+            . "placeholder\n"
+            . "Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.\n"
+            . "placeholder\n"
+            . "Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.\n"
+            . '2.9% faster',
             $text
         );
     }

@@ -60,9 +60,11 @@ class Speed_Estimate
     /**
      * Read includes/tolka/data/benchmarks.json.
      *
-     * Returns an empty array when the file is missing, unreadable, or not
-     * a JSON object. Callers then get a failure from project() instead of
-     * a made-up percent.
+     * The shipped file uses provenance "placeholder" and the contract
+     * provenance_note. Those strings are returned unchanged. Returns an
+     * empty array when the file is missing, unreadable, or not a JSON
+     * object. Callers then get a failure from project() instead of a
+     * made-up percent.
      *
      * @return array
      */
