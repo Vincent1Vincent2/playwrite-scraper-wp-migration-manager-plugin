@@ -1593,9 +1593,6 @@ class Polylang_Strings
      */
     protected function clean_slug($slug)
     {
-        if (is_int($slug) || is_float($slug)) {
-            $slug = (string) $slug;
-        }
         if (!is_string($slug)) {
             return '';
         }
@@ -1607,6 +1604,9 @@ class Polylang_Strings
         }
         $slug = trim($slug);
         if (!$this->has_text($slug)) {
+            return '';
+        }
+        if (preg_match('/\p{L}/u', $slug) !== 1) {
             return '';
         }
 
