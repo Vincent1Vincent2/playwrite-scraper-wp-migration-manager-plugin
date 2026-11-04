@@ -269,6 +269,7 @@ class Polylang_Media
         if (!is_array($ids)) {
             return null;
         }
+        $this->prime_attachment_cache($ids);
 
         $rows = array();
         $language_rows = array();
