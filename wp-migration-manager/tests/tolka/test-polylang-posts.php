@@ -321,6 +321,17 @@ class Tolka_Posts_Fake_Db
         if ($this->fail || $this->fail_results) {
             return null;
         }
+        if (strpos($sql, 'SELECT ID, post_parent FROM') !== false) {
+            if (!preg_match('/ID = (\d+)/', $sql, $match)) {
+                return array();
+            }
+            $id = (int) $match[1];
+            if (!isset($this->posts_rows[$id])) {
+                return array();
+            }
+            $parent = isset($this->posts_rows[$id]['post_parent']) ? (int) $this->posts_rows[$id]['post_parent'] : 0;
+            return array(array('ID' => $id, 'post_parent' => $parent));
+        }
         if (strpos($sql, 'SELECT ID, post_type FROM') !== false) {
             return $this->type_rows($sql);
         }
@@ -603,6 +614,109 @@ class Polylang_Posts_Test extends TestCase
         $this->assertIsString($encoded);
         $this->assertStringNotContainsString('Older text', $encoded);
         $this->assertStringNotContainsString('Orphan autosave', $encoded);
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'post_content') !== false) {
+                $this->assertStringNotContainsString('41', $sql);
+                $this->assertStringNotContainsString('42', $sql);
+            }
+        }
+    }
+
+    public function test_revision_group_exports_the_draft_parent_instead()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 24,
+                'description' => serialize(array('en' => 9)),
+            ),
+        );
+        $revision = $this->db_post(9, 'inherit', 'Autosave', '8-revision-v1', 'revision', '', 'Half a sentence');
+        $revision['post_parent'] = 8;
+        $fake->posts_rows = array(
+            8 => $this->db_post(8, 'draft', 'Notes', '', 'post', '', 'Still writing'),
+            9 => $revision,
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array('post:8'), $this->groups($result));
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('', $result['items'][0]['translations']['en']['slug']);
+        $this->assertSame('Still writing', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame(
+            array('Post 9 is a revision of post 8. The export uses post 8 instead.'),
+            $result['errors']
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Half a sentence', $encoded);
+    }
+
+    public function test_draft_is_kept_when_its_autosave_also_has_a_language()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->languages = array(8 => 'en', 9 => 'en');
+        $fake->posts_rows = array(
+            8 => $this->db_post(8, 'draft', 'Notes', '', 'post', '', 'Still writing'),
+            9 => $this->db_post(9, 'inherit', 'Notes autosave', '8-revision-v1', 'revision', '', 'Half a sentence'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('post:8'), $this->groups($result));
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('Still writing', $result['items'][0]['translations']['en']['content']);
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Half a sentence', $encoded);
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'post_content') !== false) {
+                $this->assertDoesNotMatchRegularExpression('/\b9\b/', $sql);
+            }
+        }
+    }
+
+    public function test_revision_in_the_default_language_does_not_name_the_group()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 23,
+                'description' => serialize(array('en' => 4, 'de' => 9)),
+            ),
+        );
+        $fake->languages = array(4 => 'en', 9 => 'de');
+        $fake->posts_rows = array(
+            4 => $this->db_post(4, 'inherit', 'Autosave', '4-revision-v1', 'revision', '', 'Stale English'),
+            9 => $this->db_post(9, 'draft', 'Entwurf', '', 'post', '', 'Deutscher Entwurf'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array('post:9'), $this->groups($result));
+        $this->assertSame(array('de'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
+        $this->assertSame('Deutscher Entwurf', $result['items'][0]['translations']['de']['content']);
+        $this->assertSame(
+            array('Post 4 is a revision, so it was left out of translation group post:9.'),
+            $result['errors']
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Stale English', $encoded);
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'post_content') !== false) {
+                $this->assertDoesNotMatchRegularExpression('/\b4\b/', $sql);
+            }
+        }
     }
 
     public function test_inactive_polylang_returns_an_empty_list_and_a_sentence()
