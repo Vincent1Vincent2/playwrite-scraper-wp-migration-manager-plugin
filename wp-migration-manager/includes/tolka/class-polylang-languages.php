@@ -709,7 +709,7 @@ class Polylang_Languages
      *
      * A default slug that has no language row is not invented. Matching
      * ignores case, so a saved value of "NO" still marks "no". One language
-     * on its own is the default when Polylang did not record a choice.
+     * on its own is the default, including when the saved choice is missing.
      *
      * @param array $items Language rows.
      * @param string $default Default language slug.
@@ -728,6 +728,10 @@ class Polylang_Languages
                     $canonical = $item['slug'];
                     break;
                 }
+            }
+            if ($canonical === '' && count($items) === 1) {
+                $items[0]['is_default'] = true;
+                return $this->default_first($items);
             }
             foreach ($items as $index => $item) {
                 $items[$index]['is_default'] = ($canonical !== '' && $item['slug'] === $canonical);
@@ -866,9 +870,14 @@ class Polylang_Languages
      */
     private function quiet_db($wpdb, $callback)
     {
-        $previous = null;
+        $previous_show = null;
+        $previous_suppress = null;
+        $had_suppress = is_object($wpdb) && isset($wpdb->suppress_errors);
+        if ($had_suppress) {
+            $previous_suppress = $wpdb->suppress_errors;
+        }
         if (is_object($wpdb) && method_exists($wpdb, 'hide_errors')) {
-            $previous = $wpdb->hide_errors();
+            $previous_show = $wpdb->hide_errors();
         }
 
         try {
@@ -876,7 +885,11 @@ class Polylang_Languages
         } catch (\Throwable $throwable) {
             return null;
         } finally {
-            if ($previous && method_exists($wpdb, 'show_errors')) {
+            // hide_errors() also suppresses later queries. Put that back.
+            if ($had_suppress) {
+                $wpdb->suppress_errors = $previous_suppress;
+            }
+            if ($previous_show && method_exists($wpdb, 'show_errors')) {
                 $wpdb->show_errors();
             }
         }
@@ -898,6 +911,9 @@ class Polylang_Languages
     private function make_item($slug, $name, $locale, $is_default, $term_id, $flag)
     {
         $slug = $this->string_value($slug);
+        if (preg_match('/^[A-Za-z0-9_-]+$/', $slug) === 1) {
+            $slug = strtolower($slug);
+        }
         $name = $this->plain_name($name);
         if ($name === '') {
             $name = $slug;
@@ -911,8 +927,8 @@ class Polylang_Languages
         return array(
             'slug' => $slug,
             'name' => $name,
-            'locale' => $this->string_value($locale),
-            'is_default' => ($is_default === true || $is_default === 1 || $is_default === '1'),
+            'locale' => $this->plain_locale($locale),
+            'is_default' => $this->is_truthy_flag($is_default),
             'term_id' => $term_id,
             'flag' => $this->string_value($flag),
         );
@@ -941,7 +957,7 @@ class Polylang_Languages
         }
 
         $value = trim($value);
-        if ($value === '') {
+        if ($value === '' || strlen($value) > 100000) {
             return array();
         }
 
@@ -1042,6 +1058,27 @@ class Polylang_Languages
         }
 
         return null;
+    }
+
+    /**
+     * WordPress locale, or an empty string when the value is not a locale.
+     *
+     * Hyphens are stored as underscores, which is the form WordPress uses.
+     *
+     * @param mixed $locale Raw locale.
+     * @return string
+     */
+    private function plain_locale($locale)
+    {
+        $locale = str_replace('-', '_', $this->string_value($locale));
+        if ($locale === '') {
+            return '';
+        }
+        if (preg_match('/^[A-Za-z]{2,3}(?:_[A-Za-z0-9]+)*$/', $locale) !== 1) {
+            return '';
+        }
+
+        return $locale;
     }
 
     /**

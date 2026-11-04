@@ -218,6 +218,22 @@ PHP
         $this->assertSame('eco', $result['items'][1]['slug']);
     }
 
+    public function test_locales_use_underscores_and_garbage_locales_are_dropped()
+    {
+        $hyphen = $this->language_term(4, 'English', 'en', 'en-US', 'us', 0, 1);
+        $garbage = $this->language_term(8, 'Svenska', 'sv', '<script>', 'se', 1, 0);
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($hyphen, $garbage), 'en');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame('en_US', $by_slug['en']['locale']);
+        $this->assertSame('', $by_slug['sv']['locale']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertSame('se', $by_slug['sv']['flag']);
+        $this->assertTrue($by_slug['en']['is_default']);
+    }
+
     public function test_a_blank_entity_name_uses_the_language_slug()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
@@ -341,6 +357,39 @@ PHP
         $this->assertFalse($result['items'][1]['is_default']);
     }
 
+    public function test_upper_and_lower_case_slugs_are_one_language()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'EN', 'en_US', 'us', 0, 1),
+            $this->language_term(9, 'English', 'en', 'en_GB', 'gb', 1, 0),
+        ), 'EN');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+    }
+
+    public function test_the_only_language_is_default_when_the_saved_choice_is_missing()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 0),
+        ), 'de');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertArrayNotHasKey('de', $this->index_by_slug($result['items']));
+    }
+
     public function test_configured_default_wins_and_a_missing_default_is_not_invented()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
@@ -355,6 +404,22 @@ PHP
         $this->assertFalse($by_slug['en']['is_default']);
         $this->assertFalse($by_slug['fr']['is_default']);
         $this->assertArrayNotHasKey('de', $by_slug);
+    }
+
+    public function test_a_huge_description_is_ignored()
+    {
+        $english = $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 1);
+        $english->description = 'a:' . str_repeat('x', 100001);
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertSame('', $result['items'][0]['locale']);
+        $this->assertSame('', $result['items'][0]['flag']);
+        $this->assertTrue($result['items'][0]['is_default']);
     }
 
     public function test_broken_rows_do_not_throw()
@@ -508,6 +573,7 @@ PHP
         $this->assertSame(array(), $result['errors']);
         $this->assertSame('en', $result['items'][0]['slug']);
         $this->assertTrue($db->show_errors);
+        $this->assertFalse($db->suppress_errors);
         $this->assertGreaterThan(0, $db->hidden_errors);
     }
 
@@ -1948,6 +2014,8 @@ class Polylang_Languages_Test_Db
 
     public $show_errors = true;
 
+    public $suppress_errors = false;
+
     public $fail_if_errors_visible = false;
 
     public $hidden_errors = 0;
@@ -1957,6 +2025,7 @@ class Polylang_Languages_Test_Db
         $this->hidden_errors++;
         $previous = $this->show_errors;
         $this->show_errors = false;
+        $this->suppress_errors = true;
 
         return $previous;
     }
