@@ -798,6 +798,27 @@ PHP
         $this->assertFalse($result['items'][1]['is_default']);
     }
 
+    public function test_an_empty_default_language_is_ready_for_the_preview()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 5),
+            $this->language_term(6, 'Fran&ccedil;ais', 'FR', 'fr-FR', 'FR', 2, 0),
+        ), ' FR ');
+
+        $result = Polylang_Languages::export();
+        $french = $result['items'][0];
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('fr', $french['slug']);
+        $this->assertSame('Français', $french['name']);
+        $this->assertSame('fr_FR', $french['locale']);
+        $this->assertSame('fr', $french['flag']);
+        $this->assertSame(6, $french['term_id']);
+        $this->assertTrue($french['is_default']);
+        $this->assertSame('en', $result['items'][1]['slug']);
+        $this->assertFalse($result['items'][1]['is_default']);
+    }
+
     public function test_an_empty_language_can_be_the_default()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
