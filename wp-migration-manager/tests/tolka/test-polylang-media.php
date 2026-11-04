@@ -955,7 +955,7 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame(2, $result['items'][0]['attachment_id']);
         $this->assertSame(array(
             'en' => 'English',
-            'zh_CN' => 'Chinese',
+            'zh_cn' => 'Chinese',
         ), $result['items'][0]['title']);
     }
 
@@ -1272,7 +1272,70 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('', $this->call('language_slug', array('9en')));
         $this->assertSame('', $this->call('language_slug', array(null)));
         $this->assertSame('pt-br', $this->call('language_slug', array(' pt-br ')));
-        $this->assertSame('zh_CN', $this->call('language_slug', array('zh_CN')));
+        $this->assertSame('zh_cn', $this->call('language_slug', array('zh_CN')));
+        $this->assertSame('sv', $this->call('language_slug', array('SV')));
+        $this->assertSame('sv', $this->call('language_slug', array('sv')));
+        $this->assertSame('', $this->call('language_slug', array('12')));
+        $this->assertSame('', $this->call('language_slug', array(' 12 ')));
+        $this->assertSame('', $this->call('language_slug', array(12)));
+        $this->assertSame('', $this->call('language_slug', array('12sv')));
+    }
+
+    public function test_sv_and_uppercase_sv_share_one_lowercase_key()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'SV'),
+            array('id' => 11, 'lang' => 'sv'),
+        ), array(10, 11), array('SV'), 'sv', array(
+            10 => array('file' => '2024/05/skargard.jpg', 'alt' => 'Övre', 'title' => 'Övre'),
+            11 => array('file' => '2024/05/skargard.jpg', 'alt' => '', 'title' => 'Nedre'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(array('sv'), array_keys($result['items'][0]['alt']));
+        $this->assertSame(array('sv'), array_keys($result['items'][0]['title']));
+        $this->assertSame('Övre', $result['items'][0]['alt']['sv']);
+        $this->assertSame('Övre', $result['items'][0]['title']['sv']);
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['alt']);
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['title']);
+    }
+
+    public function test_numeric_language_id_is_not_a_map_key()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array(12 => 10, '12' => 11, 'SV' => 10),
+                'members' => array(
+                    10 => 'sv',
+                    11 => '12',
+                ),
+            ),
+        ), array(), array(10, 11), array('sv'), 'sv', array(
+            10 => array('file' => '2024/05/a.jpg', 'alt' => 'Å', 'title' => 'Ä'),
+            11 => array('file' => '2024/05/b.jpg', 'alt' => 'Ö', 'title' => 'Ö'),
+        ));
+
+        $this->assertNotEmpty($result['items']);
+        foreach ($result['items'] as $item) {
+            foreach (array('alt', 'title') as $field) {
+                foreach (array_keys($item[$field]) as $key) {
+                    $this->assertIsString($key);
+                    $this->assertSame(strtolower($key), $key);
+                    $this->assertFalse(ctype_digit($key));
+                    $this->assertNotSame('12', $key);
+                }
+            }
+        }
+        $by_id = array();
+        foreach ($result['items'] as $item) {
+            $by_id[$item['attachment_id']] = $item;
+        }
+        $this->assertSame(array('sv' => 'Å'), $by_id[10]['alt']);
+        $this->assertArrayNotHasKey(12, $by_id[10]['alt']);
+        if (isset($by_id[11])) {
+            $this->assertArrayNotHasKey('12', $by_id[11]['alt']);
+            $this->assertArrayNotHasKey(12, $by_id[11]['title']);
+        }
     }
 
     public function test_garbage_stored_values_do_not_throw()

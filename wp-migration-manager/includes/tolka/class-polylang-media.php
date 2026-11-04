@@ -1356,12 +1356,8 @@ class Polylang_Media
         $clean_alt = array();
         $clean_title = array();
         foreach ($slugs as $slug) {
-            $clean_alt[$slug] = (is_array($alt) && array_key_exists($slug, $alt))
-                ? $this->string_value($alt[$slug])
-                : '';
-            $clean_title[$slug] = (is_array($title) && array_key_exists($slug, $title))
-                ? $this->string_value($title[$slug])
-                : '';
+            $clean_alt[$slug] = $this->text_for_slug($alt, $slug);
+            $clean_title[$slug] = $this->text_for_slug($title, $slug);
         }
 
         $attachment_id = (int) $attachment_id;
@@ -1375,6 +1371,37 @@ class Polylang_Media
             'alt' => $clean_alt,
             'title' => $clean_title,
         );
+    }
+
+    /**
+     * Read text for a lowercase slug, even if the source key differed in case.
+     *
+     * @param array $map
+     * @param string $slug
+     * @return string
+     */
+    private function text_for_slug($map, $slug)
+    {
+        if (!is_array($map)) {
+            return '';
+        }
+        $fallback = '';
+        foreach ($map as $key => $value) {
+            if ($this->language_slug($key) !== $slug) {
+                continue;
+            }
+            $text = $this->string_value($value);
+            if ($text === '') {
+                continue;
+            }
+            if ((string) $key === $slug) {
+                return $text;
+            }
+            if ($fallback === '') {
+                $fallback = $text;
+            }
+        }
+        return $fallback;
     }
 
     /**
@@ -1805,11 +1832,14 @@ class Polylang_Media
         if (!is_string($value)) {
             return '';
         }
-        $slug = trim($value);
+        $slug = strtolower(trim($value));
         if ($slug === '' || strlen($slug) > 64) {
             return '';
         }
-        if (preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $slug) !== 1) {
+        if (preg_match('/^[a-z][a-z0-9_-]*$/', $slug) !== 1) {
+            return '';
+        }
+        if (ctype_digit($slug)) {
             return '';
         }
         return $slug;
@@ -1855,7 +1885,7 @@ class Polylang_Media
         $lower = strtolower($slug);
         foreach (array_keys($known) as $candidate) {
             if (is_string($candidate) && strtolower($candidate) === $lower) {
-                return $candidate;
+                return $this->language_slug($candidate);
             }
         }
         return '';
