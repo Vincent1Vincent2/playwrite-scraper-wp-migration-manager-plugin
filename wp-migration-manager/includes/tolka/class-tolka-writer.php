@@ -273,7 +273,7 @@ class Tolka_Writer
                 }
 
                 if (self::explicit_zero($translation)) {
-                    self::add_error($errors, $hidden, $copy['zero_id'], array($lang, $group));
+                    self::add_error($errors, $hidden, self::zero_template($copy, $translation), self::zero_values($lang, $group, $translation));
                     continue;
                 }
 
@@ -321,6 +321,7 @@ class Tolka_Writer
                 'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
                 'no_id' => 'A term translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
                 'zero_id' => 'Term id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
+                'zero_id_titled' => 'Term id 0, named "%3$s", for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
                 'conflict' => 'Term %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
                 'lang_failed' => 'Tolka could not save the language "%1$s" on term %2$d.',
                 'group_failed' => 'Tolka could not save the group "%1$s" on term %2$d.',
@@ -337,6 +338,7 @@ class Tolka_Writer
             'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
             'no_id' => 'A post translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
             'zero_id' => 'Post id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
+            'zero_id_titled' => 'Post id 0, titled "%3$s", for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
             'conflict' => 'Post %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
             'lang_failed' => 'Tolka could not save the language "%1$s" on post %2$d.',
             'group_failed' => 'Tolka could not save the group "%1$s" on post %2$d.',
@@ -484,6 +486,76 @@ class Tolka_Writer
         }
 
         return false;
+    }
+
+    /**
+     * Sentence key for an id of 0, including the title when the row has one.
+     *
+     * @param array $copy        Kind sentences.
+     * @param mixed $translation Translation payload.
+     * @return string
+     */
+    private static function zero_template(array $copy, $translation)
+    {
+        if (self::translation_label($translation) === '') {
+            return $copy['zero_id'];
+        }
+
+        return $copy['zero_id_titled'];
+    }
+
+    /**
+     * Values for an id-0 sentence.
+     *
+     * @param string $lang        Language slug.
+     * @param string $group       Group id.
+     * @param mixed  $translation Translation payload.
+     * @return array
+     */
+    private static function zero_values($lang, $group, $translation)
+    {
+        $values = array($lang, $group);
+        $label = self::translation_label($translation);
+        if ($label !== '') {
+            $values[] = $label;
+        }
+
+        return $values;
+    }
+
+    /**
+     * Short title or name for an error sentence.
+     *
+     * @param mixed $translation Translation payload.
+     * @return string
+     */
+    private static function translation_label($translation)
+    {
+        if (!is_array($translation)) {
+            return '';
+        }
+
+        $label = '';
+        if (isset($translation['title']) && is_string($translation['title'])) {
+            $label = $translation['title'];
+        } elseif (isset($translation['name']) && is_string($translation['name'])) {
+            $label = $translation['name'];
+        }
+
+        $label = trim(self::stored_text($label));
+        if ($label === '') {
+            return '';
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr') && mb_strlen($label, 'UTF-8') > 80) {
+            return rtrim(mb_substr($label, 0, 79, 'UTF-8')) . '...';
+        }
+
+        if (strlen($label) > 80) {
+            return rtrim(substr($label, 0, 79)) . '...';
+        }
+
+        return $label;
     }
 
     /**

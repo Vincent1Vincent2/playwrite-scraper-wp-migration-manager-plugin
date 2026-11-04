@@ -459,11 +459,11 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertTrue($result['ok']);
         $this->assertSame(
             array(
-                'Post id 0 for language "en" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
-                'Post id 0 for language "sv" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
-                'Post id 0 for language "de" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id 0, titled "Empty", for language "en" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id 0, titled "Noll", for language "sv" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id 0, titled "Null", for language "de" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
                 'Post id 0 for language "fr" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
-                'Term id 0 for language "en" in group "term:4" was skipped because it is not a saved term. Nothing was deleted, and your Polylang content is still in place.',
+                'Term id 0, named "None", for language "en" in group "term:4" was skipped because it is not a saved term. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
@@ -725,7 +725,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
 
         $this->assertFalse($result['ok']);
         $joined = implode("\n", $result['errors']);
-        $this->assertStringContainsString('Post id 0 for language "en" in group "post:12" was skipped because it is not a saved post.', $joined);
+        $this->assertStringContainsString('Post id 0, titled "Missing", for language "en" in group "post:12" was skipped because it is not a saved post.', $joined);
         $this->assertStringContainsString('existing Tolka language tags were left unchanged', $joined);
         $this->assertSame(
             array(
