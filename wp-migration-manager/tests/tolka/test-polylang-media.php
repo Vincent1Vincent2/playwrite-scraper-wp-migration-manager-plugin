@@ -38,6 +38,81 @@ class Test_Polylang_Media extends TestCase
         $this->assertStringContainsString('Polylang', $result['errors'][0]);
     }
 
+    public function test_polylang_inactive()
+    {
+        if ($this->call('polylang_is_present', array())) {
+            $this->markTestSkipped('Polylang is active or its data is still stored.');
+        }
+
+        $result = (new Polylang_Media())->export();
+
+        $this->assertSame(array('items', 'errors'), array_keys($result));
+        $this->assertSame(array(), $result['items']);
+        $this->assertNotEmpty($result['errors']);
+        foreach ($result['errors'] as $error) {
+            $this->assertCustomerSentence($error);
+        }
+        $this->assertStringContainsString('Polylang', implode(' ', $result['errors']));
+        $this->assertNotFalse(json_encode($result));
+    }
+
+    public function test_attachment_with_no_translation()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 42, 'lang' => 'en'),
+        ), array(42, 42), array('en', 'fr'), 'en', array(
+            42 => array(
+                'file' => '2024/05/scan.pdf',
+                'alt' => 'Floor plan',
+                'title' => 'Floor plan',
+            ),
+        ));
+
+        $this->assertSame(0, $result['skipped']);
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 42, '2024/05/scan.pdf', array(
+            'en' => 'Floor plan',
+        ), array(
+            'en' => 'Floor plan',
+        ));
+        $this->assertArrayNotHasKey('fr', $result['items'][0]['alt']);
+        $this->assertArrayNotHasKey('fr', $result['items'][0]['title']);
+    }
+
+    public function test_group_with_two_languages()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => serialize(array(
+                    'en' => 10,
+                    'fr' => 11,
+                )),
+                'members' => array(
+                    10 => 'en',
+                    11 => 'fr',
+                ),
+            ),
+        ), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'fr'),
+        ), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertSame(0, $result['skipped']);
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 10, '2024/05/hero.jpg', array(
+            'en' => 'Harbor',
+            'fr' => 'Port',
+        ), array(
+            'en' => 'Hero',
+            'fr' => 'Visuel',
+        ));
+        $this->assertSame(array('en', 'fr'), array_keys($result['items'][0]['alt']));
+        $this->assertSame(array('en', 'fr'), array_keys($result['items'][0]['title']));
+    }
+
     public function test_translation_group_uses_the_default_language_attachment_and_shared_file()
     {
         $result = $this->itemsFrom(array(
@@ -463,6 +538,13 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('Door', $this->call('string_value', array($this->call('unserialize_meta', array(serialize('Door'))))));
     }
 
+    public function test_object_meta_is_not_exported()
+    {
+        $this->assertSame('', $this->call('unserialize_meta', array('O:8:"stdClass":0:{}')));
+        $this->assertSame('', $this->call('unserialize_meta', array('C:11:"ArrayObject":0:{}')));
+        $this->assertSame('O: the origin', $this->call('unserialize_meta', array('O: the origin')));
+    }
+
     public function test_titles_keep_unicode_and_drop_invalid_bytes()
     {
         $this->assertSame('Café 港', $this->call('string_value', array('Café 港')));
@@ -478,10 +560,36 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('Café 港', $decoded['alt']);
     }
 
+    public function test_file_paths_are_portable()
+    {
+        $base = '/var/www/html/wp-content/uploads';
+        $this->assertSame('2024/01/a.jpg', $this->call('portable_file', array(
+            $base . '/2024/01/a.jpg',
+            $base,
+        )));
+        $this->assertSame('2024/01/a.jpg', $this->call('portable_file', array(
+            '\\var\\www\\html\\wp-content\\uploads\\2024\\01\\a.jpg',
+            $base,
+        )));
+        $this->assertSame('2024/01/a.jpg', $this->call('portable_file', array('2024/01/a.jpg', $base)));
+        $this->assertSame('https://cdn.example/a.jpg', $this->call('portable_file', array('https://cdn.example/a.jpg', $base)));
+        $this->assertSame('/var/www2/a.jpg', $this->call('portable_file', array('/var/www2/a.jpg', '/var/www')));
+    }
+
     public function test_id_query_placeholders_match_the_batch_size()
     {
         $this->assertSame('%d, %d, %d', $this->call('int_placeholders', array(3)));
         $this->assertSame('0', $this->call('int_placeholders', array(0)));
+    }
+
+    public function test_term_reads_without_wordpress_are_empty()
+    {
+        if (function_exists('wp_get_object_terms') || function_exists('taxonomy_exists')) {
+            $this->markTestSkipped('WordPress term API is loaded.');
+        }
+
+        $this->assertSame(array(), $this->call('object_terms', array(array(1, 2), 'language')));
+        $this->assertSame(array(), $this->call('object_terms', array(array(), 'post_translations')));
     }
 
     public function test_record_lookup_without_wordpress_returns_empty_strings()
@@ -544,6 +652,25 @@ class Test_Polylang_Media extends TestCase
             $reflection->setAccessible(true);
         }
         return $reflection->invokeArgs($media, $args);
+    }
+
+    private function assertMediaItem($item, $attachment_id, $file, array $alt, array $title)
+    {
+        $this->assertIsArray($item);
+        $this->assertSame(array('attachment_id', 'file', 'alt', 'title'), array_keys($item));
+        $this->assertSame($attachment_id, $item['attachment_id']);
+        $this->assertIsInt($item['attachment_id']);
+        $this->assertSame($file, $item['file']);
+        $this->assertSame($alt, $item['alt']);
+        $this->assertSame($title, $item['title']);
+        $this->assertSame(array_keys($item['alt']), array_keys($item['title']));
+        foreach ($item['alt'] as $value) {
+            $this->assertIsString($value);
+        }
+        foreach ($item['title'] as $value) {
+            $this->assertIsString($value);
+        }
+        $this->assertNotFalse(json_encode($item));
     }
 
     private function assertCustomerSentence($message)
