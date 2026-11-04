@@ -760,6 +760,40 @@ class Test_Speed_Estimate extends TestCase
         $this->assertNotSame(848, $scripts['tolka_ms']);
     }
 
+    public function test_times_that_round_to_1000_ms_keep_the_shipped_pair()
+    {
+        $loaded = Speed_Estimate::benchmarks();
+        foreach (array(1000, 1000.0, 1000.4, 999.5, '1000', '1000.0', ' 1000 ', '+1000') as $total) {
+            $on = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total),
+                array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0),
+                $loaded
+            );
+            $off = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total),
+                array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+                $loaded
+            );
+            $this->assertSame(1000, $on['current_ms'], 'on ' . var_export($total, true));
+            $this->assertSame(946, $on['tolka_ms'], 'on ' . var_export($total, true));
+            $this->assertSame(5.4, $on['faster_percent'], 'on ' . var_export($total, true));
+            $this->assertSame('5.4% faster', $on['faster_label'], 'on ' . var_export($total, true));
+            $this->assertSame(1000, $off['current_ms'], 'off ' . var_export($total, true));
+            $this->assertSame(971, $off['tolka_ms'], 'off ' . var_export($total, true));
+            $this->assertSame(2.9, $off['faster_percent'], 'off ' . var_export($total, true));
+            $this->assertSame('2.9% faster', $off['faster_label'], 'off ' . var_export($total, true));
+        }
+
+        $below = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 999.4),
+            array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0),
+            $loaded
+        );
+        $this->assertSame(999, $below['current_ms']);
+        $this->assertSame(945, $below['tolka_ms']);
+        $this->assertNotSame(946, $below['tolka_ms']);
+    }
+
     public function test_one_language_no_switcher_no_scripts_is_2_9_percent_faster()
     {
         // Shipped coefficients: L = 1, no switcher, no scripts, current = 1000.
