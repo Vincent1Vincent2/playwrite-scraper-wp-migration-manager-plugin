@@ -510,13 +510,32 @@ class Speed_Loader_Test extends TestCase
         $this->assertStringNotContainsString('#', $result['url']);
     }
 
+    public function test_at_sign_in_the_path_is_not_userinfo()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = $this->http_response(200, '<html>ok</html>');
+
+        $result = Speed_Loader_Harness::measure('https://example.com/user:secret@x');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('https://example.com/user:secret@x', $result['url']);
+        $this->assertSame(
+            array('https://example.com/user:secret@x'),
+            Speed_Loader_Harness::$requested_urls
+        );
+    }
+
     public function test_userinfo_is_refused_before_any_request()
     {
         $this->requireHarness();
         $urls = array(
             'https://user:secret@example.com',
             'https://user:secret@example.com/admin',
+            'https://user:secret@example.com:8443/a',
+            'https://us%65r:secret@example.com/a',
             'https://user@example.com/path',
+            'https://@example.com/',
             'https://user:secret@1.1.1.1/admin#top',
             'user:secret@example.com/admin',
             'https://:secret@example.com/',
@@ -1063,6 +1082,33 @@ class Speed_Loader_Test extends TestCase
         $this->assertStringNotContainsString('@', $result['url']);
     }
 
+    public function test_third_redirect_is_fetched()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$queue = array(
+            $this->http_response(302, 'one', 'https://example.com/b'),
+            $this->http_response(302, 'two', 'https://example.com/c'),
+            $this->http_response(302, 'three', 'https://example.com/d'),
+            $this->http_response(200, '<html>landed</html>'),
+        );
+
+        $result = Speed_Loader_Harness::measure('https://example.com/a');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('<html>landed</html>', $result['html']);
+        $this->assertSame('https://example.com/d', $result['url']);
+        $this->assertSame(
+            array(
+                'https://example.com/a',
+                'https://example.com/b',
+                'https://example.com/c',
+                'https://example.com/d',
+            ),
+            Speed_Loader_Harness::$requested_urls
+        );
+    }
+
     public function test_fourth_redirect_is_not_fetched()
     {
         $this->requireHarness();
@@ -1071,7 +1117,7 @@ class Speed_Loader_Test extends TestCase
             $this->http_response(302, 'one', 'https://example.com/b'),
             $this->http_response(302, 'two', 'https://example.com/c'),
             $this->http_response(302, 'three', 'https://example.com/d'),
-            $this->http_response(302, 'four', 'https://example.com/e'),
+            $this->http_response(302, 'four', 'http://127.0.0.1/private'),
             $this->http_response(200, 'five'),
         );
 
@@ -1093,7 +1139,8 @@ class Speed_Loader_Test extends TestCase
             ),
             Speed_Loader_Harness::$requested_urls
         );
-        $this->assertNotContains('https://example.com/e', Speed_Loader_Harness::$requested_urls);
+        $this->assertNotContains('http://127.0.0.1/private', Speed_Loader_Harness::$requested_urls);
+        $this->assertStringNotContainsString('127.0.0.1', (string) json_encode(Speed_Loader_Harness::$requested_urls));
     }
 
     public function test_parent_relative_redirect_stays_on_the_public_host()
