@@ -460,6 +460,46 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame(array(self::INACTIVE_HEADER), $status['errors']);
     }
 
+    public function test_bootstrap_in_a_crowded_directory_is_still_read(): void
+    {
+        $root = $this->temp_dir();
+        for ($index = 0; $index < 45; $index++) {
+            $this->write_plugin(
+                $root,
+                'custom-polylang/aaa-' . sprintf('%02d', $index) . '.php',
+                "<?php\n"
+            );
+        }
+        $this->write_plugin(
+            $root,
+            'custom-polylang/plugin.php',
+            $this->wordpress_header('Polylang', '3.9.1')
+        );
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $this->assertSame('3.9.1', Polylang_Detector_Fixture::status()['version']);
+    }
+
+    public function test_folder_named_bootstrap_in_a_crowded_directory_is_still_read(): void
+    {
+        $root = $this->temp_dir();
+        for ($index = 0; $index < 45; $index++) {
+            $this->write_plugin(
+                $root,
+                'custom-polylang/aaa-' . sprintf('%02d', $index) . '.php',
+                "<?php\n"
+            );
+        }
+        $this->write_plugin(
+            $root,
+            'custom-polylang/custom-polylang.php',
+            $this->wordpress_header('Polylang Pro', '3.9.2')
+        );
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $this->assertSame('3.9.2', Polylang_Detector_Fixture::status()['version']);
+    }
+
     public function test_custom_folder_with_polylang_pro_name(): void
     {
         $root = $this->temp_dir();

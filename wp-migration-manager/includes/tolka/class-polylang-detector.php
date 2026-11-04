@@ -516,6 +516,7 @@ class Polylang_Detector
 
                 $preferred_children = array();
                 $other_children = array();
+                $folder_bootstrap = strtolower(basename($path) . '.php');
                 foreach ($inner as $child) {
                     if (!is_string($child) || $child === '.' || $child === '..') {
                         continue;
@@ -527,7 +528,8 @@ class Polylang_Detector
                     if (!is_file($child_path)) {
                         continue;
                     }
-                    if (stripos($child, 'polylang') !== false) {
+                    $child_key = strtolower($child);
+                    if (stripos($child, 'polylang') !== false || $child_key === 'plugin.php' || $child_key === $folder_bootstrap) {
                         $preferred_children[] = $child_path;
                     } else {
                         $other_children[] = $child_path;
