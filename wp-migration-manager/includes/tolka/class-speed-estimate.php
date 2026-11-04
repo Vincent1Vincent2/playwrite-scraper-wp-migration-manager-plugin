@@ -93,6 +93,9 @@ class Speed_Estimate
      * a 1000 ms page, one language, and zero scripts stays 971 ms and
      * 2.9% faster with the switcher off, and 946 ms and 5.4% faster with
      * the switcher on. A non-finite load time does not reuse either result.
+     * A finite load time, count, or coefficient past the safe integer range
+     * fails with no percent. A ratio above 1 or below 0 still fails the
+     * range check, including when that ratio is also past the safe range.
      *
      * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
@@ -115,7 +118,8 @@ class Speed_Estimate
                 $measurement,
                 'language_count',
                 'The language count is not a usable number.',
-                'The language count cannot be negative.'
+                'The language count cannot be negative.',
+                'The language count is too large to calculate.'
             );
             if ($language_issue !== '') {
                 $reasons[] = $language_issue;
@@ -125,7 +129,8 @@ class Speed_Estimate
                 $measurement,
                 'script_count',
                 'The script count is not a usable number.',
-                'The script count cannot be negative.'
+                'The script count cannot be negative.',
+                'The script count is too large to calculate.'
             );
             if ($script_issue !== '') {
                 $reasons[] = $script_issue;
@@ -376,6 +381,10 @@ class Speed_Estimate
             return self::translate('The measured load time is not a finite number.');
         }
 
+        if (self::is_oversized_number($measurement['total_ms'])) {
+            return self::translate('The measured load time is too large to calculate.');
+        }
+
         if (self::integer_milliseconds($measurement['total_ms']) === null) {
             return self::translate('The measured load time is not a usable number.');
         }
@@ -414,26 +423,32 @@ class Speed_Estimate
     {
         $missing = array();
         $invalid = array();
+        $oversized = array();
+        $range_error = '';
 
         foreach (self::$coefficient_keys as $key) {
             if (!array_key_exists($key, $benchmarks)) {
                 $missing[] = $key;
                 continue;
             }
-            if (self::coefficient_number($benchmarks, $key) === null) {
+
+            $number = self::numeric_value($benchmarks[$key]);
+            if ($number === null) {
                 $invalid[] = $key;
+                continue;
+            }
+
+            if ($key === 'max_overhead_ratio' && ($number < 0 || $number > 1)) {
+                $range_error = self::translate('The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.');
+                continue;
+            }
+
+            if (abs((float) $number) > self::MAX_SAFE_MS) {
+                $oversized[] = $key;
             }
         }
 
-        $ratio = self::coefficient_number($benchmarks, 'max_overhead_ratio');
-        if ($ratio !== null && ($ratio < 0 || $ratio > 1)) {
-            $invalid = array_values(array_diff($invalid, array('max_overhead_ratio')));
-            $range_error = self::translate('The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.');
-        } else {
-            $range_error = '';
-        }
-
-        if ($missing === array() && $invalid === array() && $range_error === '') {
+        if ($missing === array() && $invalid === array() && $oversized === array() && $range_error === '') {
             return '';
         }
 
@@ -456,6 +471,14 @@ class Speed_Estimate
                 'The benchmark file has a value that is not a number for %s.',
                 'The benchmark file has values that are not numbers for %s.',
                 self::labels_for($invalid)
+            );
+        }
+        if ($oversized !== array()) {
+            $sentences[] = self::count_sentence(
+                count($oversized),
+                'The benchmark file has a number that is too large for %s.',
+                'The benchmark file has numbers that are too large for %s.',
+                self::labels_for($oversized)
             );
         }
         if ($range_error !== '') {
@@ -688,10 +711,12 @@ class Speed_Estimate
     }
 
     /**
+     * Finite number, including values past the safe integer range.
+     *
      * @param mixed $value
      * @return int|float|null
      */
-    private static function finite_number($value)
+    private static function numeric_value($value)
     {
         if (is_string($value)) {
             $value = trim($value);
@@ -708,11 +733,38 @@ class Speed_Estimate
         if (!is_finite((float) $number)) {
             return null;
         }
-        if (abs((float) $number) > self::MAX_SAFE_MS) {
+
+        return $number;
+    }
+
+    /**
+     * @param mixed $value
+     * @return int|float|null
+     */
+    private static function finite_number($value)
+    {
+        $number = self::numeric_value($value);
+        if ($number === null || abs((float) $number) > self::MAX_SAFE_MS) {
             return null;
         }
 
         return $number;
+    }
+
+    /**
+     * True when the value is a finite number past the safe integer range.
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    private static function is_oversized_number($value)
+    {
+        $number = self::numeric_value($value);
+        if ($number === null) {
+            return false;
+        }
+
+        return abs((float) $number) > self::MAX_SAFE_MS;
     }
 
     /**
@@ -747,12 +799,17 @@ class Speed_Estimate
      * @param string $key
      * @param string $unusable
      * @param string $negative
+     * @param string $oversized
      * @return string
      */
-    private static function count_issue(array $metrics, $key, $unusable, $negative)
+    private static function count_issue(array $metrics, $key, $unusable, $negative, $oversized)
     {
         if (!array_key_exists($key, $metrics)) {
             return '';
+        }
+
+        if (self::is_oversized_number($metrics[$key])) {
+            return self::translate($oversized);
         }
 
         $number = self::finite_number($metrics[$key]);
@@ -774,13 +831,14 @@ class Speed_Estimate
      * @param string $key
      * @param string $unusable
      * @param string $negative
+     * @param string $oversized
      * @return string
      */
-    private static function combined_count_issue(array $metrics, array $measurement, $key, $unusable, $negative)
+    private static function combined_count_issue(array $metrics, array $measurement, $key, $unusable, $negative, $oversized)
     {
         $problem = '';
         foreach (array($metrics, $measurement) as $source) {
-            $issue = self::count_issue($source, $key, $unusable, $negative);
+            $issue = self::count_issue($source, $key, $unusable, $negative, $oversized);
             if ($issue === '') {
                 continue;
             }
