@@ -1,0 +1,134 @@
+<?php
+
+/**
+ * Tolka migration package schema.
+ *
+ * Turns exporter envelopes into one plain package. Polylang data is not read
+ * or changed.
+ *
+ * @package MigrationManager
+ */
+
+namespace WMM\Tolka;
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+/**
+ * Builds the Tolka migration package.
+ */
+class Tolka_Schema
+{
+    /**
+     * Package format stored for Tolka.
+     */
+    const FORMAT = 'tolka-migration';
+
+    /**
+     * Package version.
+     */
+    const VERSION = 1;
+
+    /**
+     * Section keys, in package order.
+     *
+     * @return string[]
+     */
+    public static function sections()
+    {
+        return array(
+            'languages',
+            'posts',
+            'terms',
+            'strings',
+            'menus',
+            'media',
+        );
+    }
+
+    /**
+     * Build a Tolka package from exporter envelopes.
+     *
+     * Each part is an exporter envelope with `items` and `errors`. Missing
+     * parts and unreadable envelopes become empty item lists. Exporter error
+     * strings are not copied into the package.
+     *
+     * @param array $parts Keys languages, posts, terms, strings, menus, media.
+     * @return array
+     */
+    public static function package(array $parts)
+    {
+        $package = array(
+            'format' => self::FORMAT,
+            'version' => self::VERSION,
+            'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+        );
+
+        foreach (self::sections() as $section) {
+            $package[$section] = self::items_from(
+                isset($parts[$section]) ? $parts[$section] : null
+            );
+        }
+
+        return $package;
+    }
+
+    /**
+     * Copy the items list out of an exporter envelope.
+     *
+     * @param mixed $envelope Envelope, or anything else when the part is missing.
+     * @return array
+     */
+    private static function items_from($envelope)
+    {
+        if (!is_array($envelope) || !isset($envelope['items']) || !is_array($envelope['items'])) {
+            return array();
+        }
+
+        $seen = array();
+
+        return self::snapshot($envelope['items'], $seen, 0);
+    }
+
+    /**
+     * Copy values into plain data so the package is a stable snapshot.
+     *
+     * Objects become arrays of their public properties. Cycles and very deep
+     * values are dropped instead of hanging the migration.
+     *
+     * @param mixed $value Value to copy.
+     * @param array $seen  Object ids already visited.
+     * @param int   $depth Current nesting depth.
+     * @return mixed
+     */
+    private static function snapshot($value, array &$seen, $depth)
+    {
+        if ($depth > 12) {
+            return null;
+        }
+
+        if (is_array($value)) {
+            $copy = array();
+            foreach ($value as $key => $item) {
+                $copy[$key] = self::snapshot($item, $seen, $depth + 1);
+            }
+            return $copy;
+        }
+
+        if (is_object($value)) {
+            $id = spl_object_id($value);
+            if (isset($seen[$id])) {
+                return null;
+            }
+            $seen[$id] = true;
+            return self::snapshot(get_object_vars($value), $seen, $depth + 1);
+        }
+
+        if (is_string($value) || is_int($value) || is_float($value) || is_bool($value) || $value === null) {
+            return $value;
+        }
+
+        return null;
+    }
+}
