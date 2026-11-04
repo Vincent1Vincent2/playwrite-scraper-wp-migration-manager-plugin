@@ -185,6 +185,40 @@ if (!function_exists('wmm_tolka_load_errors')) {
     }
 }
 
+if (!function_exists('wmm_tolka_skip_sentence')) {
+    /**
+     * A skip reason that names the class and stays inside the plugin.
+     *
+     * Absolute paths outside the plugin are removed. Paths inside the plugin
+     * are rewritten so they start at the plugin root.
+     *
+     * @param string $message Reason the test cannot run yet.
+     * @return string
+     */
+    function wmm_tolka_skip_sentence($message)
+    {
+        $message = (string) $message;
+        $plugin = rtrim(str_replace('\\', '/', WMM_TOLKA_PLUGIN_DIR), '/');
+
+        if ($plugin !== '') {
+            $message = str_replace($plugin . '/', '', $message);
+            $message = str_replace($plugin, '', $message);
+        }
+
+        $message = preg_replace('# in /[^\\s]+ on line \\d+#', '', $message);
+        $message = preg_replace('# in /[^\\s]+:\\d+#', '', $message);
+        $message = preg_replace('#phar://\\S+#', '', $message);
+        $message = preg_replace('#[A-Za-z]:\\\\[^\\s]+#', '', $message);
+        $message = preg_replace('#/(?:[^\\s/:]+/)+[^\\s/:]+#', '', $message);
+        $message = preg_replace('#\\S*wmm-tolka-\\S*#', '', $message);
+        $message = preg_replace('/[ \\t]{2,}/', ' ', $message);
+        $message = preg_replace('/\\s+\\./', '.', $message);
+        $message = trim($message);
+
+        return wmm_tolka_finish_sentence($message);
+    }
+}
+
 if (!function_exists('wmm_tolka_mark_skipped')) {
     /**
      * Skip the current test with a finished sentence.
@@ -194,6 +228,8 @@ if (!function_exists('wmm_tolka_mark_skipped')) {
      */
     function wmm_tolka_mark_skipped($message)
     {
+        $message = wmm_tolka_skip_sentence($message);
+
         if (class_exists('PHPUnit\\Framework\\TestCase')) {
             PHPUnit\Framework\TestCase::markTestSkipped($message);
         }
@@ -581,7 +617,7 @@ if (!function_exists('wmm_tolka_record_load_error')) {
             $GLOBALS['wmm_tolka_load_errors'] = array();
         }
 
-        $GLOBALS['wmm_tolka_load_errors'][$basename] = $sentence;
+        $GLOBALS['wmm_tolka_load_errors'][$basename] = wmm_tolka_skip_sentence($sentence);
     }
 }
 
