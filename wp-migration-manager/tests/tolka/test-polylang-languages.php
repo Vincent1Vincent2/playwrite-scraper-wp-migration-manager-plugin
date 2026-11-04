@@ -99,6 +99,21 @@ PHP
         );
     }
 
+    public function test_loading_the_class_file_twice_does_not_stop_the_caller()
+    {
+        $path = dirname(__DIR__, 2) . '/includes/tolka/class-polylang-languages.php';
+        $continued = (function () use ($path) {
+            require $path;
+
+            return 'continued';
+        })();
+
+        $this->assertSame('continued', $continued);
+        $result = Polylang_Languages::export();
+        $this->assertSame(array(), $result['items']);
+        $this->assertCount(1, $result['errors']);
+    }
+
     public function test_inactive_site_returns_no_languages_and_an_explanation()
     {
         $result = Polylang_Languages::export();
@@ -1832,7 +1847,7 @@ PHP
         $script = $this->language_term(4, 'English', 'en', 'en_US', '', 0, 1);
         $script->description = serialize(array(
             'locale' => 'en_US',
-            'flag' => 'javascript:alert(1)',
+            'flag' => '<img src="javascript:alert(1)" alt="" />',
         ));
         $data = $this->language_term(8, 'Svenska', 'sv', 'sv_SE', '', 1, 0);
         $data->description = serialize(array(

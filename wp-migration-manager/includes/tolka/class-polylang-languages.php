@@ -12,9 +12,7 @@
 
 namespace WMM\Tolka;
 
-if (class_exists(__NAMESPACE__ . '\\Polylang_Languages', false)) {
-    return;
-}
+if (!class_exists(__NAMESPACE__ . '\\Polylang_Languages', false)) {
 
 /**
  * Collects languages for the Tolka migration package.
@@ -645,22 +643,10 @@ class Polylang_Languages
         $merged = array();
 
         foreach ($primary as $item) {
-            if (!is_array($item) || !isset($item['slug']) || $item['slug'] === '') {
-                continue;
-            }
-            $merged[$item['slug']] = $item;
+            $this->add_item($merged, $item);
         }
-
         foreach ($secondary as $item) {
-            if (!is_array($item) || !isset($item['slug']) || $item['slug'] === '') {
-                continue;
-            }
-            $slug = $item['slug'];
-            if (!isset($merged[$slug])) {
-                $merged[$slug] = $item;
-                continue;
-            }
-            $merged[$slug] = $this->fill_item($merged[$slug], $item);
+            $this->add_item($merged, $item);
         }
 
         return array_values($merged);
@@ -1187,7 +1173,7 @@ class Polylang_Languages
         if ($flag === '' || $this->is_flag_code($flag)) {
             return $flag;
         }
-        if (preg_match('/^(javascript|data|vbscript):/i', $flag) === 1) {
+        if (preg_match('/javascript\s*:/i', $flag) === 1 || preg_match('/^(data|vbscript):/i', $flag) === 1) {
             return '';
         }
 
@@ -1339,4 +1325,6 @@ class Polylang_Languages
 
         return __('Polylang languages could not be read. Nothing was changed. Preview the migration again.', 'migration-manager');
     }
+}
+
 }
