@@ -617,7 +617,7 @@ class Polylang_Posts
                 $survivor_ids[$lang] = $record['id'];
             }
             $default_id = $this->default_post_id($survivor_ids, $default_lang);
-            $group = 'post:' . $default_id;
+            $group = $this->group_name($default_id);
 
             foreach ($missing as $post_id) {
                 $errors[] = $this->say_sprintf(
@@ -941,16 +941,34 @@ class Polylang_Posts
     private function default_post_id(array $lang_to_id, $default_lang)
     {
         if ($default_lang !== '' && isset($lang_to_id[$default_lang])) {
-            return (int) $lang_to_id[$default_lang];
-        }
-        $min = 0;
-        foreach ($lang_to_id as $post_id) {
-            $post_id = (int) $post_id;
-            if ($min === 0 || $post_id < $min) {
-                $min = $post_id;
+            $preferred = (int) $lang_to_id[$default_lang];
+            if ($preferred > 0) {
+                return $preferred;
             }
         }
-        return $min;
+        $ids = array();
+        foreach ($lang_to_id as $post_id) {
+            $post_id = (int) $post_id;
+            if ($post_id > 0) {
+                $ids[] = $post_id;
+            }
+        }
+        if ($ids === array()) {
+            return 0;
+        }
+        return min($ids);
+    }
+
+    /**
+     * Group id is post:{id}. The id is the default-language post, or the
+     * lowest post id when that language is not in the group.
+     *
+     * @param int $post_id
+     * @return string
+     */
+    private function group_name($post_id)
+    {
+        return 'post:' . (int) $post_id;
     }
 
     /**
