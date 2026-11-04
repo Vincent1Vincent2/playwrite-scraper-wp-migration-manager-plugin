@@ -643,22 +643,10 @@ class Polylang_Languages
         $merged = array();
 
         foreach ($primary as $item) {
-            if (!is_array($item) || !isset($item['slug']) || $item['slug'] === '') {
-                continue;
-            }
-            $merged[$item['slug']] = $item;
+            $this->add_item($merged, $item);
         }
-
         foreach ($secondary as $item) {
-            if (!is_array($item) || !isset($item['slug']) || $item['slug'] === '') {
-                continue;
-            }
-            $slug = $item['slug'];
-            if (!isset($merged[$slug])) {
-                $merged[$slug] = $item;
-                continue;
-            }
-            $merged[$slug] = $this->fill_item($merged[$slug], $item);
+            $this->add_item($merged, $item);
         }
 
         return array_values($merged);
