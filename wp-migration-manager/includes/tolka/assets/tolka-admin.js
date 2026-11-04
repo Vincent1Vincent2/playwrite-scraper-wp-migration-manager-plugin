@@ -74,6 +74,7 @@
   ];
 
   var cfg = window.wmmTolka || null;
+  var requestInFlight = false;
 
   ready(function () {
     var wizard = document.getElementById("wmm-tolka-wizard");
@@ -269,13 +270,17 @@
   }
 
   function isBusy(button) {
+    if (requestInFlight) {
+      return true;
+    }
     return !button || button.getAttribute("data-wmm-tolka-pending") === "1";
   }
 
   function withBusy(button, busyLabel, container, statusText, work) {
-    if (!button) {
+    if (!button || requestInFlight) {
       return;
     }
+    requestInFlight = true;
     setBusy(button, true, busyLabel);
     if (container) {
       container.setAttribute("aria-busy", "true");
@@ -295,12 +300,15 @@
           );
         }
       )
-      .then(function () {
-        setBusy(button, false);
-        if (container) {
-          container.removeAttribute("aria-busy");
-        }
-      });
+      .then(release, release);
+
+    function release() {
+      requestInFlight = false;
+      setBusy(button, false);
+      if (container) {
+        container.removeAttribute("aria-busy");
+      }
+    }
   }
 
   function setBusy(button, busy, busyLabel) {
@@ -1199,6 +1207,248 @@
     );
   }
 
+  function summaryTable(container) {
+    if (!container || !container.querySelector) {
+      return null;
+    }
+    return container.querySelector("table.wmm-tolka-summary");
+  }
+
+  function normalizeLabel(value) {
+    return String(value || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function findLabeledRow(rows, label) {
+    var wanted = normalizeLabel(label);
+    for (var i = 0; i < rows.length; i += 1) {
+      var head = rows[i].querySelector("th, td");
+      if (head && normalizeLabel(head.textContent) === wanted) {
+        return rows[i];
+      }
+    }
+    return null;
+  }
+
+  function rowValueCell(row) {
+    if (!row) {
+      return null;
+    }
+    var cells = row.querySelectorAll("td");
+    return cells.length ? cells[cells.length - 1] : null;
+  }
+
+  function setRowValue(row, value) {
+    var cell = rowValueCell(row);
+    if (cell) {
+      cell.textContent = value == null ? "" : String(value);
+    }
+  }
+
+  function previewRowMap(table) {
+    var rows = table.querySelectorAll("tbody tr");
+    var found = {};
+    var complete = true;
+    SECTIONS.forEach(function (section) {
+      found[section.key] = findLabeledRow(rows, section.title);
+      if (!found[section.key]) {
+        complete = false;
+      }
+    });
+    return complete ? found : null;
+  }
+
+  function fillPreviewTable(container, counts, sample, errors, missing, total) {
+    var table = summaryTable(container);
+    var rowMap = table ? previewRowMap(table) : null;
+    if (!rowMap) {
+      return false;
+    }
+
+    removeGenerated(container);
+    SECTIONS.forEach(function (section) {
+      var count = countOf(counts, sample, section.key);
+      setRowValue(
+        rowMap[section.key],
+        count === 0 ? section.empty : countLabel(count, section.singular, section.plural) + "."
+      );
+      rowMap[section.key].setAttribute("data-section", section.key);
+    });
+
+    var lead = container.querySelector(".wmm-tolka-empty-lead");
+    if (lead) {
+      lead.textContent =
+        total === 0 && !errors.length
+          ? "Nothing was found to preview. Nothing was written, and Polylang data stays in place."
+          : "Preview only. Nothing was written, and Polylang data stays in place.";
+    }
+
+    if (errors.length || missing.length) {
+      var notes = markGenerated(el("div", "wmm-tolka-preview-notes"));
+      errors.forEach(function (message) {
+        notes.appendChild(errorParagraph(message));
+      });
+      if (missing.length) {
+        notes.appendChild(
+          el(
+            "p",
+            "wmm-tolka-missing",
+            "These parts are not available yet: " + missing.join(", ") + "."
+          )
+        );
+      }
+      container.insertBefore(notes, container.firstChild);
+    }
+
+    var samples = markGenerated(el("div", "wmm-tolka-preview-samples"));
+    SECTIONS.forEach(function (section) {
+      samples.appendChild(renderSection(section, counts, sample));
+    });
+    container.appendChild(samples);
+    return true;
+  }
+
+  function reportRowMap(table) {
+    var rows = table.querySelectorAll("tbody tr");
+    var found = {
+      title: findLabeledRow(rows, "Title"),
+      summary: findLabeledRow(rows, "Summary"),
+    };
+    if (!found.title || !found.summary) {
+      return null;
+    }
+    SECTIONS.forEach(function (section) {
+      found[section.key] = findLabeledRow(rows, section.title);
+    });
+    var hasSection = SECTIONS.some(function (section) {
+      return !!found[section.key];
+    });
+    return hasSection ? found : null;
+  }
+
+  function lineValueForLabel(lines, label) {
+    var wanted = normalizeLabel(label);
+    var match = "";
+    lines.forEach(function (line) {
+      var pair = reportPair(line);
+      if (!match && pair && normalizeLabel(pair.label) === wanted) {
+        match = pair.value;
+      }
+    });
+    return match;
+  }
+
+  function fillReportTable(container, lines, title, summary, errors, missing, succeeded) {
+    var table = summaryTable(container);
+    var rowMap = table ? reportRowMap(table) : null;
+    if (!rowMap) {
+      return false;
+    }
+
+    removeGenerated(container);
+    setRowValue(rowMap.title, title);
+    setRowValue(rowMap.summary, summary || (succeeded ? "Migration finished." : "Migration did not finish."));
+    var used = { title: true, summary: true };
+    SECTIONS.forEach(function (section) {
+      if (!rowMap[section.key]) {
+        return;
+      }
+      var value = lineValueForLabel(lines, section.title);
+      if (!value) {
+        value = succeeded ? "None reported." : "Not available.";
+      }
+      setRowValue(rowMap[section.key], value);
+      rowMap[section.key].setAttribute("data-section", section.key);
+      used[normalizeLabel(section.title)] = true;
+    });
+
+    var note = container.querySelector(".wmm-tolka-notice p");
+    if (note) {
+      note.textContent = summary
+        ? finishSentence(summary)
+        : reportClosing(succeeded, summary) || title;
+    }
+
+    var extras = [];
+    lines.forEach(function (line) {
+      var pair = reportPair(line);
+      if (!pair || used[normalizeLabel(pair.label)]) {
+        return;
+      }
+      extras.push(pair);
+    });
+
+    if (errors.length || missing.length || extras.length) {
+      var extra = markGenerated(el("div", "wmm-tolka-report-extra"));
+      errors.forEach(function (message) {
+        extra.appendChild(errorParagraph(message));
+      });
+      if (missing.length) {
+        extra.appendChild(
+          el(
+            "p",
+            "wmm-tolka-missing",
+            "These parts are not available yet: " + missing.join(", ") + "."
+          )
+        );
+      }
+      if (extras.length) {
+        var list = el("dl", "wmm-tolka-report-lines");
+        extras.forEach(function (pair) {
+          var row = el("div", "wmm-tolka-report-line");
+          row.appendChild(el("dt", "wmm-tolka-report-label", pair.label));
+          row.appendChild(el("dd", "wmm-tolka-report-value", pair.value));
+          list.appendChild(row);
+        });
+        extra.appendChild(list);
+      }
+      container.appendChild(extra);
+    }
+    return true;
+  }
+
+  function paintTableStatus(container, text) {
+    var table = summaryTable(container);
+    if (!table || !table.querySelector("tbody tr")) {
+      return false;
+    }
+    removeGenerated(container);
+    var lead = container.querySelector(".wmm-tolka-empty-lead");
+    if (lead) {
+      lead.textContent = text;
+    } else {
+      var note = container.querySelector(".wmm-tolka-notice p");
+      if (note) {
+        note.textContent = text;
+      }
+    }
+    var busyValue = container.id === "wmm-tolka-report" ? "Running…" : "Loading…";
+    Array.prototype.forEach.call(table.querySelectorAll("tbody tr"), function (row) {
+      setRowValue(row, busyValue);
+    });
+    return true;
+  }
+
+  function paintTableError(container, messages) {
+    var table = summaryTable(container);
+    if (!table || !table.querySelector("tbody tr")) {
+      return false;
+    }
+    removeGenerated(container);
+    var notes = markGenerated(el("div", "wmm-tolka-preview-notes"));
+    messages.forEach(function (message) {
+      notes.appendChild(errorParagraph(message));
+    });
+    container.insertBefore(notes, container.firstChild);
+    var phrase = container.id === "wmm-tolka-report" ? "Could not be run." : "Could not be loaded.";
+    Array.prototype.forEach.call(table.querySelectorAll("tbody tr"), function (row) {
+      setRowValue(row, phrase);
+    });
+    return true;
+  }
+
   function renderPreview(container, data) {
     if (!container) {
       return;
@@ -1217,6 +1467,19 @@
       var errors = stringList(data.errors);
       var missing = missingNames(data.missing);
       var total = 0;
+      SECTIONS.forEach(function (section) {
+        total += countOf(counts, sample, section.key);
+      });
+
+      if (fillPreviewTable(container, counts, sample, errors, missing, total)) {
+        container.classList.remove("wmm-tolka-has-error");
+        container.classList.add("wmm-tolka-has-result");
+        if (errors.length || missing.length) {
+          container.classList.add("wmm-tolka-has-error");
+        }
+        focusResult(container);
+        return;
+      }
 
       clear(container);
       var root = markGenerated(el("div", "wmm-tolka-preview"));
@@ -1233,10 +1496,6 @@
           )
         );
       }
-
-      SECTIONS.forEach(function (section) {
-        total += countOf(counts, sample, section.key);
-      });
 
       root.appendChild(
         el(
@@ -1521,6 +1780,14 @@
         title = succeeded ? "Migration finished." : "Migration did not finish.";
       }
       title = finishSentence(title);
+      var lines = Array.isArray(report.lines) ? report.lines : [];
+
+      if (fillReportTable(container, lines, title, summary, errors, missing, succeeded)) {
+        container.classList.toggle("wmm-tolka-has-error", !succeeded || errors.length > 0);
+        container.classList.add("wmm-tolka-has-result");
+        focusResult(container);
+        return;
+      }
 
       clear(container);
       var root = markGenerated(el("div", "wmm-tolka-report-body"));
@@ -1545,7 +1812,6 @@
         );
       }
 
-      var lines = Array.isArray(report.lines) ? report.lines : [];
       if (lines.length) {
         var list = el("dl", "wmm-tolka-report-lines");
         lines.forEach(function (line) {
@@ -1728,6 +1994,11 @@
       container.classList.remove("wmm-tolka-has-result");
       return;
     }
+    if (paintTableStatus(container, text)) {
+      container.classList.remove("wmm-tolka-has-error");
+      container.classList.remove("wmm-tolka-has-result");
+      return;
+    }
     clear(container);
     var status = markGenerated(el("p", "wmm-tolka-status", text));
     status.setAttribute("role", "status");
@@ -1742,6 +2013,12 @@
     }
     var messages = normalizeMessages(message);
     if (paintSpeedError(container, messages, null)) {
+      return;
+    }
+    if (paintTableError(container, messages)) {
+      container.classList.add("wmm-tolka-has-error");
+      container.classList.remove("wmm-tolka-has-result");
+      focusResult(container);
       return;
     }
 
@@ -1963,15 +2240,22 @@
   function insideGeneratedResult(node) {
     var current = node;
     while (current) {
-      if (
-        current.getAttribute &&
-        current.getAttribute("data-wmm-tolka-generated") === "1"
-      ) {
+      if (isOwnGenerated(current)) {
         return true;
       }
       current = current.parentNode;
     }
     return false;
+  }
+
+  function isOwnGenerated(node) {
+    if (!node || !node.getAttribute) {
+      return false;
+    }
+    if (node.getAttribute("data-field")) {
+      return false;
+    }
+    return node.getAttribute("data-wmm-tolka-generated") === "1";
   }
 
   function markResult(container) {
@@ -1985,9 +2269,10 @@
     }
     var nodes = container.querySelectorAll("[data-wmm-tolka-generated]");
     Array.prototype.forEach.call(nodes, function (node) {
-      if (node.parentNode) {
-        node.parentNode.removeChild(node);
+      if (!isOwnGenerated(node) || !node.parentNode) {
+        return;
       }
+      node.parentNode.removeChild(node);
     });
   }
 
