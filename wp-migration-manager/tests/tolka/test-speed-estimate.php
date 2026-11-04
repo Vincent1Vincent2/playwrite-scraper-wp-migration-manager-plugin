@@ -84,6 +84,18 @@ class Test_Speed_Estimate extends TestCase
         $this->assertStringContainsString('namespace WMM\\Tolka;', $source);
         $this->assertStringNotContainsString('blazing', strtolower($source));
         $this->assertStringNotContainsString('times faster', strtolower($source));
+
+        foreach (array(
+            'wp_remote_get',
+            'update_option',
+            'delete_option',
+            '$_POST',
+            '$_GET',
+            'curl_exec',
+            'file_put_contents',
+        ) as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $source);
+        }
     }
 
     /**
@@ -662,7 +674,7 @@ class Test_Speed_Estimate extends TestCase
         );
 
         $this->assertMatchesRegularExpression('/ slowly…\.$/', $wordy['error']);
-        $this->assertLessThanOrEqual(241, mb_strlen(self::detailFrom($wordy['error'])));
+        $this->assertLessThanOrEqual(241, self::characterLength(self::detailFrom($wordy['error'])));
 
         $multibyte = trim(str_repeat('åäö ', 80));
         $letters = Speed_Estimate::project(
@@ -1074,6 +1086,26 @@ class Test_Speed_Estimate extends TestCase
             . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.',
             $text
         );
+    }
+
+    /**
+     * Character length without requiring the mbstring extension.
+     *
+     * @param string $text
+     * @return int
+     */
+    private static function characterLength($text)
+    {
+        if (function_exists('mb_strlen')) {
+            return (int) mb_strlen($text);
+        }
+
+        $count = preg_match_all('/./u', $text, $matches);
+        if ($count === false) {
+            return strlen($text);
+        }
+
+        return (int) $count;
     }
 
     /**
