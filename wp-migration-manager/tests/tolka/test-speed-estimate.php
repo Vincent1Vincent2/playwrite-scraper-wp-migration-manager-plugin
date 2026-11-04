@@ -353,6 +353,30 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('58.0% faster', $equal['faster_label']);
     }
 
+    public function test_passed_ratio_is_used_instead_of_a_hidden_cap()
+    {
+        // raw = 30*35 + 25 + 10*8 = 1155
+        // floor(1000 * 1.5) = 1500, so the cap does not apply.
+        // tolka = 1000 - 1155 + min(180, 1155) = 25
+        // percent = 97.5
+        // The shipped file's 0.7 would have capped this at 700 ms and a different percent.
+        $benchmarks = self::contractBenchmarks();
+        $benchmarks['max_overhead_ratio'] = 1.5;
+
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 30, 'has_polylang_switcher' => true, 'script_count' => 10),
+            $benchmarks
+        );
+
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame(1155, $estimate['overhead_ms']);
+        $this->assertSame(25, $estimate['tolka_ms']);
+        $this->assertSame(97.5, $estimate['faster_percent']);
+        $this->assertSame('97.5% faster', $estimate['faster_label']);
+        $this->assertNotSame(700, $estimate['overhead_ms']);
+    }
+
     public function test_unused_metrics_do_not_change_the_percent()
     {
         $measurement = array('ok' => true, 'total_ms' => 1000);
