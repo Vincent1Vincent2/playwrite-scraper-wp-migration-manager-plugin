@@ -1313,7 +1313,10 @@ class Polylang_Languages
     private function plain_flag($flag)
     {
         $flag = $this->normalize_flag($flag);
-        if ($flag === '' || $this->is_flag_code($flag)) {
+        if ($flag === '' || $this->is_internal_language_slug($flag)) {
+            return '';
+        }
+        if ($this->is_flag_code($flag)) {
             return $flag;
         }
         if (preg_match('/javascript\s*:/i', $flag) === 1 || preg_match('/^(data|vbscript):/i', $flag) === 1) {

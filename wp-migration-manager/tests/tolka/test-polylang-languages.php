@@ -324,6 +324,16 @@ PHP
         $this->assertSame('pl_PL', $by_slug['pl']['locale']);
         $this->assertSame('pl', $by_slug['pl']['flag']);
         $this->assertArrayNotHasKey('pll_en', $by_slug);
+
+        $broken = $this->database_with_languages(array(
+            $this->language_term(12, 'Broken', 'xx', 'en_GB', 'pll_en', 0, 1),
+        ), 'xx');
+        $GLOBALS['wpdb'] = $broken;
+        $broken_result = Polylang_Languages::export();
+
+        $this->assertSame('xx', $broken_result['items'][0]['slug']);
+        $this->assertSame('', $broken_result['items'][0]['flag']);
+        $this->assertSame('en_GB', $broken_result['items'][0]['locale']);
     }
 
     public function test_a_blank_entity_name_uses_the_language_slug()
