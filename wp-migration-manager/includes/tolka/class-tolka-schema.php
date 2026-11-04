@@ -136,7 +136,14 @@ class Tolka_Schema
             return self::text($value);
         }
 
-        if (is_int($value) || is_float($value) || is_bool($value) || $value === null) {
+        if (is_float($value)) {
+            if (!is_finite($value)) {
+                return null;
+            }
+            return $value;
+        }
+
+        if (is_int($value) || is_bool($value) || $value === null) {
             return $value;
         }
 

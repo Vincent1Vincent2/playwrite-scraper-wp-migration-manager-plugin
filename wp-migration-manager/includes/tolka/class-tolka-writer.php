@@ -107,6 +107,16 @@ class Tolka_Writer
 
         $package = self::prepare_package($package);
         $collected = self::collect($package, $errors, $hidden);
+
+        if (!self::sections_are_lists($package)) {
+            self::add_error(
+                $errors,
+                $hidden,
+                'The Tolka package was not saved because part of it was not a list.'
+            );
+            return self::result($collected['counts'], $errors, $hidden, false);
+        }
+
         $package = self::clean_package($package);
 
         if (!self::store_package($package, $errors, $hidden)) {
@@ -646,6 +656,27 @@ class Tolka_Writer
         }
 
         return $parts;
+    }
+
+    /**
+     * A package can be saved only when every present section is a list.
+     *
+     * Missing sections are empty, which is a valid migration. A section that
+     * is some other type would replace a previously saved package with a
+     * value Tolka cannot read.
+     *
+     * @param array $package Package to check.
+     * @return bool
+     */
+    private static function sections_are_lists(array $package)
+    {
+        foreach (self::sections() as $section) {
+            if (array_key_exists($section, $package) && !is_array($package[$section])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

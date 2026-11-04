@@ -197,6 +197,27 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(10, $saved['id']);
     }
 
+    public function test_non_finite_numbers_do_not_make_the_package_unreadable()
+    {
+        $package = Tolka_Schema::package(array(
+            'strings' => array(
+                'items' => array(
+                    array(
+                        'name' => 'broken',
+                        'string' => INF,
+                        'context' => 'theme',
+                        'translations' => array('en' => NAN),
+                    ),
+                ),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assertNull($package['strings'][0]['string']);
+        $this->assertNull($package['strings'][0]['translations']['en']);
+        $this->assertNotFalse(json_encode($package));
+    }
+
     public function test_cyclic_exporter_object_does_not_hang()
     {
         $translation = new stdClass();
@@ -421,7 +442,8 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             'terms' => 'categories',
         ));
 
-        $this->assertTrue($result['ok']);
+        $this->assertFalse($result['ok']);
+        $this->assertNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
         $this->assertSame(5, $result['counts']['posts']);
         $this->assertSame(0, $result['counts']['terms']);
         $this->assertSame(
@@ -431,6 +453,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                 'A post translation has no group id, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'A post translation in group "post:9" has no language code, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'The terms part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
+                'The Tolka package was not saved because part of it was not a list. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
@@ -668,7 +691,8 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             'media' => false,
         ));
 
-        $this->assertTrue($result['ok']);
+        $this->assertFalse($result['ok']);
+        $this->assertNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
         $this->assertSame(
             array(
                 'The languages part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
@@ -677,6 +701,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                 'The strings part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'The menus part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'The media part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
+                'The Tolka package was not saved because part of it was not a list. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
