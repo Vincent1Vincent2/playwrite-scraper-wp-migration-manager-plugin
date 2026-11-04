@@ -713,6 +713,53 @@ class Test_Speed_Estimate extends TestCase
         $this->assertNotSame(855, $metrics_zero['tolka_ms']);
     }
 
+    public function test_fractional_counts_do_not_add_a_language_or_script()
+    {
+        $loaded = Speed_Estimate::benchmarks();
+
+        $on = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1.9, 'has_polylang_switcher' => true, 'script_count' => 0.9),
+            $loaded
+        );
+        $off = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => '1.2', 'has_polylang_switcher' => false, 'script_count' => '0.8'),
+            $loaded
+        );
+        $this->assertSame(946, $on['tolka_ms']);
+        $this->assertSame(5.4, $on['faster_percent']);
+        $this->assertSame('5.4% faster', $on['faster_label']);
+        $this->assertSame(60, $on['overhead_ms']);
+        $this->assertSame(971, $off['tolka_ms']);
+        $this->assertSame(2.9, $off['faster_percent']);
+        $this->assertSame('2.9% faster', $off['faster_label']);
+        $this->assertSame(35, $off['overhead_ms']);
+
+        $two = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 2.2, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $loaded
+        );
+        // L = 2. raw = 70. tolka = 1000 - 70 + 12 = 942. percent = 5.8.
+        $this->assertSame(942, $two['tolka_ms']);
+        $this->assertSame(5.8, $two['faster_percent']);
+        $this->assertSame('5.8% faster', $two['faster_label']);
+        $this->assertNotSame(2.9, $two['faster_percent']);
+        $this->assertNotSame(5.4, $two['faster_percent']);
+
+        $scripts = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4.9),
+            $loaded
+        );
+        $this->assertSame(856, $scripts['tolka_ms']);
+        $this->assertSame(162, $scripts['overhead_ms']);
+        $this->assertSame(14.4, $scripts['faster_percent']);
+        $this->assertSame('14.4% faster', $scripts['faster_label']);
+        $this->assertNotSame(848, $scripts['tolka_ms']);
+    }
+
     public function test_one_language_no_switcher_no_scripts_is_2_9_percent_faster()
     {
         // Shipped coefficients: L = 1, no switcher, no scripts, current = 1000.
