@@ -572,57 +572,111 @@ function wmm_tolka_url_host($url)
 }
 
 /**
- * Integer form of an IPv4 address, including shortened dotted forms.
+ * One IPv4 piece, accepting decimal, leading-zero octal, and 0x hex.
+ *
+ * @param string $part One dot-separated piece.
+ * @return int|null
+ */
+function wmm_tolka_ipv4_part($part)
+{
+    if (preg_match('/^0x([0-9a-f]+)$/i', $part, $matches)) {
+        if (strlen($matches[1]) > 8) {
+            return null;
+        }
+
+        $number = hexdec($matches[1]);
+
+        if ($number < 0 || $number > 4294967295) {
+            return null;
+        }
+
+        return (int) $number;
+    }
+
+    if (strlen($part) > 1 && $part[0] === '0') {
+        if (!preg_match('/^[0-7]+$/', $part) || strlen($part) > 11) {
+            return null;
+        }
+
+        $number = octdec($part);
+
+        if ($number < 0 || $number > 4294967295) {
+            return null;
+        }
+
+        return (int) $number;
+    }
+
+    if (!preg_match('/^\d+$/', $part) || strlen($part) > 10) {
+        return null;
+    }
+
+    $number = (int) $part;
+
+    if ((string) $number !== $part || $number < 0 || $number > 4294967295) {
+        return null;
+    }
+
+    return $number;
+}
+
+/**
+ * Integer form of an IPv4 address, including shortened, octal, and hex forms.
  *
  * @param string $host Host name.
  * @return int|null
  */
 function wmm_tolka_ipv4_long($host)
 {
-    if (preg_match('/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/', $host, $matches)) {
-        $parts = array((int) $matches[1], (int) $matches[2], (int) $matches[3], (int) $matches[4]);
+    if (!preg_match('/^(?:0x[0-9a-f]+|\d+)(?:\.(?:0x[0-9a-f]+|\d+)){0,3}$/i', $host)) {
+        return null;
+    }
 
-        foreach ($parts as $part) {
-            if ($part < 0 || $part > 255) {
+    $numbers = array();
+
+    foreach (explode('.', $host) as $part) {
+        $number = wmm_tolka_ipv4_part($part);
+
+        if ($number === null) {
+            return null;
+        }
+
+        $numbers[] = $number;
+    }
+
+    $count = count($numbers);
+
+    if ($count === 4) {
+        foreach ($numbers as $number) {
+            if ($number > 255) {
                 return null;
             }
         }
 
-        return ($parts[0] * 16777216) + ($parts[1] * 65536) + ($parts[2] * 256) + $parts[3];
+        return ($numbers[0] * 16777216) + ($numbers[1] * 65536) + ($numbers[2] * 256) + $numbers[3];
     }
 
-    if (preg_match('/^(\d{1,3})\.(\d{1,3})\.(\d{1,10})$/', $host, $matches)) {
-        $a = (int) $matches[1];
-        $b = (int) $matches[2];
-        $c = (int) $matches[3];
-
-        if ($a > 255 || $b > 255 || $c > 65535) {
+    if ($count === 3) {
+        if ($numbers[0] > 255 || $numbers[1] > 255 || $numbers[2] > 65535) {
             return null;
         }
 
-        return ($a * 16777216) + ($b * 65536) + $c;
+        return ($numbers[0] * 16777216) + ($numbers[1] * 65536) + $numbers[2];
     }
 
-    if (preg_match('/^(\d{1,3})\.(\d{1,10})$/', $host, $matches)) {
-        $a = (int) $matches[1];
-        $b = (int) $matches[2];
-
-        if ($a > 255 || $b > 16777215) {
+    if ($count === 2) {
+        if ($numbers[0] > 255 || $numbers[1] > 16777215) {
             return null;
         }
 
-        return ($a * 16777216) + $b;
+        return ($numbers[0] * 16777216) + $numbers[1];
     }
 
-    if (preg_match('/^\d+$/', $host)) {
-        $number = (int) $host;
-
-        if ((string) $number === $host && $number >= 0 && $number <= 4294967295) {
-            return $number;
-        }
+    if ($numbers[0] > 4294967295) {
+        return null;
     }
 
-    return null;
+    return $numbers[0];
 }
 
 /**
@@ -1937,6 +1991,63 @@ function wmm_tolka_fallback_script()
         return "";
     }
 
+    /* wmm-tolka-url-checks:start */
+    function ipv4IsLocal(number) {
+        if (number < 0 || number > 4294967295) {
+            return false;
+        }
+        var first = Math.floor(number / 16777216) % 256;
+        var second = Math.floor(number / 65536) % 256;
+        if (first === 0 || first === 10 || first === 127) {
+            return true;
+        }
+        if (first === 192 && second === 168) {
+            return true;
+        }
+        if (first === 172 && second >= 16 && second <= 31) {
+            return true;
+        }
+        return first === 169 && second === 254;
+    }
+
+    function ipv4Long(host) {
+        var match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+        if (!match) {
+            return null;
+        }
+        var parts = [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10), parseInt(match[4], 10)];
+        var index;
+        for (index = 0; index < 4; index++) {
+            if (parts[index] > 255) {
+                return null;
+            }
+        }
+        return (parts[0] * 16777216) + (parts[1] * 65536) + (parts[2] * 256) + parts[3];
+    }
+
+    function mappedIpv4(rest) {
+        if (rest.indexOf(".") !== -1) {
+            return ipv4Long(rest);
+        }
+        var groups = rest.split(":");
+        if (groups.length === 2 && /^[0-9a-f]{1,4}$/.test(groups[0]) && /^[0-9a-f]{1,4}$/.test(groups[1])) {
+            return (parseInt(groups[0], 16) * 65536) + parseInt(groups[1], 16);
+        }
+        return null;
+    }
+
+    function ipv6IsLocal(host) {
+        var first = host.split(":")[0];
+        if (!/^[0-9a-f]{1,4}$/.test(first)) {
+            return false;
+        }
+        var value = parseInt(first, 16);
+        if ((value & 0xfe00) === 0xfc00) {
+            return true;
+        }
+        return (value & 0xffc0) === 0xfe80;
+    }
+
     function urlIsLocal(value) {
         var host = "";
         try {
@@ -1953,42 +2064,20 @@ function wmm_tolka_fallback_script()
         if (host === "localhost" || host.slice(-10) === ".localhost") {
             return true;
         }
-        if (host.indexOf("::ffff:") === 0) {
-            host = host.slice(7);
-        }
         if (host === "::1" || host === "0:0:0:0:0:0:0:1") {
             return true;
         }
-        var parts = host.split(".");
-        if (parts.length === 4) {
-            var numbers = [];
-            var index;
-            for (index = 0; index < 4; index++) {
-                if (!/^\d+$/.test(parts[index])) {
-                    numbers = [];
-                    break;
-                }
-                numbers.push(parseInt(parts[index], 10));
-            }
-            if (numbers.length === 4) {
-                var first = numbers[0];
-                var second = numbers[1];
-                if (first === 0 || first === 10 || first === 127) {
-                    return true;
-                }
-                if (first === 192 && second === 168) {
-                    return true;
-                }
-                if (first === 172 && second >= 16 && second <= 31) {
-                    return true;
-                }
-                if (first === 169 && second === 254) {
-                    return true;
-                }
-            }
+        if (host.indexOf("::ffff:") === 0) {
+            var mapped = mappedIpv4(host.slice(7));
+            return mapped !== null && ipv4IsLocal(mapped);
         }
-        return false;
+        if (host.indexOf(":") !== -1) {
+            return ipv6IsLocal(host);
+        }
+        var ipv4 = ipv4Long(host);
+        return ipv4 !== null && ipv4IsLocal(ipv4);
     }
+    /* wmm-tolka-url-checks:end */
 
     function urlHasEmptyHost(value) {
         var match = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)/i.exec(value);
