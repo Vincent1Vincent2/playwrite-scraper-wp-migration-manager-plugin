@@ -483,6 +483,33 @@ class Test_Migration_Report extends TestCase
         $this->assertSame(1, substr_count($duplicates['summary'], 'Polylang_Menus'));
     }
 
+    public function test_string_sample_shows_the_translated_text()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('strings' => 1),
+            'write' => array('ok' => true),
+            'sample' => array(
+                'strings' => array(
+                    array(
+                        'name' => 'footer-copyright',
+                        'context' => 'footer',
+                        'translations' => array(
+                            'en' => 'All rights reserved',
+                            'sv' => 'Med ensamratt',
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame(
+            'All rights reserved (en), Med ensamratt (sv)',
+            $this->line($report, 'Example string')
+        );
+        $this->assertSame('1 string', $this->line($report, 'Strings'));
+    }
+
     public function test_section_count_lines_stay_in_contract_order()
     {
         $report = Migration_Report::format(array(

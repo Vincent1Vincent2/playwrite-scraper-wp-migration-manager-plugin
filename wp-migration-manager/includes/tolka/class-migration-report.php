@@ -1014,6 +1014,26 @@ class Migration_Report
             return '';
         }
 
+        if ($section === 'strings') {
+            if (isset($item['string']) && is_string($item['string'])) {
+                $source = self::present_name('strings', $item['string']);
+                if ($source !== '') {
+                    return $source;
+                }
+            }
+
+            $translated = self::translation_names('strings', $item);
+            if ($translated !== '') {
+                return $translated;
+            }
+
+            if (isset($item['name']) && is_string($item['name'])) {
+                return self::present_name('strings', $item['name']);
+            }
+
+            return '';
+        }
+
         if ($section === 'posts' || $section === 'terms' || $section === 'menus') {
             $from_translations = self::translation_names($section, $item);
             if ($from_translations !== '') {
