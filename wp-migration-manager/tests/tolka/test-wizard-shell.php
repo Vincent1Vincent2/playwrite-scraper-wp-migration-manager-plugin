@@ -215,7 +215,9 @@ namespace WMM\Tolka {
                 $GLOBALS['wmm_tolka_detector_version'],
                 $GLOBALS['wmm_tolka_detector_errors'],
                 $GLOBALS['wmm_tolka_stub_bad_estimate'],
-                $GLOBALS['wmm_tolka_stub_html']
+                $GLOBALS['wmm_tolka_stub_html'],
+                $GLOBALS['wmm_tolka_stub_bad_shape'],
+                $GLOBALS['wmm_tolka_stub_bad_report']
             );
         }
 
@@ -1045,6 +1047,54 @@ PHP
             $this->assertNoSpeedPercent($payload);
         }
 
+        public function test_bad_preview_and_run_results_do_not_fatal()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_stub_bad_shape'] = true;
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+            );
+
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_preview();
+            });
+            $output = ob_get_clean();
+            $this->assertSame('', $output);
+            $this->assertFalse($GLOBALS['wmm_tolka_test_json']['success']);
+            $this->assertStringContainsString('could not be built', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Migration_Runner', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Nothing was changed.', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_run();
+            });
+            $output = ob_get_clean();
+            $this->assertSame('', $output);
+            $this->assertFalse($GLOBALS['wmm_tolka_test_json']['success']);
+            $this->assertStringContainsString('did not finish', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Migration_Runner', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('not deleted', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+
+            $GLOBALS['wmm_tolka_stub_bad_shape'] = false;
+            $GLOBALS['wmm_tolka_stub_bad_report'] = true;
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_run();
+            });
+            $output = ob_get_clean();
+            $this->assertSame('', $output);
+            $this->assertFalse($GLOBALS['wmm_tolka_test_json']['success']);
+            $this->assertStringContainsString('Migration_Report', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('could not be read', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('not deleted', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+        }
+
         public function test_slice_exceptions_become_errors()
         {
             $this->requireStubs();
@@ -1137,6 +1187,9 @@ class Migration_Runner {
         if (!empty($GLOBALS['wmm_tolka_stub_throw'])) {
             throw new \RuntimeException('preview-boom');
         }
+        if (!empty($GLOBALS['wmm_tolka_stub_bad_shape'])) {
+            return 'not-an-array';
+        }
         return array(
             'counts' => array(
                 'languages' => 0,
@@ -1154,6 +1207,9 @@ class Migration_Runner {
     public static function run() {
         if (!empty($GLOBALS['wmm_tolka_stub_throw'])) {
             throw new \RuntimeException('run-boom');
+        }
+        if (!empty($GLOBALS['wmm_tolka_stub_bad_shape'])) {
+            return null;
         }
         return array(
             'ok' => true,
@@ -1270,6 +1326,9 @@ PHP
 namespace WMM\Tolka;
 class Migration_Report {
     public static function format($run) {
+        if (!empty($GLOBALS['wmm_tolka_stub_bad_report'])) {
+            return 'not-a-report';
+        }
         return array(
             'ok' => true,
             'title' => 'Migration finished',

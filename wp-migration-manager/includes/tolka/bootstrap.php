@@ -593,7 +593,7 @@ function wmm_tolka_ajax_preview()
     $preview = wmm_tolka_invoke(\WMM\Tolka\Migration_Runner::class, 'preview', array());
 
     if (!$preview['called'] || !is_array($preview['value'])) {
-        wmm_tolka_json_error(__('The migration preview could not be built. Nothing was changed.', 'migration-manager'));
+        wmm_tolka_json_error(__('The migration preview could not be built. Migration_Runner did not return a preview. Nothing was changed.', 'migration-manager'));
         return;
     }
 
@@ -620,14 +620,14 @@ function wmm_tolka_ajax_run()
     $run = wmm_tolka_invoke(\WMM\Tolka\Migration_Runner::class, 'run', array());
 
     if (!$run['called'] || !is_array($run['value'])) {
-        wmm_tolka_json_error(__('The migration did not finish. Polylang data was not deleted.', 'migration-manager'));
+        wmm_tolka_json_error(__('The migration did not finish. Migration_Runner did not return a result. Polylang data was not deleted.', 'migration-manager'));
         return;
     }
 
     $report = wmm_tolka_invoke(\WMM\Tolka\Migration_Report::class, 'format', array($run['value']));
 
     if (!$report['called'] || !is_array($report['value'])) {
-        wmm_tolka_json_error(__('The migration finished, but the result could not be read. Polylang data was not deleted.', 'migration-manager'));
+        wmm_tolka_json_error(__('The migration finished, but Migration_Report could not be read. Polylang data was not deleted.', 'migration-manager'));
         return;
     }
 
