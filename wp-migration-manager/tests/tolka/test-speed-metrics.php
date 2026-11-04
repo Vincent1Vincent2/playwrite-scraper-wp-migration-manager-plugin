@@ -452,7 +452,7 @@ HTML;
         $result = $this->analyze($html);
 
         $this->assertSame(2, $result['script_count']);
-        $this->assertSame(3, $result['image_count']);
+        $this->assertSame(2, $result['image_count']);
     }
 
     public function test_stylesheet_links_ignore_preload_icons_and_the_word_in_a_script()
@@ -1365,6 +1365,52 @@ HTML;
         $this->assertSame(0, $result['hreflang_count']);
         $this->assertSame(1, $result['language_count']);
         $this->assertFalse($result['has_polylang_switcher']);
+    }
+
+    public function test_img_with_srcset_counts_as_one_image_not_per_candidate()
+    {
+        $html = '<img src="/a.jpg" srcset="/a.jpg 1x, /a@2.jpg 2x, /a@3.jpg 3x" alt="">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['image_count']);
+
+        $only_srcset = $this->analyze('<img srcset="/a.jpg 400w, /b.jpg 800w, /c.jpg 1200w" alt="">');
+        $this->assertSame(1, $only_srcset['image_count']);
+
+        $multiline = $this->analyze("<img src=\"/a.jpg\" srcset=\"\n/a.jpg 400w,\n/a@2.jpg 800w,\n/a@3.jpg 1200w\n\" alt=\"\">");
+        $this->assertSame(1, $multiline['image_count']);
+
+        $unquoted = $this->analyze('<img src=/shown.png srcset=/shown.png>');
+        $this->assertSame(1, $unquoted['image_count']);
+
+        $two = $this->analyze('<img srcset="/a.jpg 1x, /a@2.jpg 2x"><img src="/b.jpg"><img alt="spacer">');
+        $this->assertSame(2, $two['image_count']);
+
+        $commented = $this->analyze('<!-- <img srcset="/a.jpg 1x, /b.jpg 2x, /c.jpg 3x"> --><img srcset="/d.jpg 1x, /e.jpg 2x">');
+        $this->assertSame(1, $commented['image_count']);
+    }
+
+    public function test_img_with_no_src_and_no_srcset_does_not_count()
+    {
+        $cases = array(
+            '<img>',
+            '<img alt="decoration">',
+            '<img src="" alt="">',
+            '<img src="   " srcset="">',
+            '<img srcset="   ">',
+            '<IMG>',
+            '<img data-src="/lazy.png" alt="">',
+        );
+
+        foreach ($cases as $html) {
+            $result = $this->analyze($html);
+
+            $this->assertSame(0, $result['image_count'], $html);
+            $this->assertSame(1, $result['language_count'], $html);
+        }
+
+        $later = $this->analyze('<img alt="decoration"><img src="/shown.png">');
+        $this->assertSame(1, $later['image_count']);
     }
 
     public function test_one_image_tag_counts_once_with_srcset()
