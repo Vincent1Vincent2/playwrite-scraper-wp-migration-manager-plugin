@@ -148,15 +148,15 @@ class Speed_Loader_Transport_Error
  */
 class Speed_Loader_Test extends TestCase
 {
-    const PRIVATE_MESSAGE = 'That address points at a private or local network, so it cannot be measured. Enter the public address visitors use.';
+    const PRIVATE_MESSAGE = 'That address is on a private or local network. Enter the public address visitors use.';
 
-    const PRIVATE_DNS_MESSAGE = 'That address resolves to a private or local network, so it cannot be measured. Enter the public address visitors use.';
+    const PRIVATE_DNS_MESSAGE = 'That address resolves to a private or local network. Enter the public address visitors use.';
 
-    const SCHEME_MESSAGE = 'Only a public http or https address can be measured.';
+    const SCHEME_MESSAGE = 'Only a public http or https address can be used.';
 
     const MALFORMED_MESSAGE = 'That address could not be read. Use a full http or https URL.';
 
-    const HOST_MESSAGE = 'That address has no host name, so it cannot be measured.';
+    const HOST_MESSAGE = 'That address has no host name.';
 
     const EMPTY_MESSAGE = 'Enter the public address of the site you want to measure.';
 
@@ -518,7 +518,7 @@ class Speed_Loader_Test extends TestCase
 
         $this->assertFailure($result);
         $this->assertSame(404, $result['status_code']);
-        $this->assertSame('That page was not found, so the load time could not be measured.', $result['error']);
+        $this->assertSame('That page was not found.', $result['error']);
     }
 
     public function test_public_dns_answer_is_measured()
@@ -589,15 +589,15 @@ class Speed_Loader_Test extends TestCase
             ),
             'too many redirects' => array(
                 'Too many redirects',
-                'The site redirected too many times, so the load time could not be measured.',
+                'The site redirected too many times.',
             ),
             'curl 47' => array(
                 'cURL error 47: Maximum (3) redirects followed',
-                'The site redirected too many times, so the load time could not be measured.',
+                'The site redirected too many times.',
             ),
             'certificate' => array(
                 'cURL error 60: SSL certificate problem: unable to get local issuer certificate',
-                'The site\'s certificate could not be verified, so the page was not loaded.',
+                'The site\'s certificate could not be verified.',
             ),
             'resolve' => array(
                 'cURL error 6: Could not resolve host: example.com',
@@ -613,7 +613,7 @@ class Speed_Loader_Test extends TestCase
             ),
             'blocked' => array(
                 'User has blocked requests through HTTP.',
-                'WordPress is blocking requests to other sites, so the page could not be loaded.',
+                'WordPress is blocking requests to other sites.',
             ),
             'invalid url from wordpress' => array(
                 'A valid URL was not provided.',
@@ -668,14 +668,14 @@ class Speed_Loader_Test extends TestCase
         Speed_Loader_Harness::$resolved = array('1.1.1.1');
 
         $expected = array(
-            301 => 'The site redirected (HTTP 301) and did not return a page, so the load time could not be measured.',
-            302 => 'The site redirected (HTTP 302) and did not return a page, so the load time could not be measured.',
-            400 => 'The site returned HTTP 400, so the load time could not be measured.',
-            401 => 'The site asked for a login, so the public page could not be measured.',
-            403 => 'The site refused access to that page, so the load time could not be measured.',
-            404 => 'That page was not found, so the load time could not be measured.',
-            500 => 'The site reported an error (HTTP 500), so the load time could not be measured.',
-            503 => 'The site reported an error (HTTP 503), so the load time could not be measured.',
+            301 => 'The site redirected (HTTP 301) and did not return a page.',
+            302 => 'The site redirected (HTTP 302) and did not return a page.',
+            400 => 'The site returned HTTP 400.',
+            401 => 'The site asked for a login.',
+            403 => 'The site refused access to that page.',
+            404 => 'That page was not found.',
+            500 => 'The site reported an error (HTTP 500).',
+            503 => 'The site reported an error (HTTP 503).',
         );
 
         foreach ($expected as $code => $error) {
@@ -777,7 +777,7 @@ class Speed_Loader_Test extends TestCase
 
         $this->assertFailure($result);
         $this->assertSame(
-            'The site redirected to a private or local address, so it cannot be measured. Enter the public address visitors use.',
+            'The site redirected to a private or local address. Enter the public address visitors use.',
             $result['error']
         );
         $this->assertSame('', $result['html']);
@@ -809,7 +809,7 @@ class Speed_Loader_Test extends TestCase
         $result = Speed_Loader_Harness::measure('https://example.com/');
 
         $this->assertFailure($result);
-        $this->assertSame('The site redirected to an address that cannot be measured.', $result['error']);
+        $this->assertSame('The site redirected to an address that is not a public http or https page.', $result['error']);
         $this->assertSame('', $result['html']);
         $this->assertSame('https://example.com/', $result['url']);
         $this->assertStringNotContainsString('passwd', (string) json_encode($result));
