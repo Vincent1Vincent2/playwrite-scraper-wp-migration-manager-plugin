@@ -1276,6 +1276,10 @@ class Tolka_Writer
     {
         $function = $kind === 'term' ? 'update_term_meta' : 'update_post_meta';
 
+        if ((int) $id < 1) {
+            return false;
+        }
+
         if (self::testing()) {
             $driver = &$GLOBALS['wmm_tolka_schema_driver'];
             $flag = $kind === 'term' ? 'has_update_term_meta' : 'has_update_post_meta';
