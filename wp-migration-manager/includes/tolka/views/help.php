@@ -55,6 +55,9 @@ if (!defined('ABSPATH')) {
             <p class="wmm-tolka-help__quote">
                 <?php esc_html_e('Measured page load plus coefficients from benchmarks.json', 'migration-manager'); ?>
             </p>
+            <p>
+                <?php esc_html_e('The coefficients are the fixed numbers in the benchmark file. The estimate starts from the measured load and uses those numbers only to estimate the difference. It does not replace the measurement.', 'migration-manager'); ?>
+            </p>
             <p class="wmm-tolka-help__note">
                 <?php esc_html_e('The address must start with http:// or https:// and must be reachable on the public internet. The check refuses an address that only works on this computer or on a private network.', 'migration-manager'); ?>
             </p>
@@ -107,7 +110,7 @@ if (!defined('ABSPATH')) {
         <?php esc_html_e('Visitors still see this Polylang site. The screen does not turn Polylang off, and it does not switch the public site over to Tolka.', 'migration-manager'); ?>
     </p>
     <p class="wmm-tolka-help__limits">
-        <?php esc_html_e('The speed percent is an estimate for the single page you load. It is not a result for every page on the site.', 'migration-manager'); ?>
+        <?php esc_html_e('The speed percent compares the estimated Tolka load with the measured load for the single page you load. A larger percent means a shorter estimated load. It is not a result for every page on the site, and it is not a promise.', 'migration-manager'); ?>
     </p>
     <p class="wmm-tolka-help__limits">
         <?php esc_html_e('Running the migration again replaces the stored Tolka package and writes the language and group fields again. Polylang data is still left in place.', 'migration-manager'); ?>
@@ -129,7 +132,7 @@ if (!defined('ABSPATH')) {
         </p>
     <?php endif; ?>
     <p class="wmm-tolka-help__benchmark">
-        <?php esc_html_e('The copy shipped with the plugin uses placeholder coefficients, not laboratory measurements. The time to load the page is measured live. Replace the file with Tolka lab data before you use the percent in a pitch. Until you replace it, the speed result shows this note.', 'migration-manager'); ?>
+        <?php esc_html_e('The numbers shipped in that file are placeholders, not laboratory measurements. Replace the file with Tolka lab data before you use the percent in a pitch. Until you replace it, the speed result shows this note.', 'migration-manager'); ?>
     </p>
     <blockquote class="wmm-tolka-help__quote">
         <p><?php esc_html_e('Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.', 'migration-manager'); ?></p>
