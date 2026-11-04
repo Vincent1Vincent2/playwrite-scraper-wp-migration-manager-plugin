@@ -487,6 +487,37 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     }
 
     /**
+     * Empty catalogue rows are not strings, so an inactive site still reports that.
+     *
+     * @return void
+     */
+    public function test_inactive_site_with_only_empty_translations_reports_that_nothing_was_stored()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array('Hello', ''),
+                    array('', 'Bonjour'),
+                )),
+            ),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = (new Polylang_Strings())->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            array('Polylang is not active on this site, and no string translations were found.'),
+            $result['errors']
+        );
+    }
+
+    /**
      * @return void
      */
     public function test_a_reader_failure_keeps_polylang_data_and_hides_the_internal_error()
