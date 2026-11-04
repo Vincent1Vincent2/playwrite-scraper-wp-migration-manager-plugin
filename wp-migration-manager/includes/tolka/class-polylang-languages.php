@@ -260,9 +260,10 @@ class Polylang_Languages
         }
 
         // term_language mirrors each language. Polylang 3.9 stores those
-        // slugs as pll_en, not en. pll_ rows are internal and are not exported.
+        // slugs as pll_en, not en. An internal row may fill a real language.
+        // It is never exported as its own language.
         foreach ($this->terms_for_taxonomy('term_language') as $term) {
-            $this->add_item($items, $this->item_from_language_term($term, $default));
+            $this->add_twin_language($items, $term, $default);
         }
 
         $extras = array();
@@ -405,6 +406,46 @@ class Polylang_Languages
             $term_id,
             $flag
         );
+    }
+
+    /**
+     * Fill a real language from a term_language row.
+     *
+     * pll_en fills en when en is already in the list. It does not create en,
+     * and it is not added as pll_en.
+     *
+     * @param array $items Languages keyed by slug.
+     * @param mixed $term Term row.
+     * @param string $default Default language slug.
+     * @return void
+     */
+    private function add_twin_language(&$items, $term, $default)
+    {
+        $raw = $this->normalized_slug($this->read_field($term, 'slug'));
+        $target = $raw;
+        if ($this->is_internal_language_slug($raw)) {
+            $target = substr($raw, 4);
+            if ($target === '' || !isset($items[$target])) {
+                return;
+            }
+        }
+
+        $item = $this->item_from_language_term($term, $default);
+        if ($this->is_internal_language_slug($raw)) {
+            // The twin's term id belongs to term_language, not the language.
+            $item['slug'] = $target;
+            $item['term_id'] = 0;
+        } elseif ($item['slug'] === '') {
+            $item['slug'] = $target;
+        }
+        if ($this->is_internal_language_slug($item['slug'])) {
+            return;
+        }
+        if ($item['name'] === '' || $this->is_internal_language_slug($this->normalized_slug($item['name']))) {
+            $item['name'] = isset($items[$item['slug']]['name']) ? $items[$item['slug']]['name'] : $item['slug'];
+        }
+
+        $this->add_item($items, $item);
     }
 
     /**
