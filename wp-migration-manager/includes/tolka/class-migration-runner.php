@@ -383,6 +383,7 @@ class Migration_Runner
                 } elseif ($count > 1) {
                     $message .= ' ' . sprintf(self::line($meta['found_many']), $count);
                 }
+                $message = self::with_sample_note($message, $count);
             } elseif ($count === 0) {
                 $status = 'empty';
                 $message = self::line($meta['empty']);
@@ -391,13 +392,10 @@ class Migration_Runner
                 $message = self::line($meta['one']);
             } else {
                 $status = 'ready';
-                $message = sprintf(self::line($meta['many']), $count);
-                if ($count > self::SAMPLE_LIMIT) {
-                    $message .= ' ' . sprintf(
-                        self::line('The preview shows the first %d.'),
-                        self::SAMPLE_LIMIT
-                    );
-                }
+                $message = self::with_sample_note(
+                    sprintf(self::line($meta['many']), $count),
+                    $count
+                );
             }
 
             $counts[$section] = $count;
@@ -547,6 +545,22 @@ class Migration_Runner
             return self::line('The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.');
         }
         return self::line('The migration did not run. Nothing was written, and existing Polylang data was not changed.');
+    }
+
+    /**
+     * @param string $message
+     * @param int    $count
+     * @return string
+     */
+    private static function with_sample_note($message, $count)
+    {
+        if ($count > self::SAMPLE_LIMIT) {
+            $message .= ' ' . sprintf(
+                self::line('The preview shows the first %d.'),
+                self::SAMPLE_LIMIT
+            );
+        }
+        return $message;
     }
 
     /**

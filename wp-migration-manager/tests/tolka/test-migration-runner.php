@@ -1107,5 +1107,41 @@ namespace {
             $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
             $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
         }
+
+        public function test_long_section_with_errors_still_caps_the_sample()
+        {
+            $this->reset_doubles();
+            $posts = array();
+            for ($i = 0; $i < 21; $i++) {
+                $posts[] = array('title' => 'Draft ' . $i, 'status' => 'draft');
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array(
+                    'items' => $posts,
+                    'errors' => array('One post could not be read.'),
+                ),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame('error', $preview['sections']['posts']['status']);
+            $this->assertSame(21, $preview['counts']['posts']);
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertCount(20, $preview['sections']['posts']['labels']);
+            $this->assertSame('Draft 0 (draft)', $preview['sections']['posts']['labels'][0]);
+            $this->assertSame(1, $preview['sections']['posts']['more']);
+            $this->assertSame('1 more is not shown.', $preview['sections']['posts']['more_label']);
+            $this->assertSame(
+                'Posts could not be fully read. Review the errors before migrating. 21 posts were still found. The preview shows the first 20.',
+                $preview['sections']['posts']['message']
+            );
+            $this->assertContains('Posts: One post could not be read.', $preview['errors']);
+            $this->assertSame('error', $preview['state']);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertCount(21, \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
+            $this->assertCount(20, $run['sample']['posts']);
+            $this->assertSame('Draft 20', \WMM\Tolka\RunnerTest\Writer::$package['posts'][20]['title']);
+        }
     }
 }
