@@ -373,6 +373,62 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertStringContainsString('wmm-tolka-value', $note->getAttribute('class'));
     }
 
+    public function test_placeholder_note_stays_hidden_until_a_placeholder_success()
+    {
+        $label = '<script>alert(1)</script>';
+        $note = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
+        $assert_order = function ($html, $name) {
+            $current_at = strpos($html, 'id="wmm-tolka-current-load"');
+            $tolka_at = strpos($html, 'id="wmm-tolka-tolka-load"');
+            $faster_at = strpos($html, 'id="wmm-tolka-faster"');
+            $this->assertNotFalse($current_at, $name);
+            $this->assertLessThan($tolka_at, $current_at, $name);
+            $this->assertLessThan($faster_at, $tolka_at, $name);
+            $this->assertLessThan(strpos($html, 'Estimated Tolka load'), strpos($html, 'Current load'), $name);
+            $this->assertLessThan(strpos($html, 'Percent faster'), strpos($html, 'Estimated Tolka load'), $name);
+        };
+
+        foreach (array(
+            'unset' => $this->render(false),
+            'empty array' => $this->render(true, array()),
+        ) as $name => $html) {
+            $note_node = $this->document($html)->getElementById('wmm-tolka-provenance-note');
+            $this->assertTrue($note_node->hasAttribute('hidden'), $name);
+            $this->assertTrue($note_node->parentNode->hasAttribute('hidden'), $name);
+            $this->assertSame('', $this->text($html, 'wmm-tolka-provenance-note'), $name);
+            $this->assertStringNotContainsString('wmm-tolka-provenance-placeholder', $html, $name);
+            $this->assertStringNotContainsString('Placeholder coefficients', $html, $name);
+            $this->assertStringNotContainsString('notice-warning', $html, $name);
+            $assert_order($html, $name);
+        }
+
+        $html = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 1842,
+            'tolka_ms' => 900,
+            'faster_percent' => 51.1,
+            'faster_label' => $label,
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'placeholder',
+            'provenance_note' => $note,
+            'error' => '',
+        ));
+        $document = $this->document($html);
+        $note_node = $document->getElementById('wmm-tolka-provenance-note');
+
+        $this->assertFalse($note_node->hasAttribute('hidden'));
+        $this->assertFalse($note_node->parentNode->hasAttribute('hidden'));
+        $this->assertSame('placeholder', $note_node->getAttribute('data-provenance'));
+        $this->assertStringContainsString('wmm-tolka-provenance-placeholder', $note_node->parentNode->getAttribute('class'));
+        $this->assertStringContainsString('notice-warning', $note_node->parentNode->getAttribute('class'));
+        $this->assertSame($note, $this->text($html, 'wmm-tolka-provenance-note'));
+        $this->assertSame($label, $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame(0, $this->element_child_count($document->getElementById('wmm-tolka-faster')));
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $assert_order($html, 'placeholder success');
+    }
+
     public function test_empty_zero_and_failed_estimates_stay_distinct()
     {
         $ids = array(
