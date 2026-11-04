@@ -168,8 +168,17 @@ class Polylang_Detector
             return '';
         }
 
+        // The file that defined the loaded code is the running plugin file.
+        // It wins even when a sibling copy reports a different version.
+        $parsed_origin = static::inspect_plugin_file($origin);
+        if (!empty($parsed_origin['is_polylang'])) {
+            return $origin;
+        }
+
         // Polylang and Polylang Pro both keep the plugin header in polylang.php.
+        // polylang.php stays first so the official Pro file beats a stub.
         $names = array('polylang.php', 'polylang-pro.php');
+        $running_pro = self::loaded_path_is_pro($origin);
 
         $directory = dirname($origin);
         for ($depth = 0; $depth < 8; $depth++) {
@@ -177,12 +186,19 @@ class Polylang_Detector
                 break;
             }
 
+            $matches = array();
             foreach ($names as $name) {
                 $candidate = rtrim($directory, '/\\') . '/' . $name;
                 $parsed = static::inspect_plugin_file($candidate);
                 if (!empty($parsed['is_polylang'])) {
-                    return $candidate;
+                    $matches[] = array(
+                        'path' => $candidate,
+                        'parsed' => $parsed,
+                    );
                 }
+            }
+            if ($matches !== array()) {
+                return self::choose_loaded_candidate($matches, $running_pro);
             }
 
             $parent = dirname($directory);
@@ -193,6 +209,45 @@ class Polylang_Detector
         }
 
         return '';
+    }
+
+    /**
+     * The running package is Polylang Pro when its path says so.
+     */
+    private static function loaded_path_is_pro(string $origin): bool
+    {
+        $normalized = strtolower(str_replace('\\', '/', $origin));
+
+        return strpos($normalized, '/polylang-pro/') !== false
+            || self::ends_with($normalized, '/polylang-pro.php');
+    }
+
+    /**
+     * Pick the running package's header when a free copy shares the folder.
+     *
+     * Official polylang.php still wins when both files are Polylang Pro.
+     *
+     * @param array<int, array{path: string, parsed: array<string, mixed>}> $matches
+     */
+    private static function choose_loaded_candidate(array $matches, bool $running_pro): string
+    {
+        if ($running_pro) {
+            $pro = array();
+            foreach ($matches as $match) {
+                $label = '';
+                if (isset($match['parsed']['label']) && is_string($match['parsed']['label'])) {
+                    $label = $match['parsed']['label'];
+                }
+                if ($label === 'Polylang Pro') {
+                    $pro[] = $match;
+                }
+            }
+            if ($pro !== array()) {
+                $matches = $pro;
+            }
+        }
+
+        return $matches[0]['path'];
     }
 
     /**
