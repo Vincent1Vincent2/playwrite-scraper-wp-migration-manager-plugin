@@ -581,13 +581,45 @@ class Polylang_Posts
      */
     private function skip_reason(array $record)
     {
-        if (isset($record['type']) && $record['type'] === 'revision') {
-            return 'a revision';
+        $type = isset($record['type']) ? (string) $record['type'] : '';
+        $ignored = array(
+            'revision' => 'a revision',
+            'nav_menu_item' => 'a menu item',
+            'customize_changeset' => 'a customizer changeset',
+            'oembed_cache' => 'an embed cache entry',
+            'user_request' => 'a privacy request',
+            'custom_css' => 'custom CSS',
+            'wp_global_styles' => 'global styles',
+            'wp_font_family' => 'a font family',
+            'wp_font_face' => 'a font face',
+        );
+        if ($type !== '' && isset($ignored[$type])) {
+            return $ignored[$type];
         }
         if (isset($record['status']) && $record['status'] === 'auto-draft') {
             return 'an automatic draft';
         }
         return '';
+    }
+
+    /**
+     * Post types that are not translated content. Menu items belong to the menu export.
+     *
+     * @return string[]
+     */
+    private function ignored_post_types()
+    {
+        return array(
+            'revision',
+            'nav_menu_item',
+            'customize_changeset',
+            'oembed_cache',
+            'user_request',
+            'custom_css',
+            'wp_global_styles',
+            'wp_font_family',
+            'wp_font_face',
+        );
     }
 
     /**
@@ -1114,7 +1146,9 @@ class Polylang_Posts
         if (!is_array($types) || empty($types)) {
             return 'any';
         }
-        unset($types['revision']);
+        foreach ($this->ignored_post_types() as $ignored) {
+            unset($types[$ignored]);
+        }
         $types = array_values($types);
         if (empty($types)) {
             return 'any';
@@ -1210,12 +1244,12 @@ class Polylang_Posts
         $size = $this->page_size();
         $guard = 0;
         do {
+            $ignored = $this->ignored_post_types();
+            $placeholders = implode(', ', array_fill(0, count($ignored), '%s'));
+            $params = array_merge(array('auto-draft'), $ignored, array($size, $offset));
             $sql = $wpdb->prepare(
-                "SELECT ID FROM {$wpdb->posts} WHERE post_status <> %s AND post_type <> %s ORDER BY ID ASC LIMIT %d OFFSET %d",
-                'auto-draft',
-                'revision',
-                $size,
-                $offset
+                "SELECT ID FROM {$wpdb->posts} WHERE post_status <> %s AND post_type NOT IN ($placeholders) ORDER BY ID ASC LIMIT %d OFFSET %d",
+                ...$params
             );
             $rows = $this->normalize_rows($wpdb->get_results($sql, 'ARRAY_A'));
             if ($rows === null) {

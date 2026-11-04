@@ -363,7 +363,18 @@ class Tolka_Posts_Fake_Db
         $filtered = array();
         foreach ($ids as $id) {
             $row = $this->posts_rows[$id];
-            if ($row['post_status'] === 'auto-draft' || $row['post_type'] === 'revision') {
+            $skip_types = array(
+                'revision',
+                'nav_menu_item',
+                'customize_changeset',
+                'oembed_cache',
+                'user_request',
+                'custom_css',
+                'wp_global_styles',
+                'wp_font_family',
+                'wp_font_face',
+            );
+            if ($row['post_status'] === 'auto-draft' || in_array($row['post_type'], $skip_types, true)) {
                 continue;
             }
             $filtered[] = (int) $id;
@@ -651,6 +662,29 @@ class Polylang_Posts_Test extends TestCase
                 'Post 9 is a revision, so it was left out of translation group post:8.',
                 'Post 13 is an automatic draft, so it was left out of translation group post:12.',
             ),
+            $result['errors']
+        );
+    }
+
+    public function test_menu_items_are_not_exported_as_posts()
+    {
+        $exporter = new Polylang_Posts_Fixture();
+        $exporter->maps = array(
+            array('en' => 50),
+            array('en' => 8, 'de' => 51),
+        );
+        $exporter->posts = array(
+            50 => $this->record(50, 'nav_menu_item', 'Home', 'home', 'publish'),
+            8 => $this->record(8, 'page', 'About', 'about', 'draft', '', 'About us'),
+            51 => $this->record(51, 'nav_menu_item', 'Start', 'start', 'publish'),
+        );
+
+        $result = $exporter->export();
+        $this->assertSame(array('post:8'), $this->groups($result));
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('About us', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame(
+            array('Post 51 is a menu item, so it was left out of translation group post:8.'),
             $result['errors']
         );
     }
@@ -979,6 +1013,50 @@ class Polylang_Posts_Test extends TestCase
             array('Post 6 is linked to a translation group but was missing from its stored description. It was added as de.'),
             $result['errors']
         );
+    }
+
+    public function test_untranslated_draft_stays_when_menu_items_have_languages()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->languages = array(9 => 'sv', 50 => 'en');
+        $fake->posts_rows = array(
+            9 => $this->db_post(9, 'draft', 'Förslag', 'forslag', 'post', '', 'Ett utkast'),
+            50 => $this->db_post(50, 'publish', 'Home', 'home', 'nav_menu_item'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array('post:9'), $this->groups($result));
+        $this->assertSame('Förslag', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('forslag', $result['items'][0]['translations']['sv']['slug']);
+        $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Ett utkast', $result['items'][0]['translations']['sv']['content']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    public function test_double_serialized_description_still_exports_the_draft()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 4,
+                'description' => serialize(serialize(array('en' => 3, 'de' => 4))),
+            ),
+        );
+        $fake->languages = array(3 => 'en', 4 => 'de');
+        $fake->posts_rows = array(
+            3 => $this->db_post(3, 'draft', 'Hello', 'hello'),
+            4 => $this->db_post(4, 'publish', 'Hallo', 'hallo'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:3', $result['items'][0]['group']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('Hallo', $result['items'][0]['translations']['de']['title']);
     }
 
     public function test_deleted_untranslated_post_is_reported_and_the_draft_remains()
