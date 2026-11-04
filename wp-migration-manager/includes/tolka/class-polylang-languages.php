@@ -1330,7 +1330,10 @@ class Polylang_Languages
     }
 
     /**
-     * Drop any internal slug that reached the final list.
+     * Drop internal and blank slugs, then return the contract fields.
+     *
+     * pll_en is omitted. A real language keeps slug, name, locale,
+     * is_default, term_id, and flag.
      *
      * @param array $items Language rows.
      * @return array
@@ -1355,12 +1358,18 @@ class Polylang_Languages
                 $name = $item['name'];
             }
             $locale = isset($item['locale']) && is_string($item['locale']) ? $item['locale'] : '';
+            if ($this->is_internal_language_slug($locale)) {
+                $locale = '';
+            }
             $is_default = isset($item['is_default']) && $item['is_default'] === true;
             $term_id = isset($item['term_id']) ? $this->int_value($item['term_id']) : 0;
             if ($term_id < 0) {
                 $term_id = 0;
             }
             $flag = isset($item['flag']) && is_string($item['flag']) ? $item['flag'] : '';
+            if ($this->is_internal_language_slug($flag)) {
+                $flag = '';
+            }
             $kept[] = array(
                 'slug' => $slug,
                 'name' => $name,
