@@ -457,6 +457,56 @@ class Test_Speed_Estimate extends TestCase
         $this->assertNotSame(5000, $estimate['current_ms']);
     }
 
+    public function test_failed_measurement_names_a_public_url()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $named = Speed_Estimate::project(
+            array(
+                'ok' => false,
+                'url' => 'https://example.com/fr/',
+                'error' => 'The host is not allowed.',
+            ),
+            array(),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $named,
+            'A Tolka speed estimate is not available. The page at https://example.com/fr/ could not be measured. The host is not allowed.'
+        );
+
+        $token = Speed_Estimate::project(
+            array('ok' => false, 'url' => 'http://example.com', 'error' => '404'),
+            array(),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $token,
+            'A Tolka speed estimate is not available. The page at http://example.com could not be measured (404).'
+        );
+
+        foreach (array(
+            'javascript:alert(1)',
+            'https://user:pass@example.com/secret',
+            'https://example.com/not a url',
+            'ftp://example.com/file',
+            '<script>https://example.com</script>',
+            str_repeat('https://example.com/', 20),
+        ) as $url) {
+            $estimate = Speed_Estimate::project(
+                array('ok' => false, 'url' => $url),
+                array(),
+                $benchmarks
+            );
+            $this->assertSame(
+                'A Tolka speed estimate is not available. The page could not be measured.',
+                $estimate['error'],
+                'url ' . $url
+            );
+            $this->assertStringNotContainsString('user:pass', $estimate['error']);
+            $this->assertStringNotContainsString('alert', $estimate['error']);
+        }
+    }
+
     public function test_measurement_failure_messages_are_finished_sentences()
     {
         $benchmarks = self::contractBenchmarks();
@@ -867,7 +917,8 @@ class Test_Speed_Estimate extends TestCase
             . 'define("ABSPATH", __DIR__);' . "\n"
             . 'require ' . var_export(self::classPath(), true) . ';' . "\n"
             . '$estimate = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false), array(), array());' . "\n"
-            . 'echo $estimate["error"];' . "\n";
+            . '$with_url = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false, "url" => "https://example.com/start"), array(), array());' . "\n"
+            . 'echo $estimate["error"], "\n", $with_url["error"];' . "\n";
 
         $path = tempnam(sys_get_temp_dir(), 'tolka-i18n-');
         file_put_contents($path, $script);
@@ -879,7 +930,8 @@ class Test_Speed_Estimate extends TestCase
         $text = implode("\n", $output);
         $this->assertSame(0, $exit_code, $text);
         $this->assertSame(
-            'TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.',
+            "TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.\n"
+            . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.',
             $text
         );
     }

@@ -243,9 +243,16 @@ class Speed_Estimate
      */
     private static function measurement_failure_sentence(array $measurement)
     {
+        $url = self::public_url(isset($measurement['url']) ? $measurement['url'] : '');
         $detail = self::plain_detail(isset($measurement['error']) ? $measurement['error'] : '');
-        if ($detail === '' || preg_match('/[\p{L}\p{N}]/u', $detail) !== 1) {
-            return self::translate('The page could not be measured.');
+        $has_detail = $detail !== '' && preg_match('/[\p{L}\p{N}]/u', $detail) === 1;
+
+        if (!$has_detail) {
+            if ($url === '') {
+                return self::translate('The page could not be measured.');
+            }
+
+            return sprintf(self::translate('The page at %s could not be measured.'), $url);
         }
 
         if (preg_match('/\s/u', $detail) === 1) {
@@ -253,12 +260,59 @@ class Speed_Estimate
                 $detail .= '.';
             }
 
-            return self::translate('The page could not be measured.') . ' ' . $detail;
+            $lead = $url === ''
+                ? self::translate('The page could not be measured.')
+                : sprintf(self::translate('The page at %s could not be measured.'), $url);
+
+            return $lead . ' ' . $detail;
         }
 
         $detail = rtrim($detail, '.');
+        if ($url === '') {
+            return sprintf(self::translate('The page could not be measured (%s).'), $detail);
+        }
 
-        return sprintf(self::translate('The page could not be measured (%s).'), $detail);
+        return sprintf(self::translate('The page at %s could not be measured (%s).'), $url, $detail);
+    }
+
+    /**
+     * HTTP(S) URL safe to repeat in an admin sentence.
+     *
+     * Credentials are left out so a failed measurement cannot echo them.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private static function public_url($value)
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        $url = trim($value);
+        if ($url === '' || $url !== trim(strip_tags($url))) {
+            return '';
+        }
+
+        if (strlen($url) > 200 || preg_match('/\s/u', $url) === 1) {
+            return '';
+        }
+
+        if (preg_match('#\Ahttps?://#i', $url) !== 1 || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return '';
+        }
+
+        $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : '';
+        if (($scheme !== 'http' && $scheme !== 'https') || isset($parts['user']) || isset($parts['pass'])) {
+            return '';
+        }
+
+        return $url;
     }
 
     /**
