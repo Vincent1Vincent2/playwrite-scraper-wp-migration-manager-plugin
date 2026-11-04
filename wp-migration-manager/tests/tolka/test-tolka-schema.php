@@ -167,6 +167,19 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
 
         $this->assertFalse(Tolka_Schema::is_gmt_timestamp('2020-13-40T00:00:00Z'));
         $this->assertFalse(Tolka_Schema::is_gmt_timestamp('2020-01-01T00:00:00.000Z'));
+        $before_fraction = time();
+        $fraction = Tolka_Writer::write(array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => '2020-01-01T00:00:00.000Z',
+        ));
+        $after_fraction = time();
+        $fraction_stamp = $GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at'];
+        $this->assertTrue($fraction['ok']);
+        $this->assertTrue(Tolka_Schema::is_gmt_timestamp($fraction_stamp));
+        $this->assertNotSame('2020-01-01T00:00:00.000Z', $fraction_stamp);
+        $this->assertGreaterThanOrEqual($before_fraction, strtotime($fraction_stamp));
+        $this->assertLessThanOrEqual($after_fraction, strtotime($fraction_stamp));
         $before_invalid = time();
         $invalid = Tolka_Writer::write(array(
             'format' => 'tolka-migration',
