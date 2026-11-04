@@ -313,11 +313,40 @@
     if (requestInFlight) {
       return true;
     }
+    if (hasBusyClass(button)) {
+      return true;
+    }
+    if (anotherButtonIsBusy(button)) {
+      return true;
+    }
     return !button || button.getAttribute("data-wmm-tolka-pending") === "1";
   }
 
+  function hasBusyClass(node) {
+    if (!node) {
+      return false;
+    }
+    if (node.classList) {
+      return node.classList.contains("wmm-tolka-is-busy");
+    }
+    return (" " + (node.className || "") + " ").indexOf(" wmm-tolka-is-busy ") !== -1;
+  }
+
+  function anotherButtonIsBusy(button) {
+    if (typeof document === "undefined" || !document.querySelectorAll) {
+      return false;
+    }
+    var nodes = document.querySelectorAll(".wmm-tolka-is-busy");
+    for (var i = 0; i < nodes.length; i += 1) {
+      if (nodes[i] !== button) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function withBusy(button, busyLabel, container, statusText, work) {
-    if (!button || requestInFlight) {
+    if (!button || requestInFlight || hasBusyClass(button) || anotherButtonIsBusy(button)) {
       return;
     }
     requestInFlight = true;
@@ -366,6 +395,13 @@
   }
 
   function holdBusyClass(button) {
+    if (typeof document !== "undefined" && document.querySelectorAll) {
+      Array.prototype.forEach.call(document.querySelectorAll(".wmm-tolka-is-busy"), function (node) {
+        if (node !== button) {
+          removeBusyClass(node);
+        }
+      });
+    }
     if (!button) {
       return;
     }
