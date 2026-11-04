@@ -516,6 +516,33 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('term:4', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_group']);
     }
 
+    public function test_negative_post_id_is_skipped_with_a_finished_sentence()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:4',
+                    'translations' => array(
+                        'en' => array('id' => -3, 'title' => 'Draft'),
+                        'sv' => '-8',
+                        'de' => array('id' => 4, 'title' => 'Kept'),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(
+            array(
+                'Post id -3 for language "en" in group "post:4" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id -8 for language "sv" in group "post:4" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+            ),
+            $result['errors']
+        );
+        $this->assertArrayNotHasKey(-3, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame('de', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][4]['_wmm_tolka_lang']);
+    }
+
     public function test_id_zero_title_stays_short_and_literal()
     {
         $long = str_repeat('A', 90);
