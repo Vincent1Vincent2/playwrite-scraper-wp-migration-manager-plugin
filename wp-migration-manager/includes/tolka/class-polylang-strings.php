@@ -697,7 +697,7 @@ class Polylang_Strings
         $rows = array();
         $names = array('blogname', 'blogdescription', 'date_format', 'time_format');
         foreach ($names as $name) {
-            $value = $this->option($name, null);
+            $value = $this->unfiltered_option($name);
             $text = $this->to_text($value);
             if ($text === null || $text === '') {
                 continue;
@@ -2166,6 +2166,97 @@ class Polylang_Strings
         }
 
         return get_option($name, $default);
+    }
+
+    /**
+     * Site title and the other core strings, before Polylang translates them.
+     *
+     * Polylang filters option_blogname and the date formats after startup, so
+     * get_option() can return Svenska while the stored original is English.
+     * The options table keeps the original that string translations are keyed by.
+     *
+     * @param string $name Option name.
+     * @return mixed
+     */
+    protected function unfiltered_option($name)
+    {
+        $stored = $this->read_option_row($name);
+        if ($stored !== null) {
+            return $stored;
+        }
+
+        return $this->option($name, null);
+    }
+
+    /**
+     * One option row from the options table, or null when it is not stored.
+     *
+     * @param string $name Option name.
+     * @return mixed|null
+     */
+    protected function read_option_row($name)
+    {
+        $db = $this->database();
+        if (!$db) {
+            return null;
+        }
+        $table = $this->table_name($db, 'options');
+        if ($table === '') {
+            return null;
+        }
+        $sql = $this->safe_prepare(
+            $db,
+            "SELECT option_name, option_value FROM {$table} WHERE option_name = %s LIMIT 1",
+            array($name)
+        );
+        $rows = $this->query_rows($sql);
+        if (!is_array($rows) || !$rows) {
+            return null;
+        }
+
+        $unnamed = null;
+        $unnamed_count = 0;
+        foreach ($rows as $row) {
+            $row = $this->row_array($row);
+            if (!is_array($row) || !array_key_exists('option_value', $row)) {
+                continue;
+            }
+            if (!isset($row['option_name'])) {
+                $unnamed = $row['option_value'];
+                $unnamed_count++;
+                continue;
+            }
+            if ((string) $row['option_name'] === $name) {
+                return $this->decode_option_value($row['option_value']);
+            }
+        }
+        if ($unnamed_count === 1) {
+            return $this->decode_option_value($unnamed);
+        }
+
+        return null;
+    }
+
+    /**
+     * Option values are sometimes stored serialized.
+     *
+     * @param mixed $value Raw option_value.
+     * @return mixed
+     */
+    protected function decode_option_value($value)
+    {
+        if (!is_string($value)) {
+            return $value;
+        }
+        if ($value === 'N;') {
+            return null;
+        }
+        $decoded = $this->safe_unserialize($value);
+        if ($decoded !== null || $value === 'b:0;') {
+            return $decoded;
+        }
+
+        return $value;
     }
 
     /**

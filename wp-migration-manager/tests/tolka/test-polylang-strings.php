@@ -1874,6 +1874,61 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     }
 
     /**
+     * Polylang filters blogname, so the stored English original must stay the string.
+     *
+     * @return void
+     */
+    public function test_core_strings_keep_the_stored_original_when_the_option_is_translated()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'sv'),
+        );
+        $db->option_rows = array(
+            array(
+                'option_name' => 'blogname',
+                'option_value' => 'Hello from English',
+            ),
+            array(
+                'option_name' => 'blogdescription',
+                'option_value' => 's:18:"An English tagline";',
+            ),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array('Hello from English', 'Hej från svenska'),
+                    array('An English tagline', 'En svensk slogan'),
+                )),
+            ),
+        );
+        $probe = $this->probe($db, array(
+            'blogname' => 'Hej från svenska',
+            'blogdescription' => 'En svensk slogan',
+        ), true);
+        $result = $probe->export();
+
+        $by_name = array();
+        $strings = array();
+        foreach ($result['items'] as $item) {
+            $by_name[$item['name']] = $item;
+            $strings[] = $item['string'];
+        }
+
+        $this->assertSame('Hello from English', $by_name['blogname']['string']);
+        $this->assertSame('WordPress', $by_name['blogname']['context']);
+        $this->assertSame('', $by_name['blogname']['translations']['en']);
+        $this->assertSame('Hej från svenska', $by_name['blogname']['translations']['sv']);
+        $this->assertSame('An English tagline', $by_name['blogdescription']['string']);
+        $this->assertSame('En svensk slogan', $by_name['blogdescription']['translations']['sv']);
+        $this->assertNotContains('Hej från svenska', $strings);
+        $this->assertNotContains('En svensk slogan', $strings);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
      * @return void
      */
     public function test_widgets_are_not_invented_when_polylang_is_inactive()
