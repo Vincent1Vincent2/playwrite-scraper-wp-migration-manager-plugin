@@ -1982,6 +1982,201 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_string_items_are_stored_without_post_meta()
+    {
+        $package = Tolka_Schema::package(array(
+            'strings' => array(
+                'items' => array(
+                    array(
+                        'name' => "footer\0",
+                        'string' => "Read <em>more</em>\0",
+                        'context' => 'theme',
+                        'id' => 99,
+                        'translations' => array(
+                            'en' => '',
+                            'sv' => "Läs <em>mer</em>\0",
+                        ),
+                    ),
+                    array(
+                        'name' => '',
+                        'string' => 'Hello',
+                        'context' => '',
+                        'translations' => array(
+                            'en' => 'Hello',
+                            'sv' => array(
+                                'id' => 88,
+                                'title' => 'Do not tag',
+                                'content' => '<p>Nope</p>',
+                            ),
+                        ),
+                    ),
+                ),
+                'errors' => array('A string warning that must not be stored.'),
+            ),
+            'posts' => array(
+                'items' => array(
+                    array(
+                        'group' => 'post:10',
+                        'type' => 'page',
+                        'translations' => array(
+                            'en' => array(
+                                'id' => 10,
+                                'title' => '<em>Home</em>',
+                                'content' => '<p>Body</p>',
+                            ),
+                        ),
+                    ),
+                ),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assertSame(1, $package['version']);
+        $this->assertTrue(is_int($package['version']));
+        $this->assertSame('tolka-migration', $package['format']);
+        $this->assertSame('Read <em>more</em>', $package['strings'][0]['string']);
+        $this->assertSame('footer', $package['strings'][0]['name']);
+        $this->assertSame('theme', $package['strings'][0]['context']);
+        $this->assertSame(99, $package['strings'][0]['id']);
+        $this->assertSame('', $package['strings'][0]['translations']['en']);
+        $this->assertSame('Läs <em>mer</em>', $package['strings'][0]['translations']['sv']);
+        $this->assertSame(88, $package['strings'][1]['translations']['sv']['id']);
+        $this->assertSame('<p>Nope</p>', $package['strings'][1]['translations']['sv']['content']);
+        $this->assertStringNotContainsString('must not be stored', json_encode($package));
+        $this->assertSame(false, strpos(serialize($package), "\0"));
+
+        $package['version'] = '1.0';
+        $result = Tolka_Writer::write($package);
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(2, $result['counts']['strings']);
+        $this->assertSame(1, $result['counts']['posts']);
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+        $this->assertSame($package['strings'], $stored['strings']);
+        $this->assertSame('<em>Home</em>', $stored['posts'][0]['translations']['en']['title']);
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'post:10',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]
+        );
+        $this->assertArrayNotHasKey(99, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertArrayNotHasKey(88, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(2, $this->call_count('update_post_meta'));
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+
+        foreach ($GLOBALS['wmm_tolka_schema_driver']['calls'] as $call) {
+            if ($call['fn'] === 'update_post_meta') {
+                $this->assertSame(10, $call['id']);
+                $this->assertContains($call['key'], array('_wmm_tolka_lang', '_wmm_tolka_group'));
+            }
+            if ($call['fn'] === 'update_option') {
+                $this->assertSame('wmm_tolka_package', $call['option']);
+            }
+        }
+
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
+    public function test_string_translation_keys_are_not_treated_as_post_ids()
+    {
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10] = array(
+            '_locale' => 'keep',
+        );
+        $item = array(
+            'name' => 'count',
+            'string' => 'One',
+            'context' => 'theme',
+            'translations' => array(
+                '10' => '<b>Ett</b>',
+                'en' => 'One',
+            ),
+        );
+
+        $result = Tolka_Writer::write(array(
+            'version' => 1,
+            'strings' => array($item),
+            'posts' => array(
+                array(
+                    'group' => 'post:4',
+                    'translations' => array('sv' => 4),
+                ),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array($item), $stored['strings']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame(
+            array('_locale' => 'keep'),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]
+        );
+        $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][4]['_wmm_tolka_lang']);
+        $this->assertSame('post:4', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][4]['_wmm_tolka_group']);
+        $this->assertSame(2, count($GLOBALS['wmm_tolka_schema_driver']['post_meta'][4]));
+
+        foreach ($GLOBALS['wmm_tolka_schema_driver']['calls'] as $call) {
+            if ($call['fn'] === 'update_post_meta') {
+                $this->assertSame(4, $call['id']);
+                $this->assertContains($call['key'], array('_wmm_tolka_lang', '_wmm_tolka_group'));
+            }
+        }
+    }
+
+    public function test_string_only_package_writes_no_post_meta()
+    {
+        $item = array(
+            'name' => 'widget-title',
+            'string' => '<span>Welcome</span>',
+            'context' => 'widget',
+            'translations' => array(
+                'en' => '<span>Welcome</span>',
+                'sv' => '<span>Välkommen</span>',
+            ),
+        );
+
+        $result = Tolka_Writer::write(array(
+            'version' => 1,
+            'strings' => array(
+                'items' => array($item),
+                'errors' => array('Skip this warning.'),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(1, $result['counts']['strings']);
+        $this->assertSame(0, $result['counts']['posts']);
+        $this->assertSame(array($item), $stored['strings']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+        $this->assertStringNotContainsString('Skip this warning', json_encode($stored));
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
     public function test_invalid_byte_between_html_tags_is_removed()
     {
         $result = Tolka_Writer::write(array(
