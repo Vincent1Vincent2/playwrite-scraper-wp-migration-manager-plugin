@@ -1153,6 +1153,64 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('publish', $second['items'][2]['translations']['en']['status']);
     }
 
+    public function test_empty_translation_stays_beside_swedish_content()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 40,
+                'description' => serialize(array('sv' => 41, 'en' => 42)),
+            ),
+        );
+        $fake->languages = array(41 => 'sv', 42 => 'en');
+        $fake->posts_rows = array(
+            41 => $this->db_post(41, 'publish', 'Fågel', 'fagel', 'post', '', '<p>ä ö å</p>'),
+            42 => $this->db_post(42, 'draft', 'Bird', 'bird', 'post', '', ''),
+        );
+        $result = (new Polylang_Posts())->export();
+        $again = (new Polylang_Posts())->export();
+        $this->assertSame($result, $again);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:41', $result['items'][0]['group']);
+        $this->assertSame('<p>ä ö å</p>', $result['items'][0]['translations']['sv']['content']);
+        $this->assertSame('Fågel', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertArrayHasKey('en', $result['items'][0]['translations']);
+    }
+
+    public function test_blank_draft_zero_body_and_swedish_slug_are_exported()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->languages = array(31 => 'sv', 32 => 'sv', 33 => 'sv', 34 => 'sv');
+        $only_nulls = $this->db_post(34, 'draft', 'Fågel', 'fagel', 'post', '', '');
+        $only_nulls['post_content'] = "\0\0";
+        $fake->posts_rows = array(
+            31 => $this->db_post(31, 'draft', '', 'tom', 'post', '', ''),
+            32 => $this->db_post(32, 'publish', 'Noll', 'noll', 'post', '', '0'),
+            33 => $this->db_post(33, 'draft', 'Mellanrum', 'fågel-öl', 'post', '', " \n\t"),
+            34 => $only_nulls,
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array('post:31', 'post:32', 'post:33', 'post:34'), $this->groups($second));
+        $this->assertSame('', $second['items'][0]['translations']['sv']['title']);
+        $this->assertSame('', $second['items'][0]['translations']['sv']['content']);
+        $this->assertSame('draft', $second['items'][0]['translations']['sv']['status']);
+        $this->assertSame('0', $second['items'][1]['translations']['sv']['content']);
+        $this->assertSame('fågel-öl', $second['items'][2]['translations']['sv']['slug']);
+        $this->assertSame(" \n\t", $second['items'][2]['translations']['sv']['content']);
+        $this->assertSame('Fågel', $second['items'][3]['translations']['sv']['title']);
+        $this->assertSame('', $second['items'][3]['translations']['sv']['content']);
+    }
+
     public function test_database_row_keeps_html_and_drops_null_bytes_on_a_second_export()
     {
         $this->skip_when_wordpress_or_polylang_is_loaded();
