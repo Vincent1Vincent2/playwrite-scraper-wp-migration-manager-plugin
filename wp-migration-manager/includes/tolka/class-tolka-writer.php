@@ -45,9 +45,10 @@ class Tolka_Writer
     /**
      * Save a package and tag each translated post and term.
      *
-     * An empty package is a successful save with zero items. Failures are
-     * complete sentences in `errors`. This method does not delete existing
-     * meta or Polylang rows.
+     * `ok` is true when the package itself was stored. Skipped rows and tags
+     * that could not be written are complete sentences in `errors`, and the
+     * package can still be saved. This method does not delete existing meta
+     * or Polylang rows. An empty package is a successful save with zero items.
      *
      * @param array $package Package from Tolka_Schema::package().
      * @return array
@@ -90,7 +91,7 @@ class Tolka_Writer
                 'You need administrator permission to migrate this site to Tolka.'
             );
             $collected = self::collect(self::prepare_package(self::clean_package($package)), $errors, $hidden);
-            return self::result($collected['counts'], $errors, $hidden);
+            return self::result($collected['counts'], $errors, $hidden, false);
         }
 
         if (!$version_ok) {
@@ -101,7 +102,7 @@ class Tolka_Writer
                 array(self::version_label(isset($package['version']) ? $package['version'] : null))
             );
             $collected = self::collect(self::prepare_package(self::clean_package($package)), $errors, $hidden);
-            return self::result($collected['counts'], $errors, $hidden);
+            return self::result($collected['counts'], $errors, $hidden, false);
         }
 
         $package = self::prepare_package($package);
@@ -109,13 +110,13 @@ class Tolka_Writer
         $package = self::clean_package($package);
 
         if (!self::store_package($package, $errors, $hidden)) {
-            return self::result($collected['counts'], $errors, $hidden);
+            return self::result($collected['counts'], $errors, $hidden, false);
         }
 
         self::write_meta('post', $collected['posts'], $errors, $hidden);
         self::write_meta('term', $collected['terms'], $errors, $hidden);
 
-        return self::result($collected['counts'], $errors, $hidden);
+        return self::result($collected['counts'], $errors, $hidden, true);
     }
 
     /**
@@ -875,19 +876,20 @@ class Tolka_Writer
     }
 
     /**
-     * Build the writer result. Any problem sentence means the run is not ok.
+     * Build the writer result. `ok` means the package was stored.
      *
      * @param array $counts Section counts.
      * @param array $errors Problem sentences.
      * @param int   $hidden Problems kept out of the list.
+     * @param bool  $stored Whether the package option was saved.
      * @return array
      */
-    private static function result(array $counts, array $errors, $hidden)
+    private static function result(array $counts, array $errors, $hidden, $stored)
     {
         $errors = self::finish_errors($errors, $hidden);
 
         return array(
-            'ok' => $errors === array(),
+            'ok' => (bool) $stored,
             'counts' => $counts,
             'errors' => array_values($errors),
         );
