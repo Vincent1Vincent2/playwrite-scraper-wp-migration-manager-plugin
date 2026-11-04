@@ -136,6 +136,8 @@ class Polylang_Languages
             $items = $this->ensure_single_default($items, $default);
         }
 
+        $items = $this->without_internal_languages($items);
+
         if (!empty($items)) {
             return $this->envelope($items, array());
         }
@@ -1290,6 +1292,27 @@ class Polylang_Languages
         }
 
         return !$this->is_internal_language_slug(strtolower($slug));
+    }
+
+    /**
+     * Drop any internal slug that reached the final list.
+     *
+     * @param array $items Language rows.
+     * @return array
+     */
+    private function without_internal_languages($items)
+    {
+        $kept = array();
+        foreach ($items as $item) {
+            $slug = is_array($item) && isset($item['slug']) ? $item['slug'] : '';
+            if ($this->is_internal_language_slug($slug)) {
+                $this->saw_internal_language = true;
+                continue;
+            }
+            $kept[] = $item;
+        }
+
+        return $kept;
     }
 
     /**
