@@ -910,7 +910,7 @@ PHP
 
     public function test_null_bytes_are_removed_from_language_fields()
     {
-        $english = $this->language_term(4, "Eng\0lish", "e\0n", 'en_US', 'us', 0, 1);
+        $english = $this->language_term(4, 'Eng&#0;lish', "e\0n", 'en_US', 'us', 0, 1);
         $GLOBALS['wpdb'] = $this->database_with_languages(array($english), 'en');
 
         $result = Polylang_Languages::export();

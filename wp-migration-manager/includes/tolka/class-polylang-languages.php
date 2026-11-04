@@ -1123,7 +1123,10 @@ class Polylang_Languages
      */
     private function plain_name($name)
     {
-        $name = html_entity_decode($this->string_value($name), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $name = $this->string_value($name);
+        $name = preg_replace('/&#0+;|&#x0+;/i', '', $name);
+        $name = html_entity_decode(is_string($name) ? $name : '', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $name = str_replace("\0", '', $name);
         $name = preg_replace('/^[\s\x{00A0}]+|[\s\x{00A0}]+$/u', '', $name);
 
         return is_string($name) ? $name : '';
