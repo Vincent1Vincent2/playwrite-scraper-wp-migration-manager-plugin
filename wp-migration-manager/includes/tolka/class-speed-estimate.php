@@ -89,7 +89,8 @@ class Speed_Estimate
      * to show the admin. basis is always the benchmarks.json sentence.
      * benchmarks() returns the five coefficient keys stored in the file.
      * A total_ms of 0 still estimates from a 1 ms floor and returns a percent.
-     * A language_count of 0 is one language.
+     * A language_count of 0 is one language. With the shipped coefficients,
+     * 1000 ms, one language, no switcher, and zero scripts is 2.9% faster.
      *
      * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
