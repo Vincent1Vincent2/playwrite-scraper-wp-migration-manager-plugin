@@ -344,6 +344,110 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-faster'));
     }
 
+    public function test_faster_id_shows_the_label_and_not_a_percent_from_the_load_times()
+    {
+        $cases = array(
+            'label disagrees with the loads' => array(
+                'current_ms' => 1000,
+                'tolka_ms' => 500,
+                'faster_label' => '12.0% faster',
+                'faster_percent' => 12,
+                'expected_attr' => '12.0',
+            ),
+            'label only, loads would be fifty percent' => array(
+                'current_ms' => 1000,
+                'tolka_ms' => 500,
+                'faster_label' => '12.0% faster',
+                'expected_attr' => '',
+            ),
+            'words instead of a percent' => array(
+                'current_ms' => 1000,
+                'tolka_ms' => 100,
+                'faster_label' => 'Nearly twice as quick',
+                'faster_percent' => 12.5,
+                'expected_attr' => '12.5',
+            ),
+        );
+
+        foreach ($cases as $name => $case) {
+            $estimate = array(
+                'ok' => true,
+                'current_ms' => $case['current_ms'],
+                'tolka_ms' => $case['tolka_ms'],
+                'faster_label' => $case['faster_label'],
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'lab',
+                'error' => '',
+            );
+            if (isset($case['faster_percent'])) {
+                $estimate['faster_percent'] = $case['faster_percent'];
+            }
+            $html = $this->render(true, $estimate);
+            $document = $this->document($html);
+            $faster = $document->getElementById('wmm-tolka-faster');
+
+            $this->assertNotNull($faster, $name);
+            $this->assertSame($case['faster_label'], $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertSame($case['expected_attr'], $faster->getAttribute('data-faster-percent'), $name);
+            $this->assertStringNotContainsString('50% faster', $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertStringNotContainsString('50.0% faster', $html, $name);
+            $this->assertStringNotContainsString('90% faster', $html, $name);
+            $this->assertStringNotContainsString('90.0% faster', $html, $name);
+        }
+    }
+
+    public function test_estimate_that_is_not_ok_does_not_show_a_percent_in_the_faster_id()
+    {
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+        $cases = array(
+            'false with a label and uneven loads' => array(
+                'ok' => false,
+                'current_ms' => 1000,
+                'tolka_ms' => 500,
+                'faster_percent' => 12,
+                'faster_label' => '12.0% faster',
+                'error' => 'The page could not be loaded.',
+            ),
+            'zero is not success' => array(
+                'ok' => 0,
+                'current_ms' => 1842,
+                'tolka_ms' => 900,
+                'faster_percent' => 51.1,
+                'faster_label' => '51.1% faster',
+                'error' => 'The success flag was not true.',
+            ),
+            'missing ok' => array(
+                'current_ms' => 800,
+                'tolka_ms' => 200,
+                'faster_percent' => 75,
+                'faster_label' => '75.0% faster',
+                'error' => 'The result did not say it succeeded.',
+            ),
+        );
+
+        foreach ($cases as $name => $estimate) {
+            $html = $this->render(true, $estimate);
+            $document = $this->document($html);
+            $faster = $this->text($html, 'wmm-tolka-faster');
+
+            foreach ($ids as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' #' . $id);
+            }
+            $this->assertSame('Unavailable', $faster, $name);
+            $this->assertSame('', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'), $name);
+            $this->assertDoesNotMatchRegularExpression('/\d+(?:\.\d+)?\s*%/', $faster, $name);
+            $this->assertStringNotContainsString($estimate['faster_label'], $html, $name);
+            $this->assertStringNotContainsString('50.0% faster', $html, $name);
+            $this->assertStringNotContainsString('75.0% faster', $html, $name);
+        }
+    }
+
     public function test_successful_estimate_shows_the_milliseconds_and_the_faster_label()
     {
         $cases = array(
