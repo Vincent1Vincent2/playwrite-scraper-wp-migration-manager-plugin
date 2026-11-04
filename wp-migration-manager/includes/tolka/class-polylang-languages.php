@@ -810,6 +810,34 @@ class Polylang_Languages
     }
 
     /**
+     * Read default_lang from an options object.
+     *
+     * Some Polylang builds wrap the option instead of returning a plain array.
+     *
+     * @param mixed $options Option value.
+     * @return array
+     */
+    private function options_from_object($options)
+    {
+        if (!is_object($options)) {
+            return array();
+        }
+
+        $lang = null;
+        if ($options instanceof \ArrayAccess && isset($options['default_lang'])) {
+            $lang = $options['default_lang'];
+        } elseif (isset($options->default_lang)) {
+            $lang = $options->default_lang;
+        }
+
+        if (!is_string($lang) || trim($lang) === '') {
+            return array();
+        }
+
+        return array('default_lang' => trim($lang));
+    }
+
+    /**
      * Load the polylang option from WordPress or from the options table.
      *
      * @return array
@@ -820,6 +848,10 @@ class Polylang_Languages
             $options = get_option('polylang');
             if (is_array($options)) {
                 return $options;
+            }
+            $from_object = $this->options_from_object($options);
+            if ($from_object !== array()) {
+                return $from_object;
             }
             $decoded = $this->decode_stored_array($options);
             if ($decoded !== array()) {
