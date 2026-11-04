@@ -72,7 +72,11 @@ class Migration_Report
         $description['polylang_kept'] = !self::writer_deleted_polylang($write);
         $total = self::total_items($counts);
         $has_problems = !empty($errors) || !empty($missing['labels']) || $description['mismatch'] !== '';
+        $partial = self::is_partial_finish($package, $has_problems, $description['shortfall'], $write);
         $status = self::decide($run_ok, $package, $has_problems, $total);
+        if ($partial) {
+            $status = 'problems';
+        }
         $inactive = self::polylang_is_inactive($errors);
         $next = self::next_step($status, $inactive, count($missing['labels']), $has_problems);
         $title = self::title_for($status);
@@ -540,6 +544,45 @@ class Migration_Report
     }
 
     /**
+     * Some items were saved, and something else still went wrong.
+     *
+     * @param string     $package     Package state.
+     * @param bool       $has_problems Errors, missing steps, or a count gap.
+     * @param bool       $shortfall   Stored fewer items than the package contained.
+     * @param array|null $write       Writer result.
+     * @return bool
+     */
+    private static function is_partial_finish($package, $has_problems, $shortfall, $write)
+    {
+        if ($package === 'saved' && $has_problems) {
+            return true;
+        }
+
+        return $shortfall && self::any_positive_stored($write);
+    }
+
+    /**
+     * @param array|null $write Writer result.
+     * @return bool
+     */
+    private static function any_positive_stored($write)
+    {
+        if (!is_array($write)) {
+            return false;
+        }
+
+        $source = (isset($write['counts']) && is_array($write['counts'])) ? $write['counts'] : $write;
+        foreach (array_keys(self::section_catalog()) as $key) {
+            $saved = self::count_if_set($source, $key);
+            if ($saved !== null && $saved > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param string[] $errors Error sentences.
      * @return bool
      */
@@ -725,6 +768,9 @@ class Migration_Report
             if (!empty($description['shortfall'])) {
                 $parts[] = $description['mismatch'];
                 $parts[] = self::text('The Tolka package on this site is incomplete.');
+                if ($package !== 'saved') {
+                    $parts[] = self::text('That is not a finished migration.');
+                }
                 $parts[] = $description['absent'];
                 $parts[] = $default_language;
             } elseif ($total > 0) {

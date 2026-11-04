@@ -337,6 +337,7 @@ class Test_Migration_Report extends TestCase
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
+        $this->assert_section_order($report);
         $this->assertSame(
             array(
                 'Languages: A flag file was missing.',
@@ -1164,7 +1165,8 @@ echo json_encode($report);
         ));
 
         $this->assert_not_a_clean_finish($report);
-        $this->assertSame('The migration did not finish.', $report['title']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assert_section_order($report);
         $this->assertSame('2 media items', $this->line($report, 'Media'));
         $this->assertSame('1 of 2', $this->line($report, 'Media stored'));
         $this->assertStringContainsString(
@@ -1259,6 +1261,9 @@ echo json_encode($report);
         ));
 
         $this->assert_not_a_clean_finish($partial);
+        $this->assertSame('The migration finished with problems.', $partial['title']);
+        $this->assertNotSame('The migration is complete.', $partial['title']);
+        $this->assert_section_order($partial);
         $this->assertStringContainsString(
             'Saving did not finish. The package contained more than was stored. 4 of 6 posts were saved.',
             $partial['summary']
@@ -1282,7 +1287,78 @@ echo json_encode($report);
 
         $this->assertTrue($report['ok']);
         $this->assertSame('The migration is complete.', $report['title']);
+        $this->assertNotSame('The migration finished with problems.', $report['title']);
+        $this->assertStringNotContainsString('The migration finished with problems.', $report['summary']);
         $this->assertArrayNotHasKey('Saved counts', $this->line_map($report));
+    }
+
+    public function test_partial_finish_title_and_section_order()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 2,
+                'posts' => 5,
+                'terms' => 1,
+            ),
+            'write' => array(
+                'ok' => true,
+                'counts' => array(
+                    'languages' => 2,
+                    'posts' => 5,
+                    'terms' => 1,
+                ),
+                'errors' => array(
+                    'posts' => array('One post had no title'),
+                    'terms' => array('A term slug was changed'),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($report['ok']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assertNotSame('The migration is complete.', $report['title']);
+        $this->assertStringNotContainsString('The migration is complete', $report['summary']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
+        $this->assert_section_order($report);
+        $this->assertSame('2 languages', $this->line($report, 'Languages'));
+        $this->assertSame('5 posts', $this->line($report, 'Posts'));
+        $this->assertSame('1 term', $this->line($report, 'Terms'));
+        $this->assertSame('0 strings', $this->line($report, 'Strings'));
+        $this->assertSame('0 menus', $this->line($report, 'Menus'));
+        $this->assertSame('0 media items', $this->line($report, 'Media'));
+
+        $clean = $this->format_run(array(
+            'languages' => 2,
+            'posts' => 5,
+            'terms' => 1,
+        ));
+        $this->assertTrue($clean['ok']);
+        $this->assertSame('The migration is complete.', $clean['title']);
+        $this->assertNotSame('The migration finished with problems.', $clean['title']);
+        $this->assert_section_order($clean);
+    }
+
+    public function test_nothing_stored_does_not_use_the_partial_title()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => false,
+            'counts' => array('posts' => 3),
+            'write' => array(
+                'ok' => false,
+                'counts' => array('posts' => 0),
+                'errors' => array('Nothing was stored'),
+            ),
+        ));
+
+        $this->assertFalse($report['ok']);
+        $this->assertSame('The migration did not finish.', $report['title']);
+        $this->assertNotSame('The migration finished with problems.', $report['title']);
+        $this->assertStringContainsString('Nothing was stored.', $report['summary']);
+        $this->assert_section_order($report);
+        $this->assertSame('3 posts', $this->line($report, 'Posts'));
+        $this->assertSame('0 languages', $this->line($report, 'Languages'));
     }
 
     public function test_large_counts_are_grouped()
