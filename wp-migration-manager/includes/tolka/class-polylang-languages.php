@@ -902,6 +902,9 @@ class Polylang_Languages
     private function make_item($slug, $name, $locale, $is_default, $term_id, $flag)
     {
         $slug = $this->string_value($slug);
+        if (preg_match('/^[A-Za-z0-9_-]+$/', $slug) === 1) {
+            $slug = strtolower($slug);
+        }
         $name = $this->plain_name($name);
         if ($name === '') {
             $name = $slug;

@@ -357,6 +357,24 @@ PHP
         $this->assertFalse($result['items'][1]['is_default']);
     }
 
+    public function test_upper_and_lower_case_slugs_are_one_language()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'EN', 'en_US', 'us', 0, 1),
+            $this->language_term(9, 'English', 'en', 'en_GB', 'gb', 1, 0),
+        ), 'EN');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+    }
+
     public function test_the_only_language_is_default_when_the_saved_choice_is_missing()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
