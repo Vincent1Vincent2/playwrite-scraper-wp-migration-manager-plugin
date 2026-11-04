@@ -119,7 +119,7 @@ class Speed_Estimate
 
         $languages = max(1, self::metric_count($metrics, 'language_count'));
         $scripts = self::metric_count($metrics, 'script_count');
-        $switcher = self::switcher_present($metrics);
+        $switcher = self::switcher_present($metrics, $measurement);
 
         $per_language = self::coefficient_number($benchmarks, 'polylang_extra_ms_per_language');
         $switcher_ms = self::coefficient_number($benchmarks, 'polylang_switcher_ms');
@@ -368,7 +368,15 @@ class Speed_Estimate
             }
         }
 
-        if ($missing === array() && $invalid === array()) {
+        $ratio = self::coefficient_number($benchmarks, 'max_overhead_ratio');
+        if ($ratio !== null && ($ratio < 0 || $ratio > 1)) {
+            $invalid = array_values(array_diff($invalid, array('max_overhead_ratio')));
+            $range_error = self::translate('The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.');
+        } else {
+            $range_error = '';
+        }
+
+        if ($missing === array() && $invalid === array() && $range_error === '') {
             return '';
         }
 
@@ -392,6 +400,9 @@ class Speed_Estimate
                 'The benchmark file has values that are not numbers for %s.',
                 self::labels_for($invalid)
             );
+        }
+        if ($range_error !== '') {
+            $sentences[] = $range_error;
         }
 
         return implode(' ', $sentences);
@@ -672,29 +683,52 @@ class Speed_Estimate
     }
 
     /**
+     * Whether the Polylang switcher cost applies.
+     *
+     * A false flag on the measurement does not add polylang_switcher_ms,
+     * including when the metrics also carry a flag.
+     *
      * @param array $metrics
+     * @param array $measurement
      * @return bool
      */
-    private static function switcher_present(array $metrics)
+    private static function switcher_present(array $metrics, array $measurement)
     {
+        if (array_key_exists('has_polylang_switcher', $measurement)
+            && self::switcher_flag($measurement['has_polylang_switcher']) === false) {
+            return false;
+        }
+
         if (!array_key_exists('has_polylang_switcher', $metrics)) {
             return false;
         }
 
-        $value = $metrics['has_polylang_switcher'];
+        return self::switcher_flag($metrics['has_polylang_switcher']) === true;
+    }
+
+    /**
+     * @param mixed $value
+     * @return bool|null
+     */
+    private static function switcher_flag($value)
+    {
         if (is_bool($value)) {
             return $value;
         }
-        if (is_int($value) || is_float($value)) {
+        if (is_int($value) || (is_float($value) && is_finite($value))) {
             return $value !== 0 && $value !== 0.0;
         }
         if (is_string($value)) {
             $normalized = strtolower(trim($value));
-
-            return in_array($normalized, array('1', 'true', 'yes', 'on'), true);
+            if (in_array($normalized, array('1', 'true', 'yes', 'on'), true)) {
+                return true;
+            }
+            if (in_array($normalized, array('', '0', 'false', 'no', 'off'), true)) {
+                return false;
+            }
         }
 
-        return false;
+        return null;
     }
 
     /**

@@ -365,28 +365,167 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('58.0% faster', $equal['faster_label']);
     }
 
-    public function test_passed_ratio_is_used_instead_of_a_hidden_cap()
+    public function test_overhead_ratio_outside_zero_through_one_does_not_invent_a_percent()
     {
-        // raw = 30*35 + 25 + 10*8 = 1155
-        // floor(1000 * 1.5) = 1500, so the cap does not apply.
-        // tolka = 1000 - 1155 + min(180, 1155) = 25
-        // percent = 97.5
-        // The shipped file's 0.7 would have capped this at 700 ms and a different percent.
-        $benchmarks = self::contractBenchmarks();
-        $benchmarks['max_overhead_ratio'] = 1.5;
+        $metrics = array('language_count' => 30, 'has_polylang_switcher' => true, 'script_count' => 10);
+        $measurement = array('ok' => true, 'total_ms' => 1000, 'html' => '<p>SECRET_PAGE_MARKUP</p>');
+        $message = 'A Tolka speed estimate is not available. The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.';
 
-        $estimate = Speed_Estimate::project(
+        foreach (array(1.5, 1.01, 2, -0.1, -1, '1.5', ' -0.2 ') as $ratio) {
+            $benchmarks = self::contractBenchmarks();
+            $benchmarks['max_overhead_ratio'] = $ratio;
+            $estimate = Speed_Estimate::project($measurement, $metrics, $benchmarks);
+
+            $this->assertUnavailable($estimate, $message);
+            $this->assertSame(0, $estimate['current_ms']);
+            $this->assertSame(0, $estimate['tolka_ms']);
+            $this->assertSame(0, $estimate['overhead_ms']);
+            $this->assertSame(0.0, $estimate['faster_percent']);
+            $this->assertSame('', $estimate['faster_label']);
+            $this->assertNotSame(97.5, $estimate['faster_percent']);
+            $this->assertStringNotContainsString('SECRET_PAGE_MARKUP', (string) json_encode($estimate));
+        }
+
+        // 0 and 1 are allowed. 0.5 is used as given, not replaced by the file's 0.7.
+        // raw = 40*35 + 25 = 1425.
+        $heavy = array('language_count' => 40, 'has_polylang_switcher' => true, 'script_count' => 0);
+        $half = self::contractBenchmarks();
+        $half['max_overhead_ratio'] = 0.5;
+        $at_half = Speed_Estimate::project(
             array('ok' => true, 'total_ms' => 1000),
-            array('language_count' => 30, 'has_polylang_switcher' => true, 'script_count' => 10),
+            $heavy,
+            $half
+        );
+        $this->assertTrue($at_half['ok']);
+        $this->assertSame(500, $at_half['overhead_ms']);
+        $this->assertSame(740, $at_half['tolka_ms']);
+        $this->assertSame(26.0, $at_half['faster_percent']);
+        $this->assertNotSame(700, $at_half['overhead_ms']);
+
+        $zero = self::contractBenchmarks();
+        $zero['max_overhead_ratio'] = 0;
+        $at_zero = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $zero
+        );
+        $this->assertTrue($at_zero['ok']);
+        $this->assertSame(0, $at_zero['overhead_ms']);
+        $this->assertSame(1000, $at_zero['tolka_ms']);
+        $this->assertSame(0.0, $at_zero['faster_percent']);
+        $this->assertSame('0.0% faster', $at_zero['faster_label']);
+
+        $full = self::contractBenchmarks();
+        $full['max_overhead_ratio'] = 1;
+        $at_full = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            $heavy,
+            $full
+        );
+        $this->assertTrue($at_full['ok']);
+        $this->assertSame(1000, $at_full['overhead_ms']);
+        $this->assertSame(240, $at_full['tolka_ms']);
+        $this->assertSame(76.0, $at_full['faster_percent']);
+        $this->assertSame('76.0% faster', $at_full['faster_label']);
+
+        $spaced = self::contractBenchmarks();
+        $spaced['max_overhead_ratio'] = ' 1 ';
+        $at_spaced = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            $heavy,
+            $spaced
+        );
+        $this->assertSame($at_full['overhead_ms'], $at_spaced['overhead_ms']);
+        $this->assertSame($at_full['faster_percent'], $at_spaced['faster_percent']);
+        $this->assertTrue($at_spaced['ok']);
+    }
+
+    public function test_switcher_false_does_not_add_switcher_milliseconds()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $switcher_ms = $benchmarks['polylang_switcher_ms'];
+        $measurement = array('ok' => true, 'total_ms' => 1000);
+        $off_metrics = array('language_count' => 2, 'script_count' => 1, 'has_polylang_switcher' => false);
+        $on_metrics = array('language_count' => 2, 'script_count' => 1, 'has_polylang_switcher' => true);
+
+        $off = Speed_Estimate::project($measurement, $off_metrics, $benchmarks);
+        $on = Speed_Estimate::project($measurement, $on_metrics, $benchmarks);
+
+        $this->assertTrue($off['ok']);
+        $this->assertTrue($on['ok']);
+        $this->assertSame(78, $off['overhead_ms']);
+        $this->assertSame(103, $on['overhead_ms']);
+        $this->assertSame($switcher_ms, $on['overhead_ms'] - $off['overhead_ms']);
+        $this->assertSame(934, $off['tolka_ms']);
+        $this->assertSame(6.6, $off['faster_percent']);
+
+        $measurement_off = $measurement;
+        $measurement_off['has_polylang_switcher'] = false;
+        $forced_off = Speed_Estimate::project($measurement_off, $on_metrics, $benchmarks);
+        $this->assertSame($off['overhead_ms'], $forced_off['overhead_ms']);
+        $this->assertSame($off['tolka_ms'], $forced_off['tolka_ms']);
+        $this->assertSame($off['faster_percent'], $forced_off['faster_percent']);
+        $this->assertNotSame($on['overhead_ms'], $forced_off['overhead_ms']);
+
+        $measurement_word = $measurement;
+        $measurement_word['has_polylang_switcher'] = 'false';
+        $word_off = Speed_Estimate::project($measurement_word, $on_metrics, $benchmarks);
+        $this->assertSame($off['overhead_ms'], $word_off['overhead_ms']);
+        $this->assertSame($off['tolka_ms'], $word_off['tolka_ms']);
+
+        $costly = $benchmarks;
+        $costly['polylang_switcher_ms'] = 100;
+        $still_off = Speed_Estimate::project($measurement, $off_metrics, $costly);
+        $turned_on = Speed_Estimate::project($measurement, $on_metrics, $costly);
+        $this->assertSame($off['overhead_ms'], $still_off['overhead_ms']);
+        $this->assertSame($off['tolka_ms'], $still_off['tolka_ms']);
+        $this->assertSame($off['faster_percent'], $still_off['faster_percent']);
+        $this->assertSame(100, $turned_on['overhead_ms'] - $still_off['overhead_ms']);
+    }
+
+    public function test_failed_measurement_and_bad_ratio_do_not_invent_a_percent()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $benchmarks['max_overhead_ratio'] = '1.0';
+        $allowed = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 40, 'has_polylang_switcher' => true, 'script_count' => 0),
             $benchmarks
         );
+        $this->assertTrue($allowed['ok']);
+        $this->assertSame(1000, $allowed['overhead_ms']);
+        $this->assertSame(76.0, $allowed['faster_percent']);
 
-        $this->assertTrue($estimate['ok']);
-        $this->assertSame(1155, $estimate['overhead_ms']);
-        $this->assertSame(25, $estimate['tolka_ms']);
-        $this->assertSame(97.5, $estimate['faster_percent']);
-        $this->assertSame('97.5% faster', $estimate['faster_label']);
-        $this->assertNotSame(700, $estimate['overhead_ms']);
+        $benchmarks['max_overhead_ratio'] = 2;
+        $estimate = Speed_Estimate::project(
+            array('ok' => false, 'total_ms' => 8000, 'has_polylang_switcher' => false),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $estimate,
+            'A Tolka speed estimate is not available. The page could not be measured. The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'
+        );
+        $this->assertSame(0, $estimate['current_ms']);
+        $this->assertSame(0.0, $estimate['faster_percent']);
+        $this->assertSame('', $estimate['faster_label']);
+        $this->assertNotSame(8000, $estimate['current_ms']);
+
+        $benchmarks = self::contractBenchmarks();
+        unset($benchmarks['polylang_switcher_ms']);
+        $benchmarks['max_overhead_ratio'] = -0.4;
+        $both = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 1),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $both,
+            'A Tolka speed estimate is not available. The benchmark file is missing a number for language switcher milliseconds (polylang_switcher_ms). The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'
+        );
+        $this->assertSame('', $both['faster_label']);
+        $this->assertSame(0.0, $both['faster_percent']);
+        $this->assertSame(0, $both['tolka_ms']);
     }
 
     public function test_unused_metrics_do_not_change_the_percent()
@@ -1040,8 +1179,10 @@ class Test_Speed_Estimate extends TestCase
 
         $this->assertUnavailable(
             $estimate,
-            'A Tolka speed estimate is not available. These figures are too large to calculate a load time.'
+            'A Tolka speed estimate is not available. The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'
         );
+        $this->assertSame('', $estimate['faster_label']);
+        $this->assertSame(0.0, $estimate['faster_percent']);
     }
 
     public function test_project_does_not_change_its_inputs_or_warn()
