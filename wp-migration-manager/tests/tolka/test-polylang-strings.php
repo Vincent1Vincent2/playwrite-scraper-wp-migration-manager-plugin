@@ -645,17 +645,13 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             'active' => true,
             'languages' => array('fr'),
             'registered' => array(
-                array('name' => '"', 'string' => "\n", 'context' => "'"),
-            ),
-            'mo' => array(
-                'fr' => array(array("\n", '"')),
+                array('name' => '"', 'string' => "Say \"hi\"\n", 'context' => "'"),
             ),
         ));
         $this->assertCount(1, $only_marks['items']);
         $this->assertSame('"', $only_marks['items'][0]['name']);
-        $this->assertSame("\n", $only_marks['items'][0]['string']);
+        $this->assertSame("Say \"hi\"\n", $only_marks['items'][0]['string']);
         $this->assertSame("'", $only_marks['items'][0]['context']);
-        $this->assertSame('"', $only_marks['items'][0]['translations']['fr']);
         $this->assertExportShape($only_marks);
     }
 
@@ -1110,6 +1106,102 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertCount(1, $result['items']);
         $this->assertSame('Open daily', $result['items'][0]['string']);
         $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * Spaces, tabs, and line breaks alone are the same as an empty string.
+     * A whitespace translation stays blank and does not clear another language.
+     *
+     * @return void
+     */
+    public function test_whitespace_only_strings_are_left_out_and_whitespace_translations_stay_blank()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr', 'de'),
+            'registered' => array(
+                array('name' => '   ', 'string' => " \t\r\n", 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => " \n", 'context' => 'Widget'),
+                array('name' => '  Hours  ', 'string' => "  Open daily\n", 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'fr' => array(array("  Open daily\n", 'Ouvert')),
+                'de' => array(array("  Open daily\n", " \t\n")),
+                'en' => array(
+                    array("  Open daily\n", 'Open'),
+                    array("  Open daily\n", "  \r\n"),
+                ),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('  Hours  ', $result['items'][0]['name']);
+        $this->assertSame("  Open daily\n", $result['items'][0]['string']);
+        $this->assertSame(
+            array(
+                'en' => 'Open',
+                'fr' => 'Ouvert',
+                'de' => '',
+            ),
+            $result['items'][0]['translations']
+        );
+        $this->assertSame(
+            array('A string was left out because it had no name and no text.'),
+            $result['errors']
+        );
+        $this->assertExportShape($result);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+            array('term_id' => 12, 'slug' => 'de'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Färjor till öar', 'Öppet'))),
+            ),
+            array(
+                'term_id' => 12,
+                'meta_value' => serialize(array(array('Färjor till öar', " \n\t"))),
+            ),
+            array(
+                'term_id' => 10,
+                'meta_value' => serialize(array(array('   ', 'ignored'))),
+            ),
+        );
+        $exported = $this->probe($db, array(), true)->export();
+        $this->assertCount(1, $exported['items']);
+        $this->assertSame('Färjor till öar', $exported['items'][0]['string']);
+        $this->assertSame('Öppet', $exported['items'][0]['translations']['fr']);
+        $this->assertSame('', $exported['items'][0]['translations']['de']);
+        $this->assertSame('', $exported['items'][0]['translations']['en']);
+        $this->assertContains(
+            'A string was left out because it had no name and no text.',
+            $exported['errors']
+        );
+
+        $nbsp = "\xC2\xA0";
+        $spaces = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr', 'de'),
+            'registered' => array(
+                array('name' => $nbsp, 'string' => $nbsp . $nbsp, 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'fr' => array(array('Open daily', 'Ouvert')),
+                'de' => array(array('Open daily', $nbsp)),
+            ),
+        ));
+        $this->assertCount(1, $spaces['items']);
+        $this->assertSame('Ouvert', $spaces['items'][0]['translations']['fr']);
+        $this->assertSame('', $spaces['items'][0]['translations']['de']);
+        $this->assertSame(
+            array('A string was left out because it had no name and no text.'),
+            $spaces['errors']
+        );
     }
 
     /**
