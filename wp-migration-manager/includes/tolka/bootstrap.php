@@ -953,7 +953,10 @@ function wmm_tolka_render_button($id, $label, $unavailable, $primary = false, $d
     }
 
     if ($unavailable !== '') {
-        echo ' disabled aria-disabled="true" title="' . esc_attr($unavailable) . '"';
+        echo ' disabled aria-disabled="true"';
+        if ($described_by === '') {
+            echo ' title="' . esc_attr($unavailable) . '"';
+        }
     }
 
     echo '>' . esc_html($label) . '</button>';
@@ -1339,7 +1342,21 @@ function wmm_tolka_fallback_script()
         if (controller) {
             fetchOptions.signal = controller.signal;
         }
-        window.fetch(config.ajaxUrl, fetchOptions).then(function (response) {
+        var request;
+        try {
+            request = window.fetch(config.ajaxUrl, fetchOptions);
+        } catch (error) {
+            request = null;
+        }
+        if (!request || typeof request.then !== "function") {
+            if (timer) {
+                window.clearTimeout(timer);
+            }
+            showError(document.getElementById(job.target), text("network", "The request could not be completed."));
+            setBusy(false, job);
+            return;
+        }
+        request.then(function (response) {
             return response.text().then(function (raw) {
                 var data = null;
                 try {
