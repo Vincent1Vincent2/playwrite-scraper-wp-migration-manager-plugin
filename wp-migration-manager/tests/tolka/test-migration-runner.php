@@ -2205,5 +2205,44 @@ namespace {
             $this->assertNotSame($preview['sample']['posts'][0]['content'], $written['posts'][0]['content']);
             $this->assertNotSame($preview['sample']['strings'][0]['string'], $written['strings'][0]['string']);
         }
+
+        public function test_one_empty_section_error_still_saves_original_text_from_the_others()
+        {
+            $this->reset_doubles();
+            $original = str_repeat('z', 410);
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array(),
+                    'errors' => array('No languages could be read.'),
+                ),
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Hello',
+                        'content' => $original,
+                    )),
+                    'errors' => array(),
+                ),
+            );
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => true,
+                'errors' => array(),
+            );
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($run['write']['ok']);
+            $this->assertFalse($run['ok']);
+            $this->assertSame('partial', $run['state']);
+            $this->assertStringNotContainsString('Migration finished', $run['message']);
+            $this->assertSame(
+                'The Tolka package was saved, but Languages could not be read. Existing Polylang data was not changed.',
+                $run['message']
+            );
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertSame(str_repeat('z', 400) . '...', $run['sample']['posts'][0]['content']);
+            $this->assertSame(array(), $run['languages']['items']);
+            $this->assertNotSame($run['sample']['posts'][0]['content'], \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+        }
     }
 }
