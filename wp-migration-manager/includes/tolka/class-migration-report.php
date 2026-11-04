@@ -51,8 +51,9 @@ class Migration_Report
     private static function compose(array $run)
     {
         $run_ok = isset($run['ok']) && $run['ok'] === true;
+        $write_is_null = array_key_exists('write', $run) && $run['write'] === null;
         $write = (isset($run['write']) && is_array($run['write'])) ? $run['write'] : null;
-        $package = self::package_state($run_ok, $write);
+        $package = self::package_state($run_ok, $write, $write_is_null);
         $counts = self::resolve_counts($run, $write);
         $errors = self::collect_errors($run, $write);
         $missing = self::collect_missing($run);
@@ -61,6 +62,7 @@ class Migration_Report
         $gap = self::storage_gap($run, $write, $counts, $package);
         $description['mismatch'] = $gap['sentence'];
         $description['shortfall'] = $gap['shortfall'];
+        $description['writer_missing'] = $write_is_null;
         $total = self::total_items($counts);
         $has_problems = !empty($errors) || !empty($missing['labels']) || $description['mismatch'] !== '';
         $status = self::decide($run_ok, $package, $has_problems, $total);
@@ -73,9 +75,14 @@ class Migration_Report
         }
         $missing_sentence = self::missing_sentence($missing['labels'], $missing['bases']);
         $summary = self::summary_for($status, $package, $description, $total, $missing['labels'], $missing['bases'], $errors, $next, $run_ok, $default_language);
+        $ok = ($status === 'complete' || $status === 'empty');
+        if (!$ok) {
+            $title = self::without_complete_claim($title);
+            $summary = self::without_complete_claim($summary);
+        }
 
         return array(
-            'ok' => ($status === 'complete' || $status === 'empty'),
+            'ok' => $ok,
             'title' => $title,
             'summary' => $summary,
             'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch'], $description['shortfall'], $missing_sentence),
@@ -99,12 +106,17 @@ class Migration_Report
     /**
      * Saved, failed, or not included in the run.
      *
-     * @param bool       $run_ok Overall runner flag.
-     * @param array|null $write  Writer result, when the runner included one.
+     * @param bool       $run_ok        Overall runner flag.
+     * @param array|null $write         Writer result, when the runner included one.
+     * @param bool       $write_is_null True when the run set write to null.
      * @return string saved|failed|unknown
      */
-    private static function package_state($run_ok, $write)
+    private static function package_state($run_ok, $write, $write_is_null)
     {
+        if ($write_is_null) {
+            return 'failed';
+        }
+
         if (is_array($write) && array_key_exists('ok', $write)) {
             return ($write['ok'] === true) ? 'saved' : 'failed';
         }
@@ -503,6 +515,23 @@ class Migration_Report
     }
 
     /**
+     * A failed report must not use the clean-run sentence.
+     *
+     * @param string $text Title or summary.
+     * @return string
+     */
+    private static function without_complete_claim($text)
+    {
+        $claim = self::text('The migration is complete.');
+        $replacement = self::text('The migration did not finish.');
+        if ($text === $claim) {
+            return $replacement;
+        }
+
+        return str_replace($claim, $replacement, $text);
+    }
+
+    /**
      * Finished sentences for the status the site owner is in.
      *
      * @param string               $status      Report status.
@@ -598,7 +627,13 @@ class Migration_Report
         }
 
         $parts = array();
-        if (!empty($description['shortfall'])) {
+        if (!empty($description['writer_missing'])) {
+            $parts[] = self::text('The writer did not return a result, so the Tolka package was not saved.');
+            if ($total > 0 && $description['present'] !== '') {
+                $parts[] = sprintf(self::text('This site has %s.'), $description['present']);
+                $parts[] = $description['absent'];
+            }
+        } elseif (!empty($description['shortfall'])) {
             $parts[] = $description['mismatch'];
             $parts[] = self::text('That is not a finished migration.');
         } elseif ($total > 0 && $description['present'] !== '') {
@@ -994,6 +1029,9 @@ class Migration_Report
         }
 
         $lines[] = self::line(self::text('Tolka package'), self::package_value($package, $total, $shortfall));
+        if (array_key_exists('write', $run) && $run['write'] === null) {
+            $lines[] = self::line(self::text('Writer'), self::text('No result was returned.'));
+        }
         if ($mismatch !== '') {
             $lines[] = self::line(self::text('Saved counts'), $mismatch);
         }

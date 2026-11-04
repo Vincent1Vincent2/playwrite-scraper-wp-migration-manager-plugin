@@ -439,6 +439,80 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('Not confirmed', $this->line($report, 'Tolka package'));
     }
 
+    public function test_failed_run_with_null_write_is_not_called_complete()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => false,
+            'counts' => array(
+                'media' => 4,
+                'languages' => 1,
+                'posts' => 2,
+            ),
+            'write' => null,
+            'errors' => array('Polylang is not active'),
+        ));
+
+        $this->assertFalse($report['ok']);
+        $this->assertSame('The migration did not finish.', $report['title']);
+        $this->assertStringNotContainsString('The migration is complete', $report['title']);
+        $this->assertStringNotContainsString('The migration is complete', $report['summary']);
+        $this->assertStringContainsString(
+            'The writer did not return a result, so the Tolka package was not saved.',
+            $report['summary']
+        );
+        $this->assertStringContainsString('Polylang is not active.', $report['summary']);
+        $this->assert_section_order($report);
+        $this->assertSame('1 language', $this->line($report, 'Languages'));
+        $this->assertSame('2 posts', $this->line($report, 'Posts'));
+        $this->assertSame('0 terms', $this->line($report, 'Terms'));
+        $this->assertSame('0 strings', $this->line($report, 'Strings'));
+        $this->assertSame('0 menus', $this->line($report, 'Menus'));
+        $this->assertSame('4 media items', $this->line($report, 'Media'));
+        $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
+        $this->assertSame('No result was returned.', $this->line($report, 'Writer'));
+        $names = array();
+        foreach ($report['lines'] as $line) {
+            $names[] = $line['label'];
+        }
+        $start = array_search('Languages', $names, true);
+        $this->assertSame(
+            array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'),
+            array_slice($names, $start, 6)
+        );
+
+        $marked_ok = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 2,
+                'posts' => 3,
+            ),
+            'write' => null,
+        ));
+        $this->assertFalse($marked_ok['ok']);
+        $this->assertSame('The migration did not finish.', $marked_ok['title']);
+        $this->assertStringNotContainsString('The migration is complete', $marked_ok['title']);
+        $this->assertStringNotContainsString('The migration is complete', $marked_ok['summary']);
+        $this->assert_section_order($marked_ok);
+        $this->assertSame('2 languages', $this->line($marked_ok, 'Languages'));
+        $this->assertSame('3 posts', $this->line($marked_ok, 'Posts'));
+        $this->assertSame('0 media items', $this->line($marked_ok, 'Media'));
+
+        $bare = Migration_Report::format(array(
+            'ok' => false,
+            'write' => null,
+        ));
+        $this->assertFalse($bare['ok']);
+        $this->assertStringNotContainsString('The migration is complete', $bare['title']);
+        $this->assertStringNotContainsString('The migration is complete', $bare['summary']);
+        $this->assert_section_order($bare);
+        $this->assertSame('0 languages', $this->line($bare, 'Languages'));
+        $this->assertSame('0 posts', $this->line($bare, 'Posts'));
+        $this->assertSame('0 terms', $this->line($bare, 'Terms'));
+        $this->assertSame('0 strings', $this->line($bare, 'Strings'));
+        $this->assertSame('0 menus', $this->line($bare, 'Menus'));
+        $this->assertSame('0 media items', $this->line($bare, 'Media'));
+    }
+
     public function test_titles_are_finished_sentences()
     {
         $clean = $this->format_run(array(
@@ -1107,6 +1181,24 @@ class Test_Migration_Report extends TestCase
 
         $report = $this->format_run(array('languages' => 1));
         $this->assertSame($report, get_option(Migration_Report::OPTION_LAST_REPORT));
+    }
+
+    /**
+     * @param array $report Formatted report.
+     */
+    private function assert_section_order(array $report)
+    {
+        $labels = array();
+        foreach ($report['lines'] as $line) {
+            if (in_array($line['label'], array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'), true)) {
+                $labels[] = $line['label'];
+            }
+        }
+
+        $this->assertSame(
+            array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'),
+            $labels
+        );
     }
 
     /**
