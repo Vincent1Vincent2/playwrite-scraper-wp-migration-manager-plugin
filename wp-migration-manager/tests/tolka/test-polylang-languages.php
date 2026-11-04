@@ -664,6 +664,88 @@ PHP
         $this->assertSame(array(), $second['errors']);
     }
 
+    public function test_an_options_object_can_set_the_default_language()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+class Polylang_Options_Stub implements ArrayAccess
+{
+    public function offsetExists($offset): bool
+    {
+        return $offset === 'default_lang';
+    }
+
+    public function offsetGet($offset): mixed
+    {
+        return ' no ';
+    }
+
+    public function offsetSet($offset, $value): void
+    {
+    }
+
+    public function offsetUnset($offset): void
+    {
+    }
+}
+
+function get_option($name, $default = false)
+{
+    if ($name === 'polylang') {
+        return new Polylang_Options_Stub();
+    }
+    return $default;
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return array(
+                (object) array(
+                    'term_id' => 4,
+                    'name' => 'English',
+                    'slug' => 'en',
+                    'term_group' => 0,
+                    'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                    'count' => 2,
+                ),
+                (object) array(
+                    'term_id' => 9,
+                    'name' => 'Norsk',
+                    'slug' => 'no',
+                    'term_group' => 1,
+                    'description' => 'a:2:{s:6:"locale";s:5:"nb_NO";s:9:"flag_code";s:2:"no";}',
+                    'count' => 0,
+                ),
+            );
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return '';
+    }
+};
+PHP
+        );
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('no', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertSame('Norsk', $result['items'][0]['name']);
+        $this->assertFalse($result['items'][1]['is_default']);
+    }
+
     public function test_menu_settings_do_not_invent_languages()
     {
         $db = $this->database_with_languages(array(
