@@ -448,7 +448,7 @@ class Test_Speed_Estimate extends TestCase
 
         $this->assertUnavailable(
             $estimate,
-            'A Tolka speed estimate is not available. The page could not be measured (The host is not allowed).'
+            'A Tolka speed estimate is not available. The page could not be measured. The host is not allowed.'
         );
         $this->assertSame('placeholder', $estimate['provenance']);
         $this->assertSame(self::PROVENANCE_NOTE, $estimate['provenance_note']);
@@ -475,11 +475,23 @@ class Test_Speed_Estimate extends TestCase
             ),
             array(
                 array('ok' => false, 'error' => "Timed\nout."),
-                'A Tolka speed estimate is not available. The page could not be measured (Timed out).',
+                'A Tolka speed estimate is not available. The page could not be measured. Timed out.',
             ),
             array(
                 array('ok' => false, 'error' => '<b>Timed out</b>'),
-                'A Tolka speed estimate is not available. The page could not be measured (Timed out).',
+                'A Tolka speed estimate is not available. The page could not be measured. Timed out.',
+            ),
+            array(
+                array('ok' => false, 'error' => '404'),
+                'A Tolka speed estimate is not available. The page could not be measured (404).',
+            ),
+            array(
+                array('ok' => false, 'error' => 'What happened?'),
+                'A Tolka speed estimate is not available. The page could not be measured. What happened?',
+            ),
+            array(
+                array('ok' => false, 'error' => '....'),
+                'A Tolka speed estimate is not available. The page could not be measured.',
             ),
             array(
                 array('ok' => false, 'error' => "\xFF\xFE"),
@@ -515,6 +527,16 @@ class Test_Speed_Estimate extends TestCase
         );
         $this->assertStringEndsWith('…).', $estimate['error']);
         $this->assertStringNotContainsString(str_repeat('a', 250), $estimate['error']);
+
+        $words = trim(str_repeat('measured slowly ', 40));
+        $wordy = Speed_Estimate::project(
+            array('ok' => false, 'error' => $words),
+            array(),
+            self::contractBenchmarks()
+        );
+
+        $this->assertMatchesRegularExpression('/ measured…\.$/', $wordy['error']);
+        $this->assertLessThanOrEqual(241, mb_strlen(self::detailFrom($wordy['error'])));
     }
 
     public function test_missing_or_unusable_load_time_does_not_invent_a_percent()
@@ -548,6 +570,73 @@ class Test_Speed_Estimate extends TestCase
             'A Tolka speed estimate is not available. The measured load time is not a usable number.'
         );
         $this->assertTrue(is_finite($infinite['faster_percent']));
+
+        $not_a_number = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => NAN),
+            $metrics,
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $not_a_number,
+            'A Tolka speed estimate is not available. The measured load time is not a usable number.'
+        );
+        $this->assertTrue(is_finite($not_a_number['faster_percent']));
+    }
+
+    public function test_both_unusable_counts_are_explained()
+    {
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 'several', 'script_count' => array(4)),
+            self::contractBenchmarks()
+        );
+
+        $this->assertUnavailable(
+            $estimate,
+            'A Tolka speed estimate is not available. The language count is not a usable number. The script count is not a usable number.'
+        );
+    }
+
+    public function test_negative_counts_follow_the_formula_without_a_boost()
+    {
+        // language_count -4 uses L = max(1, -4) = 1. Same as a count of 0.
+        $languages = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 200),
+            array('language_count' => -4, 'has_polylang_switcher' => false, 'script_count' => 0),
+            self::contractBenchmarks()
+        );
+        $this->assertSame(171, $languages['tolka_ms']);
+        $this->assertSame(14.5, $languages['faster_percent']);
+
+        // script_count -1 changes raw from 35 to 27. tolka = 1000 - 27 + 6 = 979.
+        // That is a smaller percent than scripts = 0 (2.9), not a larger one.
+        $scripts = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => -1),
+            self::contractBenchmarks()
+        );
+        $this->assertSame(979, $scripts['tolka_ms']);
+        $this->assertSame(27, $scripts['overhead_ms']);
+        $this->assertSame(2.1, $scripts['faster_percent']);
+        $this->assertLessThan(2.9, $scripts['faster_percent']);
+    }
+
+    public function test_non_string_provenance_stays_blank()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $benchmarks['provenance'] = array('lab');
+        $benchmarks['provenance_note'] = 12;
+
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame('', $estimate['provenance']);
+        $this->assertSame('', $estimate['provenance_note']);
+        $this->assertSame(971, $estimate['tolka_ms']);
     }
 
     public function test_unusable_counts_do_not_invent_a_percent()
@@ -582,7 +671,13 @@ class Test_Speed_Estimate extends TestCase
         $empty = Speed_Estimate::project($measurement, $metrics, array());
         $this->assertUnavailable(
             $empty,
-            'A Tolka speed estimate is not available. The benchmark coefficients are missing.'
+            'A Tolka speed estimate is not available. The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.'
+        );
+
+        $only_id = Speed_Estimate::project($measurement, $metrics, array('id' => 'tolka-lab'));
+        $this->assertUnavailable(
+            $only_id,
+            'A Tolka speed estimate is not available. The benchmark file is missing numbers for extra milliseconds per language (polylang_extra_ms_per_language), language switcher milliseconds (polylang_switcher_ms), extra milliseconds per script (polylang_extra_ms_per_script), Tolka milliseconds per language (tolka_ms_per_language), and maximum overhead ratio (max_overhead_ratio).'
         );
 
         $partial = self::contractBenchmarks();
@@ -710,6 +805,14 @@ class Test_Speed_Estimate extends TestCase
             file_put_contents($null, 'null');
             $this->assertSame(array(), $read($null));
 
+            $object = $directory . '/object.json';
+            file_put_contents($object, '{}');
+            $this->assertSame(array(), $read($object));
+
+            $nested = $directory . '/nested.json';
+            file_put_contents($nested, str_repeat('[', 40) . str_repeat(']', 40));
+            $this->assertSame(array(), $read($nested));
+
             $bom = $directory . '/bom.json';
             file_put_contents($bom, "\xEF\xBB\xBF" . '{"id":"tolka-lab","provenance":"placeholder"}');
             $this->assertSame(
@@ -753,9 +856,26 @@ class Test_Speed_Estimate extends TestCase
         $text = implode("\n", $output);
         $this->assertSame(0, $exit_code, $text);
         $this->assertSame(
-            'TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients are missing.',
+            'TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.',
             $text
         );
+    }
+
+    /**
+     * Detail inside the measurement-failure parentheses or following sentence.
+     *
+     * @param string $error
+     * @return string
+     */
+    private static function detailFrom($error)
+    {
+        $prefix = 'The page could not be measured. ';
+        $position = strpos($error, $prefix);
+        if ($position === false) {
+            return '';
+        }
+
+        return substr($error, $position + strlen($prefix));
     }
 
     /**
@@ -794,7 +914,7 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('', $estimate['faster_label']);
         $this->assertSame(self::BASIS, $estimate['basis']);
         $this->assertSame($error, $estimate['error']);
-        $this->assertStringEndsWith('.', $estimate['error']);
+        $this->assertMatchesRegularExpression('/[.!?]$/', $estimate['error']);
     }
 
     /**

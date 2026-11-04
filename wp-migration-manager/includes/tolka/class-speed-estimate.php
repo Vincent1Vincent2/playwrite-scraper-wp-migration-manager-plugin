@@ -244,9 +244,19 @@ class Speed_Estimate
     private static function measurement_failure_sentence(array $measurement)
     {
         $detail = self::plain_detail(isset($measurement['error']) ? $measurement['error'] : '');
-        if ($detail === '') {
+        if ($detail === '' || preg_match('/[\p{L}\p{N}]/u', $detail) !== 1) {
             return self::translate('The page could not be measured.');
         }
+
+        if (preg_match('/\s/u', $detail) === 1) {
+            if (preg_match('/[.!?]$/u', $detail) !== 1) {
+                $detail .= '.';
+            }
+
+            return self::translate('The page could not be measured.') . ' ' . $detail;
+        }
+
+        $detail = rtrim($detail, '.');
 
         return sprintf(self::translate('The page could not be measured (%s).'), $detail);
     }
@@ -295,8 +305,8 @@ class Speed_Estimate
             return '';
         }
 
-        if (count($missing) === count(self::$coefficient_keys)) {
-            return self::translate('The benchmark coefficients are missing.');
+        if ($benchmarks === array()) {
+            return self::translate('The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.');
         }
 
         $sentences = array();
@@ -655,21 +665,82 @@ class Speed_Estimate
         }
 
         $detail = trim($detail);
-        $detail = rtrim($detail, '.');
-        $detail = trim($detail);
         if ($detail === '') {
             return '';
         }
 
-        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
-            if (mb_strlen($detail) > 240) {
-                $detail = rtrim(mb_substr($detail, 0, 239)) . '…';
-            }
-        } elseif (strlen($detail) > 240) {
-            $detail = rtrim(substr($detail, 0, 239)) . '…';
+        return self::shorten($detail, 240);
+    }
+
+    /**
+     * Keep a measurement error inside one short fragment.
+     *
+     * Prefer the last whole word so the admin does not see a cut-off token.
+     *
+     * @param string $detail
+     * @param int    $limit
+     * @return string
+     */
+    private static function shorten($detail, $limit)
+    {
+        $length = self::string_length($detail);
+        if ($length <= $limit) {
+            return $detail;
         }
 
-        return $detail;
+        $slice = self::string_slice($detail, $limit - 1);
+        $space = self::string_last_space($slice);
+        if ($space !== null && $space >= 80) {
+            $slice = self::string_slice($detail, $space);
+        }
+
+        return rtrim($slice) . '…';
+    }
+
+    /**
+     * @param string $text
+     * @return int
+     */
+    private static function string_length($text)
+    {
+        if (function_exists('mb_strlen')) {
+            return (int) mb_strlen($text);
+        }
+
+        return strlen($text);
+    }
+
+    /**
+     * @param string $text
+     * @param int    $length
+     * @return string
+     */
+    private static function string_slice($text, $length)
+    {
+        if (function_exists('mb_substr')) {
+            return (string) mb_substr($text, 0, $length);
+        }
+
+        return substr($text, 0, $length);
+    }
+
+    /**
+     * @param string $text
+     * @return int|null
+     */
+    private static function string_last_space($text)
+    {
+        if (function_exists('mb_strrpos')) {
+            $space = mb_strrpos($text, ' ');
+        } else {
+            $space = strrpos($text, ' ');
+        }
+
+        if ($space === false) {
+            return null;
+        }
+
+        return (int) $space;
     }
 
     /**
