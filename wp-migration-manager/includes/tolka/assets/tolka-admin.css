@@ -2006,3 +2006,50 @@ dl.wmm-tolka-lines dd,
         transform: none !important;
     }
 }
+
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-faster,
+#wmm-tolka-wizard:has(button[aria-busy="true"]) #wmm-tolka-faster,
+#wmm-tolka-wizard.wmm-tolka-is-busy #wmm-tolka-faster {
+    position: relative;
+    z-index: 1;
+    color: #063828;
+    background-color: #fff;
+    box-shadow: 0 0 0 4px #fff;
+    font-size: clamp(2rem, 5vw, 3.75rem);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-provenance-note[hidden],
+#wmm-tolka-wizard:has(button[aria-busy="true"]) #wmm-tolka-provenance-note[hidden],
+#wmm-tolka-wizard.wmm-tolka-is-busy #wmm-tolka-provenance-note[hidden],
+.wmm-tolka:has(button.wmm-tolka-is-busy) #wmm-tolka-provenance-note[hidden] {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    border: 0 !important;
+    background: none !important;
+    color: transparent !important;
+}
+
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) .wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
+#wmm-tolka-wizard:has(button[aria-busy="true"]) .wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
+#wmm-tolka-wizard.wmm-tolka-is-busy .wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) .wmm-tolka-provenance[hidden],
+#wmm-tolka-wizard.wmm-tolka-is-busy .wmm-tolka-provenance[hidden] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    background: none !important;
+}
