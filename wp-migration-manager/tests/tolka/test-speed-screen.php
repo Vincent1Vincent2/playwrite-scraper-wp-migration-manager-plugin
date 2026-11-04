@@ -156,6 +156,65 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         );
     }
 
+    public function test_placeholder_and_truncated_show_both_warnings_or_neither()
+    {
+        $note = 'Placeholder <script>alert(1)</script> note';
+        $truncated_sentence = 'Only the first part of the page HTML was measured.';
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+        $estimate = $this->ready_estimate();
+        $estimate['provenance'] = 'placeholder';
+        $estimate['provenance_note'] = $note;
+
+        $both = $this->render(true, array(
+            'metrics' => array('truncated' => true),
+            'estimate' => $estimate,
+        ));
+        $both_document = $this->document($both);
+        $note_node = $both_document->getElementById('wmm-tolka-provenance-note');
+        $truncated_node = $both_document->getElementById('wmm-tolka-speed-truncated');
+
+        $this->assertFalse($note_node->hasAttribute('hidden'));
+        $this->assertFalse($note_node->parentNode->hasAttribute('hidden'));
+        $this->assertSame($note, $this->text($both, 'wmm-tolka-provenance-note'));
+        $this->assertNotNull($truncated_node);
+        $this->assertSame($truncated_sentence, $this->text($both, 'wmm-tolka-speed-truncated'));
+        $this->assertSame(0, $this->element_child_count($note_node));
+        $this->assertSame(0, $this->element_child_count($truncated_node));
+        $this->assertStringContainsString(htmlspecialchars($truncated_sentence, ENT_QUOTES, 'UTF-8'), $both);
+        $this->assertStringContainsString('&lt;script&gt;', $both);
+        $this->assertStringNotContainsString('<script', $both);
+        foreach ($ids as $id) {
+            $this->assertNotNull($both_document->getElementById($id), $id);
+            $this->assertSame(1, substr_count($both, 'id="' . $id . '"'), $id);
+        }
+
+        $neither_estimate = $this->ready_estimate();
+        $neither_estimate['provenance'] = 'lab';
+        $neither_estimate['provenance_note'] = $note;
+        $neither = $this->render(true, array(
+            'metrics' => array('truncated' => false),
+            'estimate' => $neither_estimate,
+        ));
+        $neither_document = $this->document($neither);
+        $neither_note = $neither_document->getElementById('wmm-tolka-provenance-note');
+
+        $this->assertTrue($neither_note->hasAttribute('hidden'));
+        $this->assertSame('', $this->text($neither, 'wmm-tolka-provenance-note'));
+        $this->assertNull($neither_document->getElementById('wmm-tolka-speed-truncated'));
+        $this->assertStringNotContainsString('Placeholder <script>', $neither);
+        $this->assertStringNotContainsString($truncated_sentence, $neither);
+        $this->assertStringNotContainsString('<script', $neither);
+        foreach ($ids as $id) {
+            $this->assertNotNull($neither_document->getElementById($id), 'neither #' . $id);
+        }
+    }
+
     public function test_truncated_page_sentence_is_escaped_and_omitted_when_not_truncated()
     {
         $sentence = 'Only the first part of the page HTML was measured.';

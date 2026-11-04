@@ -399,6 +399,10 @@ if ($wmm_tolka_speed_view['show_note']) {
         <p class="wmm-tolka-value" id="wmm-tolka-provenance-note" data-field="provenance_note" role="note"<?php echo $wmm_tolka_speed_view['show_note'] ? '' : ' hidden'; ?>><?php echo esc_html($wmm_tolka_speed_view['note']); ?></p>
     </div>
 
+    <?php if ('' !== $wmm_tolka_speed_truncated_text) : ?>
+        <p class="wmm-tolka-speed-truncated" id="wmm-tolka-speed-truncated"><?php echo esc_html($wmm_tolka_speed_truncated_text); ?></p>
+    <?php endif; ?>
+
     <p class="wmm-tolka-speed-savings" id="wmm-tolka-speed-savings" data-field="savings" data-saved-ms="<?php echo esc_attr($wmm_tolka_speed_view['saved_ms']); ?>"<?php echo ('' === $wmm_tolka_speed_view['savings']) ? ' hidden' : ''; ?>>
         <?php echo esc_html($wmm_tolka_speed_view['savings']); ?>
     </p>
@@ -406,10 +410,6 @@ if ($wmm_tolka_speed_view['show_note']) {
     <p class="wmm-tolka-speed-scope" id="wmm-tolka-speed-scope" data-field="scope"<?php echo $wmm_tolka_speed_view['show_scope'] ? '' : ' hidden'; ?>>
         <?php echo $wmm_tolka_speed_view['show_scope'] ? esc_html($wmm_tolka_speed_scope_text) : ''; ?>
     </p>
-
-    <?php if ('' !== $wmm_tolka_speed_truncated_text) : ?>
-        <p class="wmm-tolka-speed-truncated" id="wmm-tolka-speed-truncated"><?php echo esc_html($wmm_tolka_speed_truncated_text); ?></p>
-    <?php endif; ?>
 
     <p class="wmm-tolka-speed-basis-label"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>><?php esc_html_e('Basis', 'migration-manager'); ?></p>
     <p class="wmm-tolka-speed-basis wmm-tolka-value" id="wmm-tolka-basis" data-wmm-tolka="basis" data-field="basis"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>>
