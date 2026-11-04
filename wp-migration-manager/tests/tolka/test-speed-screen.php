@@ -701,6 +701,71 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertTrue($this->document($html)->getElementById('wmm-tolka-speed-savings')->hasAttribute('hidden'));
     }
 
+    public function test_successful_placeholder_estimate_escapes_basis_label_and_note()
+    {
+        $label = '40% <img src=x onerror=alert(1)> faster';
+        $basis = 'Basis </p><script>alert(1)</script>';
+        $note = 'Placeholder <svg/onload=alert(1)> note';
+        $html = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 1842,
+            'tolka_ms' => 900,
+            'faster_percent' => 40,
+            'faster_label' => $label,
+            'basis' => $basis,
+            'provenance' => 'placeholder',
+            'provenance_note' => $note,
+            'error' => '',
+        ));
+        $document = $this->document($html);
+        $note_node = $document->getElementById('wmm-tolka-provenance-note');
+
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+        }
+
+        $this->assertFalse($note_node->hasAttribute('hidden'));
+        $this->assertFalse($note_node->parentNode->hasAttribute('hidden'));
+        $this->assertSame($note, $this->text($html, 'wmm-tolka-provenance-note'));
+        $this->assertSame($label, $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame($basis . '.', $this->text($html, 'wmm-tolka-basis'));
+        $this->assertStringContainsString($label, $this->text($html, 'wmm-tolka-speed-summary'));
+        $this->assertStringContainsString('1,842 ms', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertStringContainsString('900 ms', $this->text($html, 'wmm-tolka-tolka-load'));
+
+        foreach (array('<img', '<script', '</script', '<svg') as $raw) {
+            $this->assertStringNotContainsString($raw, $html, $raw);
+        }
+        $this->assertStringContainsString('&lt;img', $html);
+        $this->assertStringContainsString('&lt;/p&gt;', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringContainsString('&lt;svg', $html);
+
+        $broken = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 1000,
+            'tolka_ms' => 800,
+            'faster_percent' => 20,
+            'faster_label' => "<scr\0ipt>alert(1)</script>",
+            'basis' => "Load <scr\0ipt>alert(2)</script>",
+            'provenance' => 'placeholder',
+            'provenance_note' => "Note <scr\0ipt>alert(3)</script>",
+            'error' => '',
+        ));
+        $this->assertSame('<script>alert(1)</script>', $this->text($broken, 'wmm-tolka-faster'));
+        $this->assertSame('Load <script>alert(2)</script>.', $this->text($broken, 'wmm-tolka-basis'));
+        $this->assertSame('Note <script>alert(3)</script>', $this->text($broken, 'wmm-tolka-provenance-note'));
+        $this->assertFalse($this->document($broken)->getElementById('wmm-tolka-provenance-note')->hasAttribute('hidden'));
+        $this->assertStringNotContainsString('<script', $broken);
+        $this->assertStringNotContainsString("\0", $broken);
+    }
+
     public function test_measure_payload_and_missing_label_still_render()
     {
         $html = $this->render(true, array(

@@ -11,6 +11,8 @@
  * #wmm-tolka-current-load, #wmm-tolka-tolka-load, #wmm-tolka-faster,
  * #wmm-tolka-basis, and #wmm-tolka-provenance-note.
  * The provenance note is shown when provenance is placeholder.
+ * Basis text, the faster label, and the provenance note are escaped
+ * before they are printed.
  *
  * @package MigrationManager
  */
@@ -25,6 +27,16 @@ $wmm_tolka_speed_text = static function ($value) {
     }
 
     return '';
+};
+
+$wmm_tolka_speed_plain = static function ($value) use ($wmm_tolka_speed_text) {
+    $text = $wmm_tolka_speed_text($value);
+    $stripped = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text);
+    if (!is_string($stripped)) {
+        return str_replace("\0", '', $text);
+    }
+
+    return $stripped;
 };
 
 $wmm_tolka_speed_number = static function ($value) {
@@ -164,7 +176,7 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
     );
     $wmm_tolka_speed_view['show_note'] = ('placeholder' === $wmm_tolka_speed_view['provenance']);
     if ($wmm_tolka_speed_view['show_note']) {
-        $wmm_tolka_speed_view['note'] = $wmm_tolka_speed_text(
+        $wmm_tolka_speed_view['note'] = $wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['provenance_note']) ? $wmm_tolka_speed_payload['provenance_note'] : ''
         );
         if ('' === $wmm_tolka_speed_view['note']) {
@@ -184,7 +196,7 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
         $wmm_tolka_speed_view['tolka'] = $wmm_tolka_speed_format_ms($wmm_tolka_speed_tolka_number);
         $wmm_tolka_speed_view['current_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_current_number);
         $wmm_tolka_speed_view['tolka_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_tolka_number);
-        $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_text(
+        $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['faster_label']) ? $wmm_tolka_speed_payload['faster_label'] : ''
         );
 
@@ -196,7 +208,7 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
             }
         }
 
-        $wmm_tolka_speed_view['basis'] = $wmm_tolka_speed_finish($wmm_tolka_speed_text(
+        $wmm_tolka_speed_view['basis'] = $wmm_tolka_speed_finish($wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['basis']) ? $wmm_tolka_speed_payload['basis'] : ''
         ));
         if ('' === $wmm_tolka_speed_view['basis']) {
@@ -392,6 +404,7 @@ if ($wmm_tolka_speed_view['show_note']) {
 <?php
 unset(
     $wmm_tolka_speed_text,
+    $wmm_tolka_speed_plain,
     $wmm_tolka_speed_number,
     $wmm_tolka_speed_format_ms,
     $wmm_tolka_speed_ms_attr,
