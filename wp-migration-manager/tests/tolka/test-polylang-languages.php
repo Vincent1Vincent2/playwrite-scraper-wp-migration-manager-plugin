@@ -957,6 +957,22 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_a_real_slug_may_contain_pll_after_the_language()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'Supplementary', 'en_pll', 'en_US', 'us', 0, 1),
+        ), 'en_pll');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en_pll', $result['items'][0]['slug']);
+        $this->assertSame('Supplementary', $result['items'][0]['name']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_polish_is_kept_and_its_internal_row_is_not()
     {
         $db = $this->database_with_languages(array(
