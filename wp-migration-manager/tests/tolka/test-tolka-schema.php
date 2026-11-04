@@ -1688,6 +1688,140 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame($package, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
         $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
         $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+    }
+
+    public function test_menu_ids_are_not_term_meta_when_a_post_is_tagged()
+    {
+        $GLOBALS['wmm_tolka_schema_driver']['term_meta'][20] = array(
+            'polylang_note' => 'classic menu term',
+        );
+        $menu = array(
+            'location' => 'primary',
+            'label' => 'Primary',
+            'translations' => array(
+                'en' => array(
+                    'menu_id' => 20,
+                    'id' => 20,
+                    'name' => "Main\0",
+                    'slug' => 'main',
+                    'kind' => 'menu',
+                    'link_count' => 2,
+                    'items' => array(
+                        array(
+                            'id' => 50,
+                            'parent' => 0,
+                            'title' => "Home\0 <span>page</span>",
+                            'url' => 'https://example.com/',
+                            'object' => 'page',
+                            'object_id' => 10,
+                            'type' => 'post_type',
+                            'classes' => array('home'),
+                            'children' => array(
+                                array(
+                                    'id' => 51,
+                                    'parent' => 50,
+                                    'title' => 'About',
+                                    'url' => 'https://example.com/about',
+                                    'object' => 'page',
+                                    'object_id' => 11,
+                                    'type' => 'post_type',
+                                    'classes' => array(),
+                                    'children' => array(),
+                                    'switcher' => false,
+                                ),
+                            ),
+                            'switcher' => false,
+                        ),
+                    ),
+                ),
+                'sv' => array(
+                    'menu_id' => 77,
+                    'name' => 'Navigation',
+                    'slug' => 'navigation',
+                    'kind' => 'navigation',
+                    'link_count' => 0,
+                    'items' => array(),
+                ),
+            ),
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:10',
+                    'type' => 'page',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 10,
+                            'title' => '<em>Home</em>',
+                            'content' => "<p>Body\0</p>",
+                        ),
+                    ),
+                ),
+            ),
+            'menus' => array($menu),
+        ));
+
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $saved_menu = $stored['menus'][0];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+        $this->assertSame(1, $result['counts']['menus']);
+        $this->assertSame(1, $result['counts']['posts']);
+        $this->assertSame('primary', $saved_menu['location']);
+        $this->assertSame('Primary', $saved_menu['label']);
+        $this->assertSame(20, $saved_menu['translations']['en']['menu_id']);
+        $this->assertSame(20, $saved_menu['translations']['en']['id']);
+        $this->assertSame('Main', $saved_menu['translations']['en']['name']);
+        $this->assertSame('menu', $saved_menu['translations']['en']['kind']);
+        $this->assertSame('Home <span>page</span>', $saved_menu['translations']['en']['items'][0]['title']);
+        $this->assertSame(50, $saved_menu['translations']['en']['items'][0]['id']);
+        $this->assertSame(10, $saved_menu['translations']['en']['items'][0]['object_id']);
+        $this->assertSame('About', $saved_menu['translations']['en']['items'][0]['children'][0]['title']);
+        $this->assertSame(51, $saved_menu['translations']['en']['items'][0]['children'][0]['id']);
+        $this->assertSame(77, $saved_menu['translations']['sv']['menu_id']);
+        $this->assertSame('navigation', $saved_menu['translations']['sv']['kind']);
+        $this->assertSame('<em>Home</em>', $stored['posts'][0]['translations']['en']['title']);
+        $this->assertSame('<p>Body</p>', $stored['posts'][0]['translations']['en']['content']);
+        $this->assertSame(false, strpos(serialize($stored), "\0"));
+
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'post:10',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]
+        );
+        $this->assertArrayNotHasKey(20, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertArrayNotHasKey(50, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertArrayNotHasKey(51, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertArrayNotHasKey(77, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(
+            array('polylang_note' => 'classic menu term'),
+            $GLOBALS['wmm_tolka_schema_driver']['term_meta'][20]
+        );
+        $this->assertArrayNotHasKey(77, $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+
+        foreach ($GLOBALS['wmm_tolka_schema_driver']['calls'] as $call) {
+            if ($call['fn'] === 'update_post_meta') {
+                $this->assertContains($call['key'], array('_wmm_tolka_lang', '_wmm_tolka_group'));
+                $this->assertSame(10, $call['id']);
+            }
+            if ($call['fn'] === 'update_option') {
+                $this->assertSame('wmm_tolka_package', $call['option']);
+            }
+        }
+
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
     }
 
     public function test_schema_package_is_stored_unchanged()

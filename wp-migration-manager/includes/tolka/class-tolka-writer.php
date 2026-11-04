@@ -162,6 +162,8 @@ class Tolka_Writer
             } elseif ($section === 'terms') {
                 $terms = self::operations($items, 'term', $errors, $hidden);
             }
+            // Menus, strings, media, and languages are stored in the package
+            // only. Menu items and menu terms do not receive Tolka term meta.
         }
 
         return array(
