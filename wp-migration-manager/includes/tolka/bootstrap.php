@@ -526,9 +526,32 @@ function wmm_tolka_ajax_measure()
     }
 
     wp_send_json_success(array(
-        'metrics' => wmm_tolka_strip_html_keys($analyzed['value']),
-        'estimate' => wmm_tolka_strip_html_keys($projected['value']),
+        'metrics' => wmm_tolka_public_copy($analyzed['value']),
+        'estimate' => wmm_tolka_without_unusable_percent(wmm_tolka_public_copy($projected['value'])),
     ));
+}
+
+/**
+ * Drop a percent unless the estimate itself says it is usable.
+ *
+ * @param mixed $estimate Projected estimate.
+ * @return mixed
+ */
+function wmm_tolka_without_unusable_percent($estimate)
+{
+    if (!is_array($estimate)) {
+        return $estimate;
+    }
+
+    $ok = array_key_exists('ok', $estimate) && ($estimate['ok'] === true || $estimate['ok'] === 1);
+
+    if ($ok) {
+        return $estimate;
+    }
+
+    unset($estimate['faster_percent'], $estimate['faster_label']);
+
+    return $estimate;
 }
 
 /**
@@ -616,11 +639,12 @@ function wmm_tolka_plain_value($value)
         return __('Stored with the report.', 'migration-manager');
     }
 
-    if (function_exists('wp_strip_all_tags')) {
-        $value = wp_strip_all_tags($value);
-    } else {
-        $value = strip_tags($value);
+    $without_blocks = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/is', '', $value);
+    if (is_string($without_blocks)) {
+        $value = $without_blocks;
     }
+
+    $value = strip_tags($value);
 
     $collapsed = preg_replace('/\s+/', ' ', $value);
     if (is_string($collapsed)) {
@@ -633,6 +657,31 @@ function wmm_tolka_plain_value($value)
 
     if (strlen($value) > 400) {
         return substr($value, 0, 400) . '...';
+    }
+
+    return $value;
+}
+
+/**
+ * Copy a measure result for the browser, without raw HTML.
+ *
+ * @param mixed $value Slice data.
+ * @return mixed
+ */
+function wmm_tolka_public_copy($value)
+{
+    if (is_string($value)) {
+        return wmm_tolka_plain_value($value);
+    }
+
+    if (!is_array($value)) {
+        return $value;
+    }
+
+    unset($value['html']);
+
+    foreach ($value as $key => $item) {
+        $value[$key] = wmm_tolka_public_copy($item);
     }
 
     return $value;
@@ -1079,7 +1128,11 @@ function wmm_tolka_render_fallback_wizard()
     );
     echo '</p>';
     echo '<p class="wmm-tolka-hint" id="wmm-tolka-run-hint">';
-    echo esc_html__('Running the migration writes a Tolka package and translation meta. Polylang content, terms, and settings stay in place.', 'migration-manager');
+    if (isset($gaps['run'])) {
+        echo esc_html($gaps['run'] . ' ' . __('Nothing was changed.', 'migration-manager'));
+    } else {
+        echo esc_html__('Running the migration writes a Tolka package and translation meta. Polylang content, terms, and settings stay in place.', 'migration-manager');
+    }
     echo '</p>';
 
     echo '<section class="wmm-tolka-section" aria-labelledby="wmm-tolka-speed-heading">';

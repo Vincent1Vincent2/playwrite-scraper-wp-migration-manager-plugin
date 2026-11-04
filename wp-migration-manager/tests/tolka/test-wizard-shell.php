@@ -219,7 +219,8 @@ namespace WMM\Tolka {
                 $GLOBALS['wmm_tolka_detector_throw'],
                 $GLOBALS['wmm_tolka_detector_active'],
                 $GLOBALS['wmm_tolka_detector_version'],
-                $GLOBALS['wmm_tolka_detector_errors']
+                $GLOBALS['wmm_tolka_detector_errors'],
+                $GLOBALS['wmm_tolka_stub_bad_estimate']
             );
         }
 
@@ -364,6 +365,28 @@ namespace WMM\Tolka {
             $this->assertSame('Yes', \wmm_tolka_plain_value(true));
             $this->assertSame('Stored with the report.', \wmm_tolka_plain_value(array('package' => true)));
             $this->assertLessThan(410, strlen(\wmm_tolka_plain_value(str_repeat('a', 800))));
+
+            $kept = \wmm_tolka_without_unusable_percent(array(
+                'ok' => true,
+                'faster_percent' => 10.0,
+                'faster_label' => '10% faster',
+            ));
+            $this->assertSame(10.0, $kept['faster_percent']);
+            $this->assertSame('10% faster', $kept['faster_label']);
+
+            $dropped = \wmm_tolka_without_unusable_percent(array(
+                'ok' => false,
+                'faster_percent' => 99.9,
+                'faster_label' => '99.9% faster',
+                'error' => 'The page could not be measured.',
+            ));
+            $this->assertArrayNotHasKey('faster_percent', $dropped);
+            $this->assertArrayNotHasKey('faster_label', $dropped);
+            $this->assertSame('The page could not be measured.', $dropped['error']);
+            $this->assertSame(
+                'The page could not be measured.',
+                \wmm_tolka_plain_value('The page could not be measured. <script>secret-html</script>')
+            );
         }
 
         public function test_guard_rejects_bad_nonce_and_capability()
@@ -454,6 +477,116 @@ namespace WMM\Tolka {
             );
         }
 
+        public function test_rejected_nonce_is_an_error_without_a_percent()
+        {
+            $this->requireStubs();
+
+            $requests = array(
+                array(),
+                array('nonce' => ''),
+                array('nonce' => 'rejected'),
+                array('url' => 'https://public.example.test/'),
+            );
+            $handlers = array(
+                'wmm_tolka_ajax_measure',
+                'wmm_tolka_ajax_preview',
+                'wmm_tolka_ajax_run',
+            );
+
+            foreach ($requests as $post) {
+                foreach ($handlers as $handler) {
+                    $GLOBALS['wmm_tolka_test_nonce_valid'] = false;
+                    $GLOBALS['wmm_tolka_test_can'] = true;
+                    $_POST = $post;
+                    unset($GLOBALS['wmm_tolka_test_json']);
+
+                    ob_start();
+                    $this->capture(function () use ($handler) {
+                        $handler();
+                    });
+                    $output = ob_get_clean();
+
+                    $this->assertSame('', $output);
+                    $payload = $GLOBALS['wmm_tolka_test_json'];
+                    $this->assertFalse($payload['success']);
+                    $this->assertStringContainsString('security check failed', $payload['data']['message']);
+                    $this->assertArrayNotHasKey('estimate', $payload['data']);
+                    $this->assertArrayNotHasKey('missing', $payload['data']);
+                    $this->assertNoSpeedPercent($payload);
+                }
+            }
+        }
+
+        public function test_user_without_manage_options_is_rejected()
+        {
+            $this->requireStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = false;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => 'https://public.example.test/',
+            );
+
+            foreach (array('wmm_tolka_ajax_measure', 'wmm_tolka_ajax_preview', 'wmm_tolka_ajax_run') as $handler) {
+                unset($GLOBALS['wmm_tolka_test_json']);
+                ob_start();
+                $this->capture(function () use ($handler) {
+                    $handler();
+                });
+                $output = ob_get_clean();
+
+                $this->assertSame('', $output);
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+                $this->assertFalse($payload['success']);
+                $this->assertStringContainsString('permission', $payload['data']['message']);
+                $this->assertStringContainsString('do not have permission', $payload['data']['message']);
+                $this->assertArrayNotHasKey('estimate', $payload['data']);
+                $this->assertArrayNotHasKey('missing', $payload['data']);
+                $this->assertNoSpeedPercent($payload);
+            }
+        }
+
+        public function test_measure_without_speed_classes_returns_no_percent()
+        {
+            $this->requireStubs();
+
+            if (
+                class_exists(Speed_Loader::class)
+                || class_exists(Speed_Metrics::class)
+                || class_exists(Speed_Estimate::class)
+            ) {
+                $this->markTestSkipped('Speed classes are already loaded.');
+            }
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => 'https://public.example.test/',
+            );
+
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $output = ob_get_clean();
+
+            $this->assertSame('', $output);
+            $payload = $GLOBALS['wmm_tolka_test_json'];
+            $this->assertFalse($payload['success']);
+            $this->assertSame(
+                array('Speed_Loader', 'Speed_Metrics', 'Speed_Estimate'),
+                $payload['data']['missing']
+            );
+            $this->assertArrayNotHasKey('estimate', $payload['data']);
+            $this->assertArrayNotHasKey('metrics', $payload['data']);
+            $this->assertArrayNotHasKey('faster_percent', $payload['data']);
+            $this->assertArrayNotHasKey('faster_label', $payload['data']);
+            $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+            $this->assertNoSpeedPercent($payload);
+        }
+
         public function test_fallback_screen_has_empty_states_and_required_ids()
         {
             $this->requireStubs();
@@ -479,6 +612,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('A speed estimate is not available on this install yet.', $html);
             $this->assertStringContainsString('Migration preview is not available on this install yet.', $html);
             $this->assertStringContainsString('Running the migration is not available on this install yet.', $html);
+            $this->assertStringNotContainsString('writes a Tolka package', $html);
             $this->assertStringNotContainsString('No measurement yet.', $html);
             $this->assertStringNotContainsString('Nothing has been previewed yet.', $html);
             $this->assertStringNotContainsString('No migration has been run from this screen yet.', $html);
@@ -502,6 +636,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('No migration has been run from this screen yet.', $html);
             $this->assertSame(0, substr_count($html, ' disabled '));
             $this->assertStringContainsString('button-primary', $html);
+            $this->assertStringContainsString('writes a Tolka package', $html);
 
             $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/assets/';
             if (!is_dir($directory)) {
@@ -722,6 +857,8 @@ namespace WMM\Tolka {
             $this->assertArrayNotHasKey('html', $payload['data']['estimate']);
             $this->assertStringNotContainsString('secret-html', $encoded);
             $this->assertSame('Measured page load plus coefficients from benchmarks.json', $payload['data']['estimate']['basis']);
+            $this->assertSame(25.0, $payload['data']['estimate']['faster_percent']);
+            $this->assertSame('25% faster', $payload['data']['estimate']['faster_label']);
 
             $this->capture(function () {
                 \wmm_tolka_ajax_preview();
@@ -810,6 +947,37 @@ PHP
                 $this->restoreOwnedFile($speed, $speedOwned);
                 $this->restoreOwnedFile($help, $helpOwned);
             }
+        }
+
+        public function test_failed_estimate_does_not_keep_a_percent()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_stub_bad_estimate'] = true;
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => 'https://public.example.test/',
+            );
+
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $output = ob_get_clean();
+
+            $this->assertSame('', $output);
+            $payload = $GLOBALS['wmm_tolka_test_json'];
+            $this->assertTrue($payload['success']);
+            $this->assertFalse($payload['data']['estimate']['ok']);
+            $this->assertSame('The page could not be measured.', $payload['data']['estimate']['error']);
+            $this->assertStringNotContainsString('secret-html', json_encode($payload));
+            $this->assertArrayNotHasKey('faster_percent', $payload['data']['estimate']);
+            $this->assertArrayNotHasKey('faster_label', $payload['data']['estimate']);
+            $this->assertArrayNotHasKey('html', $payload['data']['estimate']);
+            $this->assertNoSpeedPercent($payload);
         }
 
         public function test_slice_exceptions_become_errors()
@@ -905,6 +1073,30 @@ PHP
             }
         }
 
+        /**
+         * A failed measure must not carry a speed percent.
+         *
+         * @param mixed $value Response payload.
+         */
+        private function assertNoSpeedPercent($value)
+        {
+            if (is_string($value)) {
+                $this->assertDoesNotMatchRegularExpression('/faster_percent|faster_label|%\\s*faster|\\d+(?:\\.\\d+)?\\s*%/i', $value);
+                return;
+            }
+
+            if (!is_array($value)) {
+                return;
+            }
+
+            foreach ($value as $key => $item) {
+                if ($key === 'faster_percent' || $key === 'faster_label') {
+                    $this->fail('A speed percent was returned.');
+                }
+                $this->assertNoSpeedPercent($item);
+            }
+        }
+
         private function defineSliceStubs()
         {
             if (!class_exists(Speed_Loader::class)) {
@@ -950,6 +1142,17 @@ class Speed_Estimate {
         return array('id' => 'tolka-lab');
     }
     public static function project($measurement, $metrics, $benchmarks) {
+        if (!empty($GLOBALS['wmm_tolka_stub_bad_estimate'])) {
+            return array(
+                'ok' => false,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 99.9,
+                'faster_label' => '99.9% faster',
+                'error' => 'The page could not be measured. <script>secret-html</script>',
+                'html' => '<script>secret-html</script>',
+            );
+        }
         return array(
             'ok' => true,
             'current_ms' => 120,
