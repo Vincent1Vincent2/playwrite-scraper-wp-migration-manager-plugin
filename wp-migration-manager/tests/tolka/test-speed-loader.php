@@ -316,6 +316,12 @@ class Test_Speed_Loader extends TestCase
             'this network' => array('http://0.0.0.0/', $private),
             'this network end' => array('http://0.255.255.255/', $private),
             'integer zero' => array('http://0/', $private),
+            'decimal loopback no slash' => array('http://2130706433', $private),
+            'hex loopback no slash' => array('http://0x7f000001', $private),
+            'mapped unspecified' => array('http://[::ffff:0.0.0.0]/', $private),
+            'mapped unspecified hex' => array('http://[::ffff:0:0]/', $private),
+            'link local with port' => array('http://[fe80::1]:80/', $private),
+            'ten no slash' => array('https://10.0.0.1', $private),
             'ipv6 loopback' => array('http://[::1]/', $private),
             'ipv6 loopback expanded' => array('http://[0:0:0:0:0:0:0:1]/', $private),
             'ipv6 unspecified' => array('http://[::]/', $private),
@@ -473,6 +479,41 @@ class Test_Speed_Loader extends TestCase
         $this->assertSame(self::PRIVATE_DNS_MESSAGE, $result['error']);
         $this->assertFalse(Speed_Loader_Harness::$requested);
         $this->assertSame('', $result['html']);
+    }
+
+    public function test_a_name_that_only_looks_private_is_not_blocked()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('93.184.216.34');
+        Speed_Loader_Harness::$response = $this->http_response(200, '<html>named</html>');
+
+        $result = Speed_Loader_Harness::measure('https://192.168.0.1.example.com/');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('<html>named</html>', $result['html']);
+        $this->assertSame('https://192.168.0.1.example.com/', $result['url']);
+    }
+
+    public function test_string_status_and_non_string_body_do_not_fatal()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = array(
+            'headers' => array(),
+            'body' => null,
+            'response' => array(
+                'code' => '404',
+                'message' => 'Not Found',
+            ),
+            'cookies' => array(),
+            'filename' => null,
+        );
+
+        $result = Speed_Loader_Harness::measure('https://example.com/missing');
+
+        $this->assertFailure($result);
+        $this->assertSame(404, $result['status_code']);
+        $this->assertSame('That page was not found, so the load time could not be measured.', $result['error']);
     }
 
     public function test_public_dns_answer_is_measured()
