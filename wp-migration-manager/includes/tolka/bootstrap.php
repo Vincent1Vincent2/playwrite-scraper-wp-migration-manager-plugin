@@ -1198,7 +1198,14 @@ function wmm_tolka_home_url()
 
     $home = home_url('/');
 
-    return is_string($home) ? $home : '';
+    if (!is_string($home)) {
+        return '';
+    }
+
+    $home = str_replace("\0", '', $home);
+    $stripped = preg_replace('/[\x00-\x1F\x7F]+/', '', $home);
+
+    return is_string($stripped) ? trim($stripped) : '';
 }
 
 /**
@@ -1627,14 +1634,14 @@ function wmm_tolka_render_report_body($report, $unavailable = '')
     if (isset($report['title'])) {
         $title = trim(wmm_tolka_plain_value($report['title']));
         if ($title !== '') {
-            echo '<h3 class="wmm-tolka-report-title">' . esc_html($title) . '</h3>';
+            echo '<h3 class="wmm-tolka-report-title">' . wmm_tolka_escape_status_text($title) . '</h3>';
         }
     }
 
     if (isset($report['summary'])) {
         $summary = trim(wmm_tolka_plain_value($report['summary']));
         if ($summary !== '') {
-            echo '<p class="wmm-tolka-summary">' . esc_html($summary) . '</p>';
+            echo '<p class="wmm-tolka-summary">' . wmm_tolka_escape_status_text($summary) . '</p>';
         }
     }
 
@@ -1653,8 +1660,8 @@ function wmm_tolka_render_report_body($report, $unavailable = '')
         $count++;
         $label = isset($line['label']) ? trim(wmm_tolka_plain_value($line['label'])) : '';
         $value = array_key_exists('value', $line) ? trim(wmm_tolka_plain_value($line['value'])) : '';
-        echo '<dt>' . esc_html($label) . '</dt>';
-        echo '<dd>' . esc_html($value) . '</dd>';
+        echo '<dt>' . wmm_tolka_escape_status_text($label) . '</dt>';
+        echo '<dd>' . wmm_tolka_escape_status_text($value) . '</dd>';
     }
 
     echo '</dl>';

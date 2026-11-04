@@ -170,6 +170,10 @@ namespace {
 
         function home_url($path = '', $scheme = null)
         {
+            if (isset($GLOBALS['wmm_tolka_test_home'])) {
+                return $GLOBALS['wmm_tolka_test_home'];
+            }
+
             return 'https://public.example.test/';
         }
 
@@ -221,7 +225,8 @@ namespace WMM\Tolka {
                 $GLOBALS['wmm_tolka_stub_bad_estimate'],
                 $GLOBALS['wmm_tolka_stub_html'],
                 $GLOBALS['wmm_tolka_stub_bad_shape'],
-                $GLOBALS['wmm_tolka_stub_bad_report']
+                $GLOBALS['wmm_tolka_stub_bad_report'],
+                $GLOBALS['wmm_tolka_test_home']
             );
         }
 
@@ -1285,6 +1290,40 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('Polylang data was left in place.', $html);
             $this->assertStringContainsString('wmm-tolka-panel-error', $html);
             $this->assertStringNotContainsString('No migration has been run from this screen yet.', $html);
+        }
+
+        public function test_saved_report_and_default_url_cannot_run_markup()
+        {
+            $this->requireStubs();
+
+            $GLOBALS['wmm_tolka_test_report'] = array(
+                'ok' => true,
+                'title' => 'Done & "<script>alert(1)</script>',
+                'summary' => 'Left & <img src=x onerror=alert(1)> in place.',
+                'lines' => array(
+                    array(
+                        'label' => 'Languages',
+                        'value' => '"><script>alert(1)</script>',
+                    ),
+                ),
+            );
+            $GLOBALS['wmm_tolka_test_home'] = "https://public.example.test/\n\"><script>alert(1)</script>\0";
+
+            $html = $this->render();
+            $this->assertSame(1, preg_match('/<div id="wmm-tolka-report".*?<\/div>/s', $html, $report_match));
+            $report_html = $report_match[0];
+            $this->assertStringContainsString('Done &amp; &quot;', $report_html);
+            $this->assertStringContainsString('Left &amp; in place.', $report_html);
+            $this->assertStringContainsString('&quot;&gt;', $report_html);
+            $this->assertStringNotContainsString('<script', strtolower($report_html));
+            $this->assertStringNotContainsString('onerror', strtolower($report_html));
+            $this->assertStringNotContainsString('alert(1)', $report_html);
+
+            $this->assertSame(1, preg_match('/<input[^>]*id="wmm-tolka-url"[^>]*>/', $html, $input_match));
+            $input = $input_match[0];
+            $this->assertStringContainsString('value="https://public.example.test/&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"', $input);
+            $this->assertStringNotContainsString('<script', strtolower($input));
+            $this->assertStringNotContainsString("\n", $input);
         }
 
         public function test_permission_failure_does_not_render_the_wizard()
