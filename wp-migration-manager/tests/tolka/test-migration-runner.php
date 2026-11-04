@@ -584,6 +584,57 @@ namespace {
             );
         }
 
+        public function test_single_omitted_error_uses_singular_copy()
+        {
+            $this->reset_doubles();
+            $errors = array();
+            $extra = \WMM\Tolka\Migration_Runner::ERROR_LIMIT + 1;
+            for ($i = 0; $i < $extra; $i++) {
+                $errors[] = 'Problem ' . $i;
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array('items' => array(), 'errors' => $errors),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertCount($extra, $preview['errors']);
+            $this->assertSame(
+                '1 more error was omitted from this list.',
+                $preview['errors'][\WMM\Tolka\Migration_Runner::ERROR_LIMIT]
+            );
+        }
+
+        public function test_non_array_items_do_not_fatal()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array('not-a-record', 12),
+                    'errors' => array(),
+                ),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame(2, $preview['counts']['languages']);
+            $this->assertSame('Untitled item', $preview['sections']['languages']['labels'][0]);
+            $this->assertSame('Untitled item', $preview['sections']['languages']['labels'][1]);
+            $this->assertSame('not-a-record', $preview['sample']['languages'][0]);
+            $this->assertSame(12, $preview['sample']['languages'][1]);
+            $this->assertNotFalse(json_encode($preview));
+        }
+
+        public function test_padded_class_names_still_resolve()
+        {
+            $this->reset_doubles();
+            Migration_Runner_Test_Double::$map['languages'] = '  WMM\\Tolka\\RunnerTest\\Exporter  ';
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Exporter', $preview['missing']);
+            $this->assertSame('ready', $preview['sections']['languages']['status']);
+            $this->assertSame('English (en)', $preview['sections']['languages']['labels'][0]);
+        }
+
         public function test_throw_invalid_and_unusable_exporters_do_not_fatal()
         {
             $this->reset_doubles();

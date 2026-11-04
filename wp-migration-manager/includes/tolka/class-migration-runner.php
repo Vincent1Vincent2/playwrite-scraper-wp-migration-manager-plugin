@@ -43,11 +43,7 @@ class Migration_Runner
         $map = static::exporters();
 
         foreach (self::section_keys() as $section) {
-            $class = '';
-            if (isset($map[$section]) && is_string($map[$section])) {
-                $class = $map[$section];
-            }
-            $collected[$section] = self::read_section($section, $class, $missing);
+            $collected[$section] = self::read_section($section, self::class_for($map, $section), $missing);
         }
 
         $collected['missing'] = self::dedupe_strings($missing);
@@ -59,7 +55,8 @@ class Migration_Runner
      * Counts, a sample of at most 20 items per section, errors, and missing classes.
      *
      * Also returns a finished `message`, a `state` of missing, incomplete,
-     * error, empty, or ready, and the same state for each section. Does not write.
+     * error, empty, or ready, and per section: status, message, labels,
+     * error_count, and how many items were left out of the sample. Does not write.
      *
      * @return array
      */
@@ -165,6 +162,19 @@ class Migration_Runner
     protected static function writer_class()
     {
         return 'WMM\\Tolka\\Tolka_Writer';
+    }
+
+    /**
+     * @param array  $map
+     * @param string $section
+     * @return string
+     */
+    private static function class_for($map, $section)
+    {
+        if (!isset($map[$section]) || !is_string($map[$section])) {
+            return '';
+        }
+        return trim($map[$section]);
     }
 
     /**
@@ -359,10 +369,7 @@ class Migration_Runner
                 $labels[] = self::item_label($section, $item);
             }
 
-            $class = '';
-            if (isset($map[$section]) && is_string($map[$section])) {
-                $class = $map[$section];
-            }
+            $class = self::class_for($map, $section);
             $is_missing = ($class !== '' && in_array($class, $missing, true));
 
             if ($is_missing) {
@@ -876,10 +883,14 @@ class Migration_Runner
         }
         $shown = array_slice($clean, 0, self::ERROR_LIMIT);
         $extra = count($clean) - self::ERROR_LIMIT;
-        $shown[] = sprintf(
-            self::line('%d more errors were omitted from this list.'),
-            $extra
-        );
+        if ($extra === 1) {
+            $shown[] = self::line('1 more error was omitted from this list.');
+        } else {
+            $shown[] = sprintf(
+                self::line('%d more errors were omitted from this list.'),
+                $extra
+            );
+        }
         return $shown;
     }
 
