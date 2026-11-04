@@ -5,7 +5,8 @@
  *
  * Reads the Polylang API when it is loaded. Otherwise reads the language
  * taxonomy, term_language, the post and term translation groups, and the
- * polylang option. Polylang data is never deleted or updated.
+ * polylang option. Internal slugs such as pll_en and pll_sv are not
+ * exported. Polylang data is never deleted or updated.
  *
  * @package MigrationManager
  */
