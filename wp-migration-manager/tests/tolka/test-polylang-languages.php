@@ -218,6 +218,22 @@ PHP
         $this->assertSame('eco', $result['items'][1]['slug']);
     }
 
+    public function test_locales_use_underscores_and_garbage_locales_are_dropped()
+    {
+        $hyphen = $this->language_term(4, 'English', 'en', 'en-US', 'us', 0, 1);
+        $garbage = $this->language_term(8, 'Svenska', 'sv', '<script>', 'se', 1, 0);
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($hyphen, $garbage), 'en');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame('en_US', $by_slug['en']['locale']);
+        $this->assertSame('', $by_slug['sv']['locale']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertSame('se', $by_slug['sv']['flag']);
+        $this->assertTrue($by_slug['en']['is_default']);
+    }
+
     public function test_a_blank_entity_name_uses_the_language_slug()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(

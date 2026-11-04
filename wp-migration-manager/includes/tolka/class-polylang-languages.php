@@ -911,7 +911,7 @@ class Polylang_Languages
         return array(
             'slug' => $slug,
             'name' => $name,
-            'locale' => $this->string_value($locale),
+            'locale' => $this->plain_locale($locale),
             'is_default' => $this->is_truthy_flag($is_default),
             'term_id' => $term_id,
             'flag' => $this->string_value($flag),
@@ -1042,6 +1042,27 @@ class Polylang_Languages
         }
 
         return null;
+    }
+
+    /**
+     * WordPress locale, or an empty string when the value is not a locale.
+     *
+     * Hyphens are stored as underscores, which is the form WordPress uses.
+     *
+     * @param mixed $locale Raw locale.
+     * @return string
+     */
+    private function plain_locale($locale)
+    {
+        $locale = str_replace('-', '_', $this->string_value($locale));
+        if ($locale === '') {
+            return '';
+        }
+        if (preg_match('/^[A-Za-z]{2,3}(?:_[A-Za-z0-9]+)*$/', $locale) !== 1) {
+            return '';
+        }
+
+        return $locale;
     }
 
     /**
