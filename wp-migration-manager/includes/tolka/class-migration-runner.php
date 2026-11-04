@@ -132,7 +132,7 @@ class Migration_Runner
             'sample' => $view['sample'],
             'sections' => $view['sections'],
             'state' => self::run_state($ok, $saved, $attempted, $view['counts']),
-            'message' => self::run_message($ok, $saved, $attempted, $view),
+            'message' => self::run_message($ok, $saved, $attempted, $view, $errors),
             'detail' => self::first_error($errors),
         );
     }
@@ -212,9 +212,11 @@ class Migration_Runner
             ));
         }
 
-        if (!self::can_call($class, 'export', 0) && !self::can_construct_export($class)) {
+        $problem = self::export_problem($class);
+        if ($problem !== '') {
+            $template = ($problem === 'missing') ? $meta['no_method'] : $meta['unusable'];
             return self::envelope(array(), array(
-                sprintf(self::line($meta['unusable']), self::short_class($class)),
+                sprintf(self::line($template), self::short_class($class)),
             ));
         }
 
@@ -383,13 +385,17 @@ class Migration_Runner
                 $message = sprintf(self::line($meta['missing']), self::short_class($class));
             } elseif (!empty($section_errors)) {
                 $status = 'error';
-                $message = self::line($meta['review']);
-                if ($count === 1) {
-                    $message .= ' ' . self::line($meta['found_one']);
-                } elseif ($count > 1) {
-                    $message .= ' ' . sprintf(self::line($meta['found_many']), $count);
+                if ($count === 0) {
+                    $message = self::line($meta['unread']);
+                } else {
+                    $message = self::line($meta['review']);
+                    if ($count === 1) {
+                        $message .= ' ' . self::line($meta['found_one']);
+                    } else {
+                        $message .= ' ' . sprintf(self::line($meta['found_many']), $count);
+                    }
+                    $message = self::with_sample_note($message, $count);
                 }
-                $message = self::with_sample_note($message, $count);
             } elseif ($count === 0) {
                 $status = 'empty';
                 $message = self::line($meta['empty']);
@@ -525,13 +531,14 @@ class Migration_Runner
     }
 
     /**
-     * @param bool  $ok
-     * @param bool  $saved
-     * @param bool  $attempted
-     * @param array $view
+     * @param bool   $ok
+     * @param bool   $saved
+     * @param bool   $attempted
+     * @param array  $view
+     * @param array  $errors
      * @return string
      */
-    private static function run_message($ok, $saved, $attempted, $view)
+    private static function run_message($ok, $saved, $attempted, $view, $errors = array())
     {
         $counts = $view['counts'];
         if ($ok) {
@@ -555,13 +562,17 @@ class Migration_Runner
             $failed = self::labels_for_status($view, 'error');
             if (!empty($failed)) {
                 return sprintf(
-                    self::line('The Tolka package was saved, but %s could not be fully read. Existing Polylang data was not changed.'),
+                    self::line('The Tolka package was saved, but %s could not be read. Existing Polylang data was not changed.'),
                     self::join_clauses($failed)
                 );
             }
             return self::line('The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.');
         }
         if ($attempted) {
+            $specific = self::first_error($errors);
+            if ($specific !== '' && strpos($specific, 'could not be saved') !== false && stripos($specific, 'Migration finished') === false) {
+                return $specific;
+            }
             return self::line('The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.');
         }
         return self::line('The migration did not run. Nothing was written, and existing Polylang data was not changed.');
@@ -905,6 +916,73 @@ class Migration_Runner
     }
 
     /**
+     * '' when export() can be called, 'missing' when it is not defined,
+     * 'unusable' when it cannot be called safely.
+     *
+     * @param string $class
+     * @return string
+     */
+    private static function export_problem($class)
+    {
+        try {
+            if (!\method_exists($class, 'export')) {
+                return 'missing';
+            }
+            $method = new \ReflectionMethod($class, 'export');
+            if (!$method->isPublic() || $method->getNumberOfRequiredParameters() > 0) {
+                return 'unusable';
+            }
+            if (!$method->isStatic() && !self::can_instantiate($class)) {
+                return 'unusable';
+            }
+            return '';
+        } catch (\Throwable $e) {
+            return 'unusable';
+        }
+    }
+
+    /**
+     * Instance export() is called on a new object. Static export() is called
+     * on the class and does not construct it.
+     *
+     * @param string $class
+     * @return mixed
+     */
+    private static function call_export($class)
+    {
+        $method = new \ReflectionMethod($class, 'export');
+        if ($method->isStatic()) {
+            return $method->invoke(null);
+        }
+        $object = (new \ReflectionClass($class))->newInstance();
+        return $method->invoke($object);
+    }
+
+    /**
+     * @param string $class
+     * @return bool
+     */
+    private static function can_instantiate($class)
+    {
+        try {
+            $ref = new \ReflectionClass($class);
+            if (!$ref->isInstantiable()) {
+                return false;
+            }
+            $constructor = $ref->getConstructor();
+            if ($constructor === null) {
+                return true;
+            }
+            if (!$constructor->isPublic() || $constructor->getNumberOfRequiredParameters() > 0) {
+                return false;
+            }
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * @param string $class
      * @param string $method
      * @param int    $passed
@@ -924,56 +1002,6 @@ class Migration_Runner
                 return false;
             }
             if ($ref->getNumberOfParameters() < $passed && !$ref->isVariadic()) {
-                return false;
-            }
-            return true;
-        } catch (\Throwable $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Call export() whether the slice declared it static or on an instance.
-     *
-     * Languages use a static method. Posts and media use a public instance
-     * method. Both are part of the same preview and run.
-     *
-     * @param string $class
-     * @return mixed
-     */
-    private static function call_export($class)
-    {
-        if (self::can_call($class, 'export', 0)) {
-            return $class::export();
-        }
-
-        $instance = new $class();
-
-        return $instance->export();
-    }
-
-    /**
-     * A public instance export() with a public zero-argument constructor.
-     *
-     * @param string $class
-     * @return bool
-     */
-    private static function can_construct_export($class)
-    {
-        try {
-            if (!\class_exists($class) || !\method_exists($class, 'export')) {
-                return false;
-            }
-            $method = new \ReflectionMethod($class, 'export');
-            if (!$method->isPublic() || $method->isStatic() || $method->getNumberOfRequiredParameters() > 0) {
-                return false;
-            }
-            $reflection = new \ReflectionClass($class);
-            if ($reflection->isAbstract() || $reflection->isInterface()) {
-                return false;
-            }
-            $constructor = $reflection->getConstructor();
-            if ($constructor && (!$constructor->isPublic() || $constructor->getNumberOfRequiredParameters() > 0)) {
                 return false;
             }
             return true;
@@ -1342,12 +1370,14 @@ class Migration_Runner
             'languages' => array(
                 'label' => 'Languages',
                 'missing' => 'Languages were skipped because %s is not available.',
+                'no_method' => 'Languages could not be read because %s does not define export().',
                 'unusable' => 'Languages could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Languages were skipped because no exporter is registered.',
                 'invalid' => 'Languages could not be read because the exporter returned an unexpected result.',
                 'threw' => 'Languages could not be read (%s).',
                 'undisplayable' => 'Languages reported an error that could not be displayed.',
                 'review' => 'Languages could not be fully read. Review the errors before migrating.',
+                'unread' => 'Languages could not be read. Review the errors before migrating.',
                 'found_one' => '1 language was still found.',
                 'found_many' => '%d languages were still found.',
                 'empty' => 'No languages were found.',
@@ -1360,12 +1390,14 @@ class Migration_Runner
             'posts' => array(
                 'label' => 'Posts',
                 'missing' => 'Posts were skipped because %s is not available.',
+                'no_method' => 'Posts could not be read because %s does not define export().',
                 'unusable' => 'Posts could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Posts were skipped because no exporter is registered.',
                 'invalid' => 'Posts could not be read because the exporter returned an unexpected result.',
                 'threw' => 'Posts could not be read (%s).',
                 'undisplayable' => 'Posts reported an error that could not be displayed.',
                 'review' => 'Posts could not be fully read. Review the errors before migrating.',
+                'unread' => 'Posts could not be read. Review the errors before migrating.',
                 'found_one' => '1 post was still found.',
                 'found_many' => '%d posts were still found.',
                 'empty' => 'No posts were found.',
@@ -1378,12 +1410,14 @@ class Migration_Runner
             'terms' => array(
                 'label' => 'Terms',
                 'missing' => 'Terms were skipped because %s is not available.',
+                'no_method' => 'Terms could not be read because %s does not define export().',
                 'unusable' => 'Terms could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Terms were skipped because no exporter is registered.',
                 'invalid' => 'Terms could not be read because the exporter returned an unexpected result.',
                 'threw' => 'Terms could not be read (%s).',
                 'undisplayable' => 'Terms reported an error that could not be displayed.',
                 'review' => 'Terms could not be fully read. Review the errors before migrating.',
+                'unread' => 'Terms could not be read. Review the errors before migrating.',
                 'found_one' => '1 term was still found.',
                 'found_many' => '%d terms were still found.',
                 'empty' => 'No terms were found.',
@@ -1396,12 +1430,14 @@ class Migration_Runner
             'strings' => array(
                 'label' => 'Strings',
                 'missing' => 'Strings were skipped because %s is not available.',
+                'no_method' => 'Strings could not be read because %s does not define export().',
                 'unusable' => 'Strings could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Strings were skipped because no exporter is registered.',
                 'invalid' => 'Strings could not be read because the exporter returned an unexpected result.',
                 'threw' => 'Strings could not be read (%s).',
                 'undisplayable' => 'Strings reported an error that could not be displayed.',
                 'review' => 'Strings could not be fully read. Review the errors before migrating.',
+                'unread' => 'Strings could not be read. Review the errors before migrating.',
                 'found_one' => '1 string was still found.',
                 'found_many' => '%d strings were still found.',
                 'empty' => 'No strings were found.',
@@ -1414,12 +1450,14 @@ class Migration_Runner
             'menus' => array(
                 'label' => 'Menus',
                 'missing' => 'Menus were skipped because %s is not available.',
+                'no_method' => 'Menus could not be read because %s does not define export().',
                 'unusable' => 'Menus could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Menus were skipped because no exporter is registered.',
                 'invalid' => 'Menus could not be read because the exporter returned an unexpected result.',
                 'threw' => 'Menus could not be read (%s).',
                 'undisplayable' => 'Menus reported an error that could not be displayed.',
                 'review' => 'Menus could not be fully read. Review the errors before migrating.',
+                'unread' => 'Menus could not be read. Review the errors before migrating.',
                 'found_one' => '1 menu was still found.',
                 'found_many' => '%d menus were still found.',
                 'empty' => 'No menus were found.',
@@ -1432,12 +1470,14 @@ class Migration_Runner
             'media' => array(
                 'label' => 'Media',
                 'missing' => 'Media items were skipped because %s is not available.',
+                'no_method' => 'Media items could not be read because %s does not define export().',
                 'unusable' => 'Media items could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Media items were skipped because no exporter is registered.',
                 'invalid' => 'Media items could not be read because the exporter returned an unexpected result.',
                 'threw' => 'Media items could not be read (%s).',
                 'undisplayable' => 'Media items reported an error that could not be displayed.',
                 'review' => 'Media items could not be fully read. Review the errors before migrating.',
+                'unread' => 'Media items could not be read. Review the errors before migrating.',
                 'found_one' => '1 media item was still found.',
                 'found_many' => '%d media items were still found.',
                 'empty' => 'No media items were found.',
