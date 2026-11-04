@@ -44,6 +44,13 @@ class Polylang_Posts
     protected $type_cache = array();
 
     /**
+     * Locale to language slug, cached for the current export.
+     *
+     * @var array<string, string>|null
+     */
+    protected $locale_map = null;
+
+    /**
      * Export post translation groups.
      *
      * @return array{items: array<int, array>, errors: string[]}
@@ -52,6 +59,7 @@ class Polylang_Posts
     {
         $this->record_cache = array();
         $this->type_cache = array();
+        $this->locale_map = null;
 
         try {
             if (!$this->polylang_present()) {
@@ -1017,6 +1025,10 @@ class Polylang_Posts
                 continue;
             }
             $lang = trim($lang);
+            $locales = $this->locale_to_slug();
+            if ($lang !== '' && isset($locales[$lang])) {
+                $lang = $locales[$lang];
+            }
             $post_id = $this->normalize_post_id($post_id);
             if ($lang === '' || $post_id <= 0 || isset($clean[$lang]) || isset($used[$post_id])) {
                 continue;
@@ -1226,6 +1238,58 @@ class Polylang_Posts
     /**
      * @return array<int, array<string, mixed>>|null
      */
+    /**
+     * Polylang's language term description stores the locale. A translation
+     * group sometimes names that locale instead of the slug.
+     *
+     * @return array<string, string>
+     */
+    private function locale_to_slug()
+    {
+        if (is_array($this->locale_map)) {
+            return $this->locale_map;
+        }
+        $this->locale_map = array();
+        $rows = $this->language_term_rows();
+        if (!is_array($rows)) {
+            return $this->locale_map;
+        }
+        foreach ($rows as $row) {
+            $slug = isset($row['slug']) ? trim((string) $row['slug']) : '';
+            $raw = '';
+            if (isset($row['term_description'])) {
+                $raw = $row['term_description'];
+            } elseif (isset($row['description'])) {
+                $raw = $row['description'];
+            }
+            $decoded = $this->unserialize_value(is_string($raw) ? $raw : '');
+            if ($slug === '' || !is_array($decoded) || empty($decoded['locale']) || !is_string($decoded['locale'])) {
+                continue;
+            }
+            $locale = trim($decoded['locale']);
+            if ($locale !== '' && $locale !== $slug) {
+                $this->locale_map[$locale] = $slug;
+            }
+        }
+        return $this->locale_map;
+    }
+
+    /**
+     * @return array<int, array>|null
+     */
+    private function language_term_rows()
+    {
+        global $wpdb;
+        if (!$this->db_ready($wpdb)) {
+            return array();
+        }
+        $sql = $wpdb->prepare(
+            "SELECT t.slug AS slug, tt.description AS term_description FROM {$wpdb->terms} t INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_id = t.term_id WHERE tt.taxonomy = %s",
+            self::TAX_LANGUAGE
+        );
+        return $this->normalize_rows($wpdb->get_results($sql, 'ARRAY_A'));
+    }
+
     private function language_relationship_rows()
     {
         global $wpdb;
