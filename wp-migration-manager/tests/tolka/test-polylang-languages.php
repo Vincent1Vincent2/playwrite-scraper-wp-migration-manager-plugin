@@ -634,6 +634,35 @@ PHP
         $this->assertSame(array(), $second['errors']);
     }
 
+    public function test_menu_settings_do_not_invent_languages()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+        ), '');
+        $db->option_value = serialize(array(
+            'default_lang' => 'en',
+            'nav_menus' => array(
+                'primary' => array(
+                    'de' => 3,
+                    'fr' => 4,
+                ),
+            ),
+            'post_types' => array('post', 'page'),
+            'version' => '3.6.4',
+        ));
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('en'), array_keys($by_slug));
+        $this->assertTrue($by_slug['en']['is_default']);
+        $this->assertArrayNotHasKey('de', $by_slug);
+        $this->assertArrayNotHasKey('fr', $by_slug);
+        $this->assertArrayNotHasKey('post', $by_slug);
+        $this->assertArrayNotHasKey('page', $by_slug);
+    }
+
     public function test_json_option_marks_the_default_language_first()
     {
         $db = $this->database_with_languages(array(
