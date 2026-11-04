@@ -1150,5 +1150,85 @@ namespace {
             $this->assertCount(20, $run['sample']['posts']);
             $this->assertSame('Draft 20', \WMM\Tolka\RunnerTest\Writer::$package['posts'][20]['title']);
         }
+
+        public function test_exporter_non_array_makes_the_run_not_ok()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('title' => 'Hello', 'slug' => 'hello'));
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => null,
+            );
+
+            $run = Migration_Runner_Test_Double::run();
+
+            $this->assertFalse($run['ok']);
+            $this->assertNotSame('saved', $run['state']);
+            $this->assertSame('partial', $run['state']);
+            $this->assertSame('error', $run['sections']['languages']['status']);
+            $this->assertSame(0, $run['counts']['languages']);
+            $this->assertSame(1, $run['counts']['posts']);
+            $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['languages']['items']);
+            $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Exporter', $run['missing']);
+            $this->assertSame(
+                'Languages could not be read because the exporter returned an unexpected result.',
+                $run['detail']
+            );
+            $this->assertContains(
+                'Languages could not be read because the exporter returned an unexpected result.',
+                $run['errors']
+            );
+            $this->assertSame(
+                'The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.',
+                $run['message']
+            );
+
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => 'not-an-envelope',
+            );
+            $posts = Migration_Runner_Test_Double::run();
+            $this->assertFalse($posts['ok']);
+            $this->assertSame('error', $posts['sections']['posts']['status']);
+            $this->assertSame(
+                'Posts could not be fully read. Review the errors before migrating.',
+                $posts['sections']['posts']['message']
+            );
+            $this->assertContains(
+                'Posts could not be read because the exporter returned an unexpected result.',
+                $posts['errors']
+            );
+            $this->assertSame(0, $posts['counts']['posts']);
+            $this->assertSame(array(), $posts['sample']['posts']);
+        }
+
+        public function test_schema_non_array_does_not_call_the_writer()
+        {
+            foreach (array(null, false, 'tolka-migration') as $package) {
+                $this->reset_doubles();
+                \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+                \WMM\Tolka\RunnerTest\Schema::$use_result = true;
+                \WMM\Tolka\RunnerTest\Schema::$result = $package;
+
+                $run = Migration_Runner_Test_Double::run();
+
+                $this->assertFalse($run['ok'], 'Run must not be ok when package is ' . gettype($package));
+                $this->assertSame('blocked', $run['state']);
+                $this->assertNull($run['write']);
+                $this->assertSame(1, \WMM\Tolka\RunnerTest\Schema::$calls);
+                $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+                $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Schema', $run['missing']);
+                $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Writer', $run['missing']);
+                $this->assertSame(
+                    'The migration package could not be built because Schema returned an unexpected result. Nothing was written, and existing Polylang data was not changed.',
+                    $run['detail']
+                );
+                $this->assertSame(
+                    'The migration did not run. Nothing was written, and existing Polylang data was not changed.',
+                    $run['message']
+                );
+            }
+        }
     }
 }
