@@ -1106,6 +1106,53 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('draft', $one_more['items'][20]['translations']['en']['status']);
     }
 
+    public function test_swedish_letters_are_kept_and_empty_content_is_exported()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->languages = array(21 => 'sv', 22 => 'sv', 23 => 'en');
+        $body = '<p>Här är äpplen, öl och fågel. Smörgås på Åland.</p>';
+        $blank = $this->db_post(23, 'publish', 'Ä', 'a', 'post', '', '');
+        $blank['post_content'] = null;
+        $fake->posts_rows = array(
+            21 => $this->db_post(21, 'draft', "Smörgås med äpplen på Å\0land", 'smorgas', 'post', 'Fågel', "\0" . $body),
+            22 => $this->db_post(22, 'publish', 'Ö', 'o', 'page', '', ''),
+            23 => $blank,
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array('post:21', 'post:22', 'post:23'), $this->groups($second));
+        $this->assertCount(3, $second['items']);
+
+        $draft = $second['items'][0]['translations']['sv'];
+        $this->assertSame('Smörgås med äpplen på Åland', $draft['title']);
+        $this->assertSame('Fågel', $draft['excerpt']);
+        $this->assertSame($body, $draft['content']);
+        $this->assertSame('draft', $draft['status']);
+        $this->assertStringContainsString('å', $draft['title']);
+        $this->assertStringContainsString('ä', $draft['title']);
+        $this->assertStringContainsString('ö', $draft['title']);
+        $this->assertStringContainsString('å', $draft['content']);
+        $this->assertStringContainsString('ä', $draft['content']);
+        $this->assertStringContainsString('ö', $draft['content']);
+        $this->assertStringContainsString('<p>', $draft['content']);
+        $this->assertStringNotContainsString("\0", $draft['title']);
+        $this->assertStringNotContainsString("\0", $draft['content']);
+
+        $this->assertSame('Ö', $second['items'][1]['translations']['sv']['title']);
+        $this->assertSame('', $second['items'][1]['translations']['sv']['content']);
+        $this->assertSame('publish', $second['items'][1]['translations']['sv']['status']);
+        $this->assertSame('page', $second['items'][1]['type']);
+
+        $this->assertSame('Ä', $second['items'][2]['translations']['en']['title']);
+        $this->assertSame('', $second['items'][2]['translations']['en']['content']);
+        $this->assertSame('publish', $second['items'][2]['translations']['en']['status']);
+    }
+
     public function test_database_row_keeps_html_and_drops_null_bytes_on_a_second_export()
     {
         $this->skip_when_wordpress_or_polylang_is_loaded();
@@ -1931,6 +1978,9 @@ class Polylang_Posts_Test extends TestCase
             '->query(',
             'unlink(',
             'file_put_contents(',
+            'strip_tags(',
+            'utf8_decode(',
+            'iconv(',
         );
         foreach ($forbidden as $token) {
             $this->assertStringNotContainsString($token, $source);
