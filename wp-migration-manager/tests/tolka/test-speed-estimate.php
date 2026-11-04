@@ -886,6 +886,44 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('placeholder', $again['provenance']);
     }
 
+    public function test_switcher_on_and_off_percents_stay_distinct_in_json()
+    {
+        $loaded = Speed_Estimate::benchmarks();
+        $on = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0),
+            $loaded
+        );
+        $off = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $loaded
+        );
+        $on_json = json_encode($on);
+        $off_json = json_encode($off);
+        $this->assertIsString($on_json);
+        $this->assertIsString($off_json);
+        $this->assertStringContainsString('946', $on_json);
+        $this->assertStringContainsString('5.4% faster', $on_json);
+        $this->assertStringNotContainsString('2.9% faster', $on_json);
+        $this->assertStringContainsString('971', $off_json);
+        $this->assertStringContainsString('2.9% faster', $off_json);
+        $this->assertStringNotContainsString('5.4% faster', $off_json);
+
+        foreach (array(INF, NAN) as $total) {
+            $failed = json_encode(Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total),
+                array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0),
+                $loaded
+            ));
+            $this->assertIsString($failed);
+            $this->assertStringContainsString('not a finite number', $failed);
+            $this->assertStringNotContainsString('5.4% faster', $failed);
+            $this->assertStringNotContainsString('2.9% faster', $failed);
+            $this->assertStringNotContainsString('946', $failed);
+        }
+    }
+
     public function test_negative_measured_time_uses_one_millisecond()
     {
         $estimate = Speed_Estimate::project(
