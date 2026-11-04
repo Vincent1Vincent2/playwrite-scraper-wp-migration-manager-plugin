@@ -477,6 +477,28 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('term:4', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_group']);
     }
 
+    public function test_id_zero_title_stays_short_and_literal()
+    {
+        $long = str_repeat('A', 90);
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:3',
+                    'translations' => array(
+                        'en' => array('id' => 0, 'title' => $long),
+                        'sv' => array('id' => 0, 'title' => '100% ready'),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $this->assertStringContainsString('titled "' . str_repeat('A', 79) . '..."', $result['errors'][0]);
+        $this->assertStringContainsString('titled "100% ready"', $result['errors'][1]);
+        $this->assertArrayNotHasKey(0, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame($long, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['posts'][0]['translations']['en']['title']);
+    }
+
     public function test_rejected_ids_do_not_tag_a_post()
     {
         $result = Tolka_Writer::write(array(
