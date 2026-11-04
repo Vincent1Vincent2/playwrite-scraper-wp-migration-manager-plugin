@@ -231,6 +231,80 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame(array('en' => 'Hero', 'fr' => 'Visuel'), $item['title']);
     }
 
+    public function test_two_language_group_prefers_the_relative_path_for_the_same_file()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '/var/www/html/wp-content/uploads/2024/05/hero.jpg',
+                'alt' => 'Harbor',
+                'title' => 'Hero',
+            ),
+            11 => array(
+                'file' => '2024/05/hero.jpg',
+                'alt' => 'Port',
+                'title' => 'Visuel',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame('2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame(array('en', 'fr'), array_keys($result['items'][0]['alt']));
+    }
+
+    public function test_windows_server_path_yields_to_the_same_relative_file()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'de' => 12),
+                'members' => array(10 => 'en', 12 => 'de'),
+            ),
+        ), array(), array(10, 12), array('de', 'en'), 'en', array(
+            10 => array(
+                'file' => 'C:\\sites\\example\\wp-content\\uploads\\2024\\05\\hero.jpg',
+                'alt' => 'Harbor',
+                'title' => 'Hero',
+            ),
+            12 => array(
+                'file' => '2024/05/hero.jpg',
+                'alt' => 'Hafen',
+                'title' => 'Titel',
+            ),
+        ));
+
+        $this->assertSame('2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame(array('de', 'en'), array_keys($result['items'][0]['title']));
+    }
+
+    public function test_two_language_group_keeps_a_different_canonical_file()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '/var/www/html/wp-content/uploads/2024/05/hero.jpg',
+                'alt' => 'Harbor',
+                'title' => 'Hero',
+            ),
+            11 => array(
+                'file' => '2024/06/other.jpg',
+                'alt' => 'Port',
+                'title' => 'Visuel',
+            ),
+        ));
+
+        $this->assertSame('/var/www/html/wp-content/uploads/2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+    }
+
     public function test_file_falls_back_to_another_translation_when_the_canonical_file_is_empty()
     {
         $result = $this->itemsFrom(array(
