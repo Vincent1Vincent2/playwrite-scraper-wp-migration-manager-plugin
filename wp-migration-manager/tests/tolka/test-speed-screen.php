@@ -236,6 +236,89 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertStringContainsString('wmm-tolka-value', $note->getAttribute('class'));
     }
 
+    public function test_no_estimate_passed_in_asks_to_measure_the_site_and_keeps_the_five_ids()
+    {
+        $view = dirname(__DIR__, 2) . '/includes/tolka/views/speed-estimate.php';
+        $render = static function () use ($view) {
+            ob_start();
+            include $view;
+
+            return ob_get_clean();
+        };
+
+        set_error_handler(static function ($severity, $message) {
+            throw new RuntimeException($message);
+        });
+        try {
+            $html = $render();
+        } finally {
+            restore_error_handler();
+        }
+
+        $document = $this->document($html);
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+
+        $this->assertSame('empty', $document->getElementById('wmm-tolka-speed-panel')->getAttribute('data-state'));
+        $this->assertStringContainsString('Measure the site', $this->text($html, 'wmm-tolka-speed-summary'));
+        $this->assertFalse($document->getElementById('wmm-tolka-speed-summary')->hasAttribute('hidden'));
+        foreach ($ids as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+            $this->assertSame(1, substr_count($html, 'id="' . $id . '"'), $id);
+        }
+    }
+
+    public function test_load_time_1842_shows_escaped_milliseconds_with_an_ms_suffix()
+    {
+        $fields = array(
+            'current_ms' => 'wmm-tolka-current-load',
+            'tolka_ms' => 'wmm-tolka-tolka-load',
+        );
+
+        foreach ($fields as $field => $id) {
+            $estimate = array(
+                'ok' => true,
+                'current_ms' => 100,
+                'tolka_ms' => 100,
+                'faster_percent' => 10,
+                'faster_label' => '10.0% faster',
+                'basis' => 'Basis <script>alert(1)</script>',
+                'provenance' => 'lab',
+                'error' => '',
+            );
+            $estimate[$field] = 1842;
+            $html = $this->render(true, $estimate);
+            $document = $this->document($html);
+            $text = $this->text($html, $id);
+
+            $this->assertMatchesRegularExpression('/^1,842 ms(?:\s|$)/', $text);
+            $this->assertStringContainsString(' ms', $text);
+            $this->assertSame('1842', $document->getElementById($id)->getAttribute('data-ms'));
+            $this->assertSame(0, $this->element_child_count($document->getElementById($id)));
+            $this->assertStringContainsString('1,842 ms', $html);
+            $this->assertStringNotContainsString('<script', $html);
+            $this->assertStringContainsString('&lt;script&gt;', $html);
+        }
+
+        $both = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => '1842',
+            'tolka_ms' => 1842,
+            'faster_percent' => 0,
+            'faster_label' => '0.0% faster',
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => '',
+        ));
+        $this->assertSame('1,842 ms (1.84 seconds)', $this->text($both, 'wmm-tolka-current-load'));
+        $this->assertSame('1,842 ms (1.84 seconds)', $this->text($both, 'wmm-tolka-tolka-load'));
+    }
+
     public function test_before_measurement_tells_the_administrator_to_measure_the_site()
     {
         $html = $this->render(false);
