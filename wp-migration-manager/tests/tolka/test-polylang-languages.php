@@ -357,6 +357,21 @@ PHP
         $this->assertFalse($result['items'][1]['is_default']);
     }
 
+    public function test_the_only_language_is_default_when_the_saved_choice_is_missing()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 0),
+        ), 'de');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertArrayNotHasKey('de', $this->index_by_slug($result['items']));
+    }
+
     public function test_configured_default_wins_and_a_missing_default_is_not_invented()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(

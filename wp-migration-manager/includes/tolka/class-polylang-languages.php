@@ -709,7 +709,7 @@ class Polylang_Languages
      *
      * A default slug that has no language row is not invented. Matching
      * ignores case, so a saved value of "NO" still marks "no". One language
-     * on its own is the default when Polylang did not record a choice.
+     * on its own is the default, including when the saved choice is missing.
      *
      * @param array $items Language rows.
      * @param string $default Default language slug.
@@ -728,6 +728,10 @@ class Polylang_Languages
                     $canonical = $item['slug'];
                     break;
                 }
+            }
+            if ($canonical === '' && count($items) === 1) {
+                $items[0]['is_default'] = true;
+                return $this->default_first($items);
             }
             foreach ($items as $index => $item) {
                 $items[$index]['is_default'] = ($canonical !== '' && $item['slug'] === $canonical);
