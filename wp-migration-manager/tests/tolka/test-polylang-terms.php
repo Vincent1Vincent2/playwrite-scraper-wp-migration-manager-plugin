@@ -1097,6 +1097,50 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_a_nav_menu_with_html_description_stays_out_and_the_category_stays_in(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = "<p>Meny åäö</p>\0 &amp; <em>News</em>";
+        $kept = '<p>Meny åäö</p> &amp; <em>News</em>';
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(
+            serialize(array('en' => 8, 'fr' => 70)),
+            serialize(array('sv' => 71)),
+        );
+        $database->catalog = array(
+            $this->term(8, 'Nyheter', 'nyheter', 'category', 'en', '4', $html),
+            $this->term(70, 'Main', 'main', 'nav_menu', 'fr', 0, $html),
+            $this->term(71, 'Footer', 'footer', 'nav_menu', 'sv', 0, $html),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $category = $this->itemByGroup($second['items'], 'term:8');
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame(array('term:8'), $this->groupIds($second['items']));
+        $this->assertSame('category', $category['taxonomy']);
+        $this->assertSame($kept, $category['translations']['en']['description']);
+        $this->assertStringNotContainsString("\0", $category['translations']['en']['description']);
+        $this->assertSame('Nyheter', $category['translations']['en']['name']);
+        $this->assertSame('nyheter', $category['translations']['en']['slug']);
+        $this->assertSame(4, $category['translations']['en']['parent']);
+        $this->assertIsInt($category['translations']['en']['parent']);
+        $this->assertArrayNotHasKey('fr', $category['translations']);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertStringNotContainsString('Footer', $encoded);
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertCount(1, $second['items']);
+    }
+
     public function test_links_rebuild_a_group_when_its_description_is_invalid(): void
     {
         if (!$this->canUseDatabaseStub()) {

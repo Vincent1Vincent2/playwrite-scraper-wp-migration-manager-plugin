@@ -210,6 +210,10 @@ class Polylang_Terms
         $seenGroups = array();
         $deduped = array();
         foreach ($items as $item) {
+            $taxonomy = isset($item['taxonomy']) ? (string) $item['taxonomy'] : '';
+            if ($this->isInternalTaxonomy($taxonomy)) {
+                continue;
+            }
             $group = isset($item['group']) ? (string) $item['group'] : '';
             if ($group === '' || isset($seenGroups[$group])) {
                 continue;
