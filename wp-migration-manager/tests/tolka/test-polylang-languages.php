@@ -1056,6 +1056,94 @@ PHP
         );
     }
 
+    public function test_stored_languages_remain_when_the_api_returns_only_internal_rows()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'pll_en',
+            'name' => 'pll_en',
+            'locale' => 'en_US',
+            'term_id' => 40,
+            'flag_code' => 'us',
+            'is_default' => false,
+        ),
+        (object) array(
+            'slug' => 'pll_sv',
+            'name' => 'pll_sv',
+            'locale' => 'sv_SE',
+            'term_id' => 41,
+            'flag_code' => 'se',
+            'is_default' => true,
+        ),
+    );
+}
+
+function pll_default_language($field = 'slug')
+{
+    return 'pll_sv';
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false && strpos($query, "'term_language'") === false) {
+            return array(
+                (object) array(
+                    'term_id' => 4,
+                    'name' => 'English',
+                    'slug' => 'en',
+                    'term_group' => 0,
+                    'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                    'count' => 3,
+                ),
+                (object) array(
+                    'term_id' => 8,
+                    'name' => 'Svenska',
+                    'slug' => 'sv',
+                    'term_group' => 1,
+                    'description' => 'a:2:{s:6:"locale";s:5:"sv_SE";s:9:"flag_code";s:2:"se";}',
+                    'count' => 0,
+                ),
+            );
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return '';
+    }
+};
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertSame('sv_SE', $by_slug['sv']['locale']);
+        $this->assertSame(8, $by_slug['sv']['term_id']);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertSame('English', $by_slug['en']['name']);
+        $this->assertSame(4, $by_slug['en']['term_id']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+    }
+
     public function test_an_api_list_of_only_internal_rows_explains_the_empty_state()
     {
         $result = $this->export_isolated(<<<'PHP'
