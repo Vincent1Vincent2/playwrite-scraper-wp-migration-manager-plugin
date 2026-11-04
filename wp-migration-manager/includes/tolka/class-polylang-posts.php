@@ -228,12 +228,22 @@ class Polylang_Posts
     private function lowercase_slug($slug)
     {
         $slug = str_replace("\0", '', (string) $slug);
+        if (strncmp($slug, "\xEF\xBB\xBF", 3) === 0) {
+            $slug = substr($slug, 3);
+        }
         $slug = trim($slug);
+        $stripped = preg_replace('/^[\x{00A0}\x{FEFF}]+|[\x{00A0}\x{FEFF}]+$/u', '', $slug);
+        if (is_string($stripped)) {
+            $slug = trim($stripped);
+        }
         if ($slug === '') {
             return '';
         }
         if (function_exists('mb_strtolower')) {
-            return mb_strtolower($slug, 'UTF-8');
+            $lower = mb_strtolower($slug, 'UTF-8');
+            if (is_string($lower) && $lower !== '') {
+                return $lower;
+            }
         }
         return strtolower($slug);
     }
