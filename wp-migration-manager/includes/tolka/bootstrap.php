@@ -547,6 +547,177 @@ function wmm_tolka_url_is_blocked_scheme($url)
 
     return $scheme === 'javascript' || $scheme === 'data';
 }
+
+/**
+ * Host from a measure URL, without brackets or a trailing dot.
+ *
+ * @param string $url URL to inspect.
+ * @return string
+ */
+function wmm_tolka_url_host($url)
+{
+    $parts = parse_url($url);
+
+    if (!is_array($parts) || !isset($parts['host']) || !is_string($parts['host'])) {
+        return '';
+    }
+
+    $host = strtolower($parts['host']);
+
+    if (strlen($host) >= 2 && $host[0] === '[' && substr($host, -1) === ']') {
+        $host = substr($host, 1, -1);
+    }
+
+    return rtrim($host, '.');
+}
+
+/**
+ * Integer form of an IPv4 address, including shortened dotted forms.
+ *
+ * @param string $host Host name.
+ * @return int|null
+ */
+function wmm_tolka_ipv4_long($host)
+{
+    if (preg_match('/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/', $host, $matches)) {
+        $parts = array((int) $matches[1], (int) $matches[2], (int) $matches[3], (int) $matches[4]);
+
+        foreach ($parts as $part) {
+            if ($part < 0 || $part > 255) {
+                return null;
+            }
+        }
+
+        return ($parts[0] * 16777216) + ($parts[1] * 65536) + ($parts[2] * 256) + $parts[3];
+    }
+
+    if (preg_match('/^(\d{1,3})\.(\d{1,3})\.(\d{1,10})$/', $host, $matches)) {
+        $a = (int) $matches[1];
+        $b = (int) $matches[2];
+        $c = (int) $matches[3];
+
+        if ($a > 255 || $b > 255 || $c > 65535) {
+            return null;
+        }
+
+        return ($a * 16777216) + ($b * 65536) + $c;
+    }
+
+    if (preg_match('/^(\d{1,3})\.(\d{1,10})$/', $host, $matches)) {
+        $a = (int) $matches[1];
+        $b = (int) $matches[2];
+
+        if ($a > 255 || $b > 16777215) {
+            return null;
+        }
+
+        return ($a * 16777216) + $b;
+    }
+
+    if (preg_match('/^\d+$/', $host)) {
+        $number = (int) $host;
+
+        if ((string) $number === $host && $number >= 0 && $number <= 4294967295) {
+            return $number;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Whether an IPv4 number is loopback, private, or link-local.
+ *
+ * @param int $number IPv4 as an integer.
+ * @return bool
+ */
+function wmm_tolka_ipv4_is_local($number)
+{
+    $first = ($number >> 24) & 255;
+    $second = ($number >> 16) & 255;
+
+    if ($first === 0 || $first === 10 || $first === 127) {
+        return true;
+    }
+
+    if ($first === 192 && $second === 168) {
+        return true;
+    }
+
+    if ($first === 172 && $second >= 16 && $second <= 31) {
+        return true;
+    }
+
+    return $first === 169 && $second === 254;
+}
+
+/**
+ * Whether an IPv6 host is loopback, private, link-local, or an embedded local IPv4 address.
+ *
+ * @param string $host Host name.
+ * @return bool
+ */
+function wmm_tolka_ipv6_is_local($host)
+{
+    $packed = @inet_pton($host);
+
+    if (!is_string($packed) || strlen($packed) !== 16) {
+        return false;
+    }
+
+    if ($packed === inet_pton('::1')) {
+        return true;
+    }
+
+    $bytes = array_values(unpack('C*', $packed));
+    $mapped = true;
+
+    for ($index = 0; $index < 10; $index++) {
+        if ($bytes[$index] !== 0) {
+            $mapped = false;
+            break;
+        }
+    }
+
+    if ($mapped && $bytes[10] === 255 && $bytes[11] === 255) {
+        $number = ($bytes[12] * 16777216) + ($bytes[13] * 65536) + ($bytes[14] * 256) + $bytes[15];
+
+        return wmm_tolka_ipv4_is_local($number);
+    }
+
+    if (($bytes[0] & 254) === 252) {
+        return true;
+    }
+
+    return $bytes[0] === 254 && ($bytes[1] & 192) === 128;
+}
+
+/**
+ * Whether a measure URL points at localhost, loopback, or a private network.
+ *
+ * @param string $url URL to inspect.
+ * @return bool
+ */
+function wmm_tolka_url_is_local($url)
+{
+    $host = wmm_tolka_url_host($url);
+
+    if ($host === '') {
+        return false;
+    }
+
+    if ($host === 'localhost' || substr($host, -10) === '.localhost') {
+        return true;
+    }
+
+    $ipv4 = wmm_tolka_ipv4_long($host);
+
+    if ($ipv4 !== null && wmm_tolka_ipv4_is_local($ipv4)) {
+        return true;
+    }
+
+    return wmm_tolka_ipv6_is_local($host);
+}
 function wmm_tolka_url_has_userinfo($url)
 {
     if (!is_string($url) || $url === '') {
@@ -579,13 +750,13 @@ function wmm_tolka_posted_url()
 
     $url = trim(wp_unslash($_POST['url']));
 
-    if ($url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url)) {
+    if ($url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_is_local($url)) {
         return '';
     }
 
     $url = esc_url_raw($url);
 
-    if (!is_string($url) || $url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url)) {
+    if (!is_string($url) || $url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_is_local($url)) {
         return '';
     }
 
@@ -627,6 +798,11 @@ function wmm_tolka_ajax_measure()
 
     if ($raw_url !== '' && wmm_tolka_url_is_blocked_scheme($raw_url)) {
         wmm_tolka_json_error(__('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'));
+        return;
+    }
+
+    if ($raw_url !== '' && wmm_tolka_url_is_local($raw_url)) {
+        wmm_tolka_json_error(__('That address is on a local or private network, so it was not measured.', 'migration-manager'));
         return;
     }
 
