@@ -912,7 +912,7 @@ class Polylang_Languages
             'slug' => $slug,
             'name' => $name,
             'locale' => $this->string_value($locale),
-            'is_default' => ($is_default === true || $is_default === 1 || $is_default === '1'),
+            'is_default' => $this->is_truthy_flag($is_default),
             'term_id' => $term_id,
             'flag' => $this->string_value($flag),
         );
