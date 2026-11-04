@@ -1832,7 +1832,7 @@ PHP
         $script = $this->language_term(4, 'English', 'en', 'en_US', '', 0, 1);
         $script->description = serialize(array(
             'locale' => 'en_US',
-            'flag' => 'javascript:alert(1)',
+            'flag' => '<img src="javascript:alert(1)" alt="" />',
         ));
         $data = $this->language_term(8, 'Svenska', 'sv', 'sv_SE', '', 1, 0);
         $data->description = serialize(array(
