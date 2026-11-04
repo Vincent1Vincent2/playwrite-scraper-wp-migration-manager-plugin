@@ -309,11 +309,18 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
                 $note = $this->document($html)->getElementById('wmm-tolka-provenance-note');
 
                 $this->assertNotNull($note, $name);
+                $this->assertTrue($note->hasAttribute('hidden'), $name);
                 $this->assertTrue($note->parentNode->hasAttribute('hidden'), $name);
                 $this->assertSame('', $this->text($html, 'wmm-tolka-provenance-note'), $name);
                 $this->assertStringNotContainsString('Placeholder coefficients', $html, $name);
                 $this->assertStringNotContainsString('wmm-tolka-is-placeholder', $html, $name);
                 $this->assertStringNotContainsString('notice-warning', $html, $name);
+                if ($ok) {
+                    $this->assertSame('51.1% faster', $this->text($html, 'wmm-tolka-faster'), $name);
+                } else {
+                    $this->assertStringNotContainsString('% faster', $html, $name);
+                    $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'), $name);
+                }
             }
         }
     }
