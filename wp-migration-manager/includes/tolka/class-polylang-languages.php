@@ -434,9 +434,8 @@ class Polylang_Languages
     private function add_twin_language(&$items, $term, $default)
     {
         $raw = $this->normalized_slug($this->read_field($term, 'slug'));
-        $target = $raw;
+        $target = $this->public_language_slug($raw);
         if ($this->is_internal_language_slug($raw)) {
-            $target = substr($raw, 4);
             if ($target === '' || !isset($items[$target])) {
                 return;
             }
