@@ -1754,6 +1754,65 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($before, $after);
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_active_polylang_3_9_1_does_not_say_it_is_not_installed(): void
+    {
+        require_once $this->polylang_api_stub();
+
+        $root = $this->temp_dir();
+        $contents = "<?php\r\n/**\r\n * Plugin Name: Polylang \r\n * Version: 3.9.1 \r\n * Requires PHP: 7.2\r\n */\r\n";
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        $this->write_plugin($root, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '3.9.10'));
+        Polylang_Detector_Api_Fixture::$directories = array($root);
+
+        $first = Polylang_Detector_Api_Fixture::status();
+        $second = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertTrue(function_exists('pll_languages_list'));
+        $this->assertTrue($first['active']);
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertSame(5, strlen($first['version']));
+        $this->assertSame(array(), $first['errors']);
+        $this->assertSame($first, $second);
+        $joined = implode("\n", $second['errors']);
+        $this->assertStringNotContainsString('not installed', $joined);
+        $this->assertSame(array(), Polylang_Detector_Api_Fixture::expose_warnings());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_running_polylang_file_reports_version_3_9_1(): void
+    {
+        $running = $this->temp_dir();
+        $plugin = $running . '/polylang.php';
+        file_put_contents(
+            $plugin,
+            "<?php\r\n/**\r\n * Plugin Name: Polylang\r\n * Version: 3.9.1 \r\n */\r\n"
+            . "function pll_languages_list()\n{\n    throw new RuntimeException('pll_languages_list must not be called');\n}\n"
+        );
+        require_once $plugin;
+
+        $other = $this->temp_dir();
+        $this->write_plugin($other, 'polylang/polylang.php', $this->wordpress_header('Polylang', '9.9.9'));
+        Polylang_Detector_Reflect_Fixture::$directories = array($other);
+
+        $first = Polylang_Detector_Reflect_Fixture::status();
+        $second = Polylang_Detector_Reflect_Fixture::status();
+
+        $this->assertTrue($first['active']);
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertSame(array(), $first['errors']);
+        $this->assertStringNotContainsString('not installed', implode("\n", $second['errors']));
+        $this->assertStringNotContainsString('9.9.9', $second['version']);
+        $this->assertSame($first, $second);
+        $this->assertSame(array(), Polylang_Detector_Reflect_Fixture::expose_warnings());
+    }
+
     public function test_pll_languages_list_stays_active_when_the_header_cannot_be_read(): void
     {
         require_once $this->polylang_api_stub();
