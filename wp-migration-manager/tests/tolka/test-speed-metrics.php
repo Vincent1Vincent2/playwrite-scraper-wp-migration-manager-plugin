@@ -452,6 +452,39 @@ HTML;
         $this->assertFalse($result['truncated']);
     }
 
+    public function test_json_ld_keeps_x_default_from_adding_a_language()
+    {
+        $html = <<<'HTML'
+<script type="application/ld+json">
+{"@context":"https://schema.org","image":"<img src=\"hero.png\">"}
+</script>
+<link rel="stylesheet" href="/style.css">
+<script src="/theme.js"></script>
+<img src="/real.png">
+<link rel="alternate" hreflang="x-default" href="/">
+<link rel="alternate" hreflang="en" href="/">
+HTML;
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(1, $result['hreflang_count']);
+        $this->assertSame(2, $result['script_count']);
+        $this->assertSame(1, $result['stylesheet_count']);
+        $this->assertSame(1, $result['image_count']);
+        $this->assertFalse($result['truncated']);
+
+        $capped = $html . str_repeat(' ', 2000000 - strlen($html));
+        $this->assertSame(2000000, strlen($capped));
+        $capped_result = $this->analyze($capped);
+
+        $this->assertTrue($capped_result['truncated']);
+        $this->assertSame($result['language_count'], $capped_result['language_count']);
+        $this->assertSame($result['hreflang_count'], $capped_result['hreflang_count']);
+        $this->assertSame($result['script_count'], $capped_result['script_count']);
+        $this->assertSame($result['stylesheet_count'], $capped_result['stylesheet_count']);
+        $this->assertSame($result['image_count'], $capped_result['image_count']);
+    }
+
     public function test_html_of_exactly_2000000_bytes_sets_truncated()
     {
         $html = str_repeat('a', 2000000);
