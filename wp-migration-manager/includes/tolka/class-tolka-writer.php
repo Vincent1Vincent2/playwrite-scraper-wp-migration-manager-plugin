@@ -47,8 +47,11 @@ class Tolka_Writer
      *
      * `ok` is true when the package itself was stored. Skipped rows and tags
      * that could not be written are complete sentences in `errors`, and the
-     * package can still be saved. This method does not delete existing meta
-     * or Polylang rows. An empty package is a successful save with zero items.
+     * package can still be saved. If the package option cannot be saved,
+     * `ok` is false and Tolka meta from an earlier run is left unchanged.
+     * Post id 0 and term id 0 are skipped. This method does not delete
+     * existing meta or Polylang rows. An empty package is a successful save
+     * with zero items.
      *
      * @param array $package Package from Tolka_Schema::package().
      * @return array
@@ -58,7 +61,7 @@ class Tolka_Writer
         try {
             return self::write_package($package);
         } catch (\Throwable $throwable) {
-            if (function_exists('error_log')) {
+            if (function_exists('error_log') && !self::testing()) {
                 error_log('Tolka migration writer: ' . $throwable->getMessage());
             }
 
@@ -121,8 +124,16 @@ class Tolka_Writer
             return self::result($collected['counts'], $errors, $hidden, false);
         }
 
-        self::write_meta('post', $collected['posts'], $errors, $hidden);
-        self::write_meta('term', $collected['terms'], $errors, $hidden);
+        try {
+            self::write_meta('post', $collected['posts'], $errors, $hidden);
+            self::write_meta('term', $collected['terms'], $errors, $hidden);
+        } catch (\Throwable $throwable) {
+            if (function_exists('error_log') && !self::testing()) {
+                error_log('Tolka migration writer: ' . $throwable->getMessage());
+            }
+            $errors[] = self::failure('Tolka saved the migration package, but it could not finish tagging posts and terms. Tags from an earlier run were left in place.');
+            return self::result($collected['counts'], $errors, $hidden, true);
+        }
 
         return self::result($collected['counts'], $errors, $hidden, true);
     }
@@ -262,7 +273,7 @@ class Tolka_Writer
                 }
 
                 if (self::explicit_zero($translation)) {
-                    self::add_error($errors, $hidden, $copy['zero_id'], array($lang, $group));
+                    self::add_error($errors, $hidden, self::zero_template($copy, $translation), self::zero_values($lang, $group, $translation));
                     continue;
                 }
 
@@ -310,6 +321,7 @@ class Tolka_Writer
                 'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
                 'no_id' => 'A term translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
                 'zero_id' => 'Term id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
+                'zero_id_titled' => 'Term id 0, named "%3$s", for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
                 'conflict' => 'Term %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
                 'lang_failed' => 'Tolka could not save the language "%1$s" on term %2$d.',
                 'group_failed' => 'Tolka could not save the group "%1$s" on term %2$d.',
@@ -326,6 +338,7 @@ class Tolka_Writer
             'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
             'no_id' => 'A post translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
             'zero_id' => 'Post id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
+            'zero_id_titled' => 'Post id 0, titled "%3$s", for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
             'conflict' => 'Post %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
             'lang_failed' => 'Tolka could not save the language "%1$s" on post %2$d.',
             'group_failed' => 'Tolka could not save the group "%1$s" on post %2$d.',
@@ -476,6 +489,77 @@ class Tolka_Writer
     }
 
     /**
+     * Sentence key for an id of 0, including the title when the row has one.
+     *
+     * @param array $copy        Kind sentences.
+     * @param mixed $translation Translation payload.
+     * @return string
+     */
+    private static function zero_template(array $copy, $translation)
+    {
+        if (self::translation_label($translation) === '') {
+            return $copy['zero_id'];
+        }
+
+        return $copy['zero_id_titled'];
+    }
+
+    /**
+     * Values for an id-0 sentence.
+     *
+     * @param string $lang        Language slug.
+     * @param string $group       Group id.
+     * @param mixed  $translation Translation payload.
+     * @return array
+     */
+    private static function zero_values($lang, $group, $translation)
+    {
+        $values = array($lang, $group);
+        $label = self::translation_label($translation);
+        if ($label !== '') {
+            $values[] = $label;
+        }
+
+        return $values;
+    }
+
+    /**
+     * Short title or name for an error sentence.
+     *
+     * @param mixed $translation Translation payload.
+     * @return string
+     */
+    private static function translation_label($translation)
+    {
+        if (!is_array($translation)) {
+            return '';
+        }
+
+        $label = '';
+        if (isset($translation['title']) && is_string($translation['title'])) {
+            $label = $translation['title'];
+        } elseif (isset($translation['name']) && is_string($translation['name'])) {
+            $label = $translation['name'];
+        }
+
+        $label = self::stored_text($label);
+        $label = trim(strip_tags($label));
+        if ($label === '') {
+            return '';
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr') && mb_strlen($label, 'UTF-8') > 80) {
+            return rtrim(mb_substr($label, 0, 79, 'UTF-8')) . '...';
+        }
+
+        if (strlen($label) > 80) {
+            return rtrim(substr($label, 0, 79)) . '...';
+        }
+
+        return $label;
+    }
+
+    /**
      * Keep one tag per id. The last listing wins, and a disagreement is reported.
      *
      * @param array  $ops    Tag operations.
@@ -540,7 +624,15 @@ class Tolka_Writer
      */
     private static function store_package(array $package, array &$errors, &$hidden)
     {
-        $updated = self::call_update_option($package);
+        try {
+            $updated = self::call_update_option($package);
+        } catch (\Throwable $throwable) {
+            if (function_exists('error_log') && !self::testing()) {
+                error_log('Tolka migration writer: ' . $throwable->getMessage());
+            }
+            self::add_error($errors, $hidden, self::store_failed_message($package));
+            return false;
+        }
 
         if ($updated === null) {
             self::add_error(
@@ -849,6 +941,11 @@ class Tolka_Writer
         }
 
         foreach ($ops as $op) {
+            if ($op['id'] < 1) {
+                self::add_error($errors, $hidden, $copy['zero_id'], array($op['lang'], $op['group']));
+                continue;
+            }
+
             if (!self::assign_meta($kind, $op['id'], self::META_LANG, $op['lang'])) {
                 self::add_error(
                     $errors,
@@ -1101,6 +1198,10 @@ class Tolka_Writer
                 return null;
             }
 
+            if (!empty($driver['throw_option'])) {
+                throw new \RuntimeException('option storage failed');
+            }
+
             $driver['calls'][] = array(
                 'fn' => 'update_option',
                 'option' => self::OPTION,
@@ -1175,11 +1276,19 @@ class Tolka_Writer
     {
         $function = $kind === 'term' ? 'update_term_meta' : 'update_post_meta';
 
+        if ((int) $id < 1) {
+            return false;
+        }
+
         if (self::testing()) {
             $driver = &$GLOBALS['wmm_tolka_schema_driver'];
             $flag = $kind === 'term' ? 'has_update_term_meta' : 'has_update_post_meta';
             if (empty($driver[$flag])) {
                 return null;
+            }
+
+            if (!empty($driver['throw_meta'])) {
+                throw new \RuntimeException('meta storage failed');
             }
 
             $driver['calls'][] = array(
