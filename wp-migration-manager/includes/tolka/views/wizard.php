@@ -68,7 +68,7 @@ foreach ($wmm_tolka_partial_files as $wmm_tolka_partial_key => $wmm_tolka_partia
             : 'Not measured yet';
 
         $wmm_tolka_speed_markup = preg_replace_callback(
-            '/<p\b([^>]*\bwmm-tolka-speed-basis\b[^>]*)>(.*?)<\/p>/s',
+            '/<p\b([^>]*\bid="wmm-tolka-basis"[^>]*)>(.*?)<\/p>/s',
             static function ($wmm_tolka_basis_match) use ($wmm_tolka_speed_waiting) {
                 $wmm_tolka_basis_attrs = preg_replace('/\s+hidden(?=[\s>\/]|$)/', '', $wmm_tolka_basis_match[1]);
                 $wmm_tolka_basis_inner = trim($wmm_tolka_basis_match[2]);
@@ -149,7 +149,7 @@ $wmm_tolka_speed_ready = trim($wmm_tolka_speed_html) !== '';
 $wmm_tolka_help_ready = trim($wmm_tolka_help_html) !== '';
 ?>
 
-<div class="wrap wmm-tolka">
+<div class="wmm-tolka">
     <h1 class="wmm-tolka-title"><?php esc_html_e('Migrate to Tolka', 'migration-manager'); ?></h1>
     <p class="wmm-tolka-intro">
         <?php esc_html_e('Move this site from Polylang to Tolka in five steps. You can stop after any step. Polylang data stays in place.', 'migration-manager'); ?>
@@ -174,6 +174,11 @@ $wmm_tolka_help_ready = trim($wmm_tolka_help_html) !== '';
                     <?php esc_html_e('The plugin checks whether Polylang is active on this WordPress site. The check leaves Polylang installed, and it leaves Polylang data, options, and terms in place.', 'migration-manager'); ?>
                 </p>
 
+                <?php if (function_exists('wmm_tolka_render_status')) : ?>
+                    <p class="wmm-tolka-step-text">
+                        <?php esc_html_e('The result of this check is shown at the top of the screen.', 'migration-manager'); ?>
+                    </p>
+                <?php else : ?>
                 <div id="wmm-tolka-polylang" class="wmm-tolka-panel wmm-tolka-polylang" role="status" aria-labelledby="wmm-tolka-step-polylang-title">
                     <?php if ($wmm_tolka_polylang['state'] === 'active') : ?>
                         <div class="notice notice-success inline wmm-tolka-status wmm-tolka-status-active">
@@ -222,6 +227,7 @@ $wmm_tolka_help_ready = trim($wmm_tolka_help_html) !== '';
                         </div>
                     <?php endif; ?>
                 </div>
+                <?php endif; ?>
             </li>
 
             <li class="wmm-tolka-step">
@@ -303,7 +309,7 @@ $wmm_tolka_help_ready = trim($wmm_tolka_help_html) !== '';
                                 <?php esc_html_e('Estimated speed', 'migration-manager'); ?>
                             </h3>
                             <p class="wmm-tolka-speed-summary description" id="wmm-tolka-speed-summary" data-field="summary" data-wmm-tolka-generated="1">
-                                <?php esc_html_e('No measurement yet. Measure the public site URL to see the current load, the estimated Tolka load, and how much faster Tolka is.', 'migration-manager'); ?>
+                                <?php esc_html_e('No measurement yet. Choose Measure speed to load the public site URL. The result shows the current load, the estimated Tolka load, and how much faster Tolka is.', 'migration-manager'); ?>
                             </p>
                             <dl class="wmm-tolka-speed-figures">
                                 <div class="wmm-tolka-speed-figure wmm-tolka-speed-current">
@@ -331,6 +337,11 @@ $wmm_tolka_help_ready = trim($wmm_tolka_help_html) !== '';
                                     </dd>
                                 </div>
                             </dl>
+                            <p class="wmm-tolka-speed-savings" id="wmm-tolka-speed-savings" data-field="savings" data-saved-ms="" hidden></p>
+                            <p class="wmm-tolka-speed-scope" id="wmm-tolka-speed-scope" data-field="scope" hidden>
+                                <?php esc_html_e('The speed percent is an estimate for the single page you load. It is not a result for every page on the site.', 'migration-manager'); ?>
+                            </p>
+                            <p class="wmm-tolka-speed-basis-label" hidden><?php esc_html_e('Basis', 'migration-manager'); ?></p>
                             <p class="wmm-tolka-speed-basis" id="wmm-tolka-basis" data-field="basis"><?php esc_html_e('Not measured yet', 'migration-manager'); ?></p>
                             <p class="wmm-tolka-provenance" id="wmm-tolka-provenance-note" data-field="provenance_note" data-wmm-tolka="provenance_note" role="note" hidden></p>
                             <p class="wmm-tolka-speed-error" id="wmm-tolka-speed-error" data-field="error" hidden></p>
