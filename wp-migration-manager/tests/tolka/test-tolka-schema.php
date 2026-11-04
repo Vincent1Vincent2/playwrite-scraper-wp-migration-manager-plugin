@@ -2063,6 +2063,36 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         );
     }
 
+    public function test_missing_generated_at_is_still_zulu_when_strings_hold_a_time()
+    {
+        $string = '2024-05-06T07:08:09Z';
+        $result = Tolka_Writer::write(array(
+            'version' => 1,
+            'strings' => array(
+                array(
+                    'name' => 'exact',
+                    'string' => $string,
+                    'context' => 'theme',
+                    'translations' => array(
+                        'en' => '2024-05-06T07:08:09+00:00',
+                    ),
+                ),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame($string, $stored['strings'][0]['string']);
+        $this->assertSame('2024-05-06T07:08:09+00:00', $stored['strings'][0]['translations']['en']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($stored['generated_at']));
+        $this->assertNotSame('2024-05-06T07:08:09+00:00', $stored['generated_at']);
+        $this->assertSame(1, preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $stored['generated_at']));
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+    }
+
     public function test_string_time_is_not_copied_into_generated_at()
     {
         $string = '2024-05-06T07:08:09Z';
