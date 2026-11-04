@@ -2395,5 +2395,78 @@ namespace {
             $this->assertSame(415, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']));
             $this->assertSame(str_repeat('w', 400) . '...', $failed['sample']['posts'][0]['content']);
         }
+
+        public function test_preview_skips_the_writer_for_blank_and_real_errors()
+        {
+            $this->reset_doubles();
+            $original = str_repeat('n', 425);
+            $spaces = " \t\r\n" . "\u{00A0}" . "\u{2003}";
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array(
+                'title' => 'Hello',
+                'content' => $original,
+                'name' => 'English',
+                'slug' => 'en',
+            ));
+            \WMM\Tolka\RunnerTest\Exporter::$errors = array($spaces, "\t", "\u{3000}");
+            \WMM\Tolka\RunnerTest\Writer::$throw = true;
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertArrayNotHasKey('write', $preview);
+            $this->assertSame(array(), $preview['errors']);
+            $this->assertSame('ready', $preview['state']);
+            $this->assertSame(str_repeat('n', 400) . '...', $preview['sample']['posts'][0]['content']);
+
+            \WMM\Tolka\RunnerTest\Writer::$throw = false;
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => true,
+                'errors' => array(),
+            );
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $saved = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($saved['ok']);
+            $this->assertTrue($saved['write']['ok']);
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertStringContainsString('Migration finished', $saved['message']);
+
+            \WMM\Tolka\RunnerTest\Writer::$calls = 0;
+            \WMM\Tolka\RunnerTest\Schema::$calls = 0;
+            \WMM\Tolka\RunnerTest\Writer::$throw = true;
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            \WMM\Tolka\RunnerTest\Exporter::$errors = array();
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Hello',
+                        'content' => $original,
+                    )),
+                    'errors' => array($spaces, 'One post body could not be copied.'),
+                ),
+            );
+
+            $again = Migration_Runner_Test_Double::preview();
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertSame('error', $again['state']);
+            $this->assertContains('Posts: One post body could not be copied.', $again['errors']);
+            $this->assertSame(
+                array('Posts: One post body could not be copied.'),
+                $again['posts']['errors']
+            );
+
+            \WMM\Tolka\RunnerTest\Writer::$throw = false;
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $failed = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($failed['write']['ok']);
+            $this->assertFalse($failed['ok']);
+            $this->assertStringNotContainsString('Migration finished', $failed['message']);
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertSame(425, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']));
+            $this->assertSame(str_repeat('n', 400) . '...', $failed['sample']['posts'][0]['content']);
+        }
     }
 }

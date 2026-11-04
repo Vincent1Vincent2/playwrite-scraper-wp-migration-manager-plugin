@@ -66,7 +66,7 @@ class Migration_Runner
      * and per section: status, message, labels, error_count, and how many
      * items were left out of the sample. `counts`, `sample`, and `sections`
      * always contain languages, posts, terms, strings, menus, and media.
-     * Does not write.
+     * Does not call Tolka_Writer::write.
      *
      * @return array
      */
