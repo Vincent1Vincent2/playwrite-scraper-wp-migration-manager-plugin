@@ -418,7 +418,7 @@ class Polylang_Terms_Test extends TestCase
         $loose = $this->itemByGroup($result['items'], 'term:20');
 
         $this->assertSame('Fish &amp; Chips', $group['translations']['en']['name']);
-        $this->assertSame('Tom & Jerry', $group['translations']['en']['description']);
+        $this->assertSame('Tom &amp; Jerry', $group['translations']['en']['description']);
         $this->assertSame('fish-chips', $group['translations']['en']['slug']);
         $this->assertSame('Salt &amp; pepper', $loose['translations']['en']['name']);
         $this->assertSame('salt-pepper', $loose['translations']['en']['slug']);
@@ -645,6 +645,48 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(0, $zero['translations']['sv']['parent']);
         $this->assertCount(2, $second['items']);
         $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+    }
+
+    public function test_html_in_a_description_is_kept_and_null_bytes_are_removed(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('sv' => 80, 'en' => 81)));
+        $database->catalog = array(
+            $this->term(80, 'Höst', 'höst', 'category', 'sv', 4, "<p>Höst\0ens möte</p>\0 &amp; <em>åäö</em>"),
+            $this->term(81, '', "   ", 'category', 'en', 0, "\0"),
+            $this->term(82, 'Mellanrum', 'mellanrum', 'post_tag', 'sv', 0, '   '),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $item = $this->itemByGroup($second['items'], 'term:80');
+
+        $this->assertSame('<p>Höstens möte</p> &amp; <em>åäö</em>', $item['translations']['sv']['description']);
+        $this->assertStringNotContainsString("\0", $item['translations']['sv']['description']);
+        $this->assertNotSame('<p>Höstens möte</p> & <em>åäö</em>', $item['translations']['sv']['description']);
+        $this->assertSame('Höst', $item['translations']['sv']['name']);
+        $this->assertSame('höst', $item['translations']['sv']['slug']);
+        $this->assertSame(4, $item['translations']['sv']['parent']);
+        $this->assertIsInt($item['translations']['sv']['parent']);
+        $this->assertSame('', $item['translations']['en']['name']);
+        $this->assertSame('', $item['translations']['en']['slug']);
+        $this->assertSame('', $item['translations']['en']['description']);
+        $this->assertSame(0, $item['translations']['en']['parent']);
+        $spaces = $this->itemByGroup($second['items'], 'term:82');
+        $this->assertSame('   ', $spaces['translations']['sv']['description']);
+        $this->assertCount(2, $second['items']);
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertSame(
+            $this->groupIds($second['items']),
+            array_values(array_unique($this->groupIds($second['items'])))
+        );
     }
 
     public function test_null_bytes_are_removed_from_term_text(): void
