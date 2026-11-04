@@ -303,6 +303,148 @@ class Polylang_Menus_Test extends TestCase
         $this->assertStringNotContainsString("\0", $item['url']);
     }
 
+    public function test_swedish_letters_are_kept_in_titles_and_urls(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'sv',
+            'languages' => array('sv'),
+            'registered' => array(
+                'kväll' => 'Kvällsmeny',
+            ),
+            'menus' => array(
+                6 => 'Förrätter',
+            ),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'kväll' => array('sv' => 6),
+                    ),
+                ),
+            ),
+            'items' => array(
+                6 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'ÅÄÖ Fågel &amp; öl',
+                        'url' => "https://example.com/rätt/öl\0",
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 1,
+                    ),
+                    array(
+                        'id' => 2,
+                        'parent' => 1,
+                        'title' => 'R&auml;ksm&ouml;rg&aring;s',
+                        'url' => 'https://example.com/r%C3%A4tt',
+                        'object' => 'page',
+                        'object_id' => 3,
+                        'position' => 2,
+                    ),
+                ),
+            ),
+            'navigations' => array(
+                array(
+                    'id' => 40,
+                    'name' => 'Sidhuvud',
+                    'slug' => 'smörgås',
+                    'language' => 'sv',
+                    'content' => '<!-- wp:navigation-link {"label":"Smörgås","url":"https://example.com/smörgås"} /-->',
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $menu = $this->location($second, 'kväll');
+        $link = $menu['translations']['sv']['items'][0];
+        $child = $link['children'][0];
+        $navigation = $this->location($second, 'navigation:smörgås')['translations']['sv']['items'][0];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame($first, $second);
+        $this->assertSame(1, $counts['kväll']);
+        $this->assertSame(1, $counts['navigation:smörgås']);
+        $this->assertSame('Kvällsmeny', $menu['label']);
+        $this->assertSame('Förrätter', $menu['translations']['sv']['name']);
+        $this->assertSame('ÅÄÖ Fågel & öl', $link['title']);
+        $this->assertSame('https://example.com/rätt/öl', $link['url']);
+        $this->assertSame('Räksmörgås', $child['title']);
+        $this->assertSame('https://example.com/r%C3%A4tt', $child['url']);
+        $this->assertSame('Smörgås', $navigation['title']);
+        $this->assertSame('https://example.com/smörgås', $navigation['url']);
+    }
+
+    public function test_database_title_keeps_swedish_letters(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->menus = array(
+            array(
+                'id' => 10,
+                'name' => 'Förrätter',
+                'slug' => 'forratter',
+            ),
+        );
+        $database->menu_posts[10] = array(
+            array(
+                'id' => 8,
+                'title' => 'ÅÄÖ Fågel &amp; öl',
+                'attr_title' => '',
+                'description' => '',
+                'position' => 1,
+            ),
+        );
+        $database->meta[8] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '0',
+            '_menu_item_menu_item_parent' => '0',
+            '_menu_item_url' => 'https://example.com/rätt/öl',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'sv',
+            'nav_menus' => array(
+                'flavor' => array(
+                    'primary' => array('sv' => 10),
+                ),
+            ),
+        ));
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $menus = new Polylang_Menus();
+            $first = $menus->export();
+            $second = $menus->export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $link = $this->location($second, 'primary')['translations']['sv']['items'][0];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(1, $counts['primary']);
+        $this->assertSame('Förrätter', $this->location($second, 'primary')['translations']['sv']['name']);
+        $this->assertSame('ÅÄÖ Fågel & öl', $link['title']);
+        $this->assertSame('https://example.com/rätt/öl', $link['url']);
+    }
+
     public function test_second_export_does_not_duplicate_locations(): void
     {
         $fixture = $this->fixture(array(

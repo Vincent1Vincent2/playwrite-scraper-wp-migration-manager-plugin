@@ -2699,8 +2699,8 @@ class Polylang_Menus
     /**
      * Decode stored entities once so titles match what editors see.
      *
-     * Tags are left in place. A title of `<em>Home</em>` stays marked up.
-     * Null bytes are removed before the decode so they cannot hide an entity.
+     * Tags and letters such as å, ä, and ö stay in the text. A failed decode
+     * keeps the original string. Null bytes are removed.
      *
      * @param mixed $value Raw text.
      * @return string
@@ -2708,10 +2708,14 @@ class Polylang_Menus
     private function entity_text($value)
     {
         $text = $this->without_null_bytes($value);
-        if ($text !== '' && strpos($text, '&') !== false) {
-            $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+        if ($text === '' || strpos($text, '&') === false) {
+            return $text;
         }
-        return $this->without_null_bytes($text);
+        $decoded = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (! is_string($decoded) || $decoded === '') {
+            return $text;
+        }
+        return $this->without_null_bytes($decoded);
     }
 
     /**
