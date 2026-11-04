@@ -45,9 +45,10 @@ class Tolka_Writer
     /**
      * Save a package and tag each translated post and term.
      *
-     * An empty package is a successful save with zero items. Failures are
-     * complete sentences in `errors`. This method does not delete existing
-     * meta or Polylang rows.
+     * `ok` is true when the package itself was stored. Skipped rows and tags
+     * that could not be written are complete sentences in `errors`, and the
+     * package can still be saved. This method does not delete existing meta
+     * or Polylang rows. An empty package is a successful save with zero items.
      *
      * @param array $package Package from Tolka_Schema::package().
      * @return array
@@ -90,7 +91,7 @@ class Tolka_Writer
                 'You need administrator permission to migrate this site to Tolka.'
             );
             $collected = self::collect(self::prepare_package(self::clean_package($package)), $errors, $hidden);
-            return self::result($collected['counts'], $errors, $hidden);
+            return self::result($collected['counts'], $errors, $hidden, false);
         }
 
         if (!$version_ok) {
@@ -101,21 +102,27 @@ class Tolka_Writer
                 array(self::version_label(isset($package['version']) ? $package['version'] : null))
             );
             $collected = self::collect(self::prepare_package(self::clean_package($package)), $errors, $hidden);
-            return self::result($collected['counts'], $errors, $hidden);
+            return self::result($collected['counts'], $errors, $hidden, false);
         }
 
         $package = self::prepare_package($package);
         $collected = self::collect($package, $errors, $hidden);
+
+        if (!self::sections_are_lists($package)) {
+            $errors[] = self::failure('The Tolka package was not saved because part of it was not a list.');
+            return self::result($collected['counts'], $errors, $hidden, false);
+        }
+
         $package = self::clean_package($package);
 
         if (!self::store_package($package, $errors, $hidden)) {
-            return self::result($collected['counts'], $errors, $hidden);
+            return self::result($collected['counts'], $errors, $hidden, false);
         }
 
         self::write_meta('post', $collected['posts'], $errors, $hidden);
         self::write_meta('term', $collected['terms'], $errors, $hidden);
 
-        return self::result($collected['counts'], $errors, $hidden);
+        return self::result($collected['counts'], $errors, $hidden, true);
     }
 
     /**
@@ -241,11 +248,13 @@ class Tolka_Writer
                 continue;
             }
 
+            $positions = array();
             foreach ($item['translations'] as $lang => $translation) {
                 $raw_lang = (string) $lang;
                 $lang = self::stored_text($raw_lang);
                 if ($lang === '') {
-                    $template = ($raw_lang === '') ? 'no_lang' : 'bad_lang';
+                    $visible = trim(str_replace("\0", '', $raw_lang));
+                    $template = ($visible === '') ? 'no_lang' : 'bad_lang';
                     self::add_error($errors, $hidden, $copy[$template], array($group));
                     continue;
                 }
@@ -256,15 +265,24 @@ class Tolka_Writer
                     continue;
                 }
 
-                $ops[] = array(
+                $op = array(
                     'id' => $id,
                     'lang' => $lang,
                     'group' => $group,
                 );
+
+                if (isset($positions[$lang])) {
+                    self::add_error($errors, $hidden, $copy['repeat_lang'], array($lang, $group));
+                    $ops[$positions[$lang]] = $op;
+                    continue;
+                }
+
+                $positions[$lang] = count($ops);
+                $ops[] = $op;
             }
         }
 
-        return $ops;
+        return array_values($ops);
     }
 
     /**
@@ -282,6 +300,7 @@ class Tolka_Writer
                 'no_group' => 'A term translation has no group id, so Tolka skipped it.',
                 'no_lang' => 'A term translation in group "%s" has no language code, so Tolka skipped it.',
                 'bad_lang' => 'A term translation in group "%s" had a language code WordPress cannot store, so Tolka skipped it.',
+                'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
                 'no_id' => 'A term translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
                 'conflict' => 'Term %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
                 'lang_failed' => 'Tolka could not save the language "%1$s" on term %2$d.',
@@ -294,8 +313,9 @@ class Tolka_Writer
             'incomplete' => 'One post entry in the Tolka package was incomplete, so Tolka skipped it.',
             'unreadable' => 'One post entry in the Tolka package has translations Tolka cannot read, so Tolka skipped it.',
             'no_group' => 'A post translation has no group id, so Tolka skipped it.',
-                'no_lang' => 'A post translation in group "%s" has no language code, so Tolka skipped it.',
-                'bad_lang' => 'A post translation in group "%s" had a language code WordPress cannot store, so Tolka skipped it.',
+            'no_lang' => 'A post translation in group "%s" has no language code, so Tolka skipped it.',
+            'bad_lang' => 'A post translation in group "%s" had a language code WordPress cannot store, so Tolka skipped it.',
+            'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
             'no_id' => 'A post translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
             'conflict' => 'Post %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
             'lang_failed' => 'Tolka could not save the language "%1$s" on post %2$d.',
@@ -502,10 +522,10 @@ class Tolka_Writer
     private static function stored_text($value)
     {
         if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
-            return Tolka_Schema::text($value);
+            return trim(Tolka_Schema::text($value));
         }
 
-        return str_replace("\0", '', (string) $value);
+        return trim(str_replace("\0", '', (string) $value));
     }
 
     /**
@@ -632,6 +652,27 @@ class Tolka_Writer
         }
 
         return $parts;
+    }
+
+    /**
+     * A package can be saved only when every present section is a list.
+     *
+     * Missing sections are empty, which is a valid migration. A section that
+     * is some other type would replace a previously saved package with a
+     * value Tolka cannot read.
+     *
+     * @param array $package Package to check.
+     * @return bool
+     */
+    private static function sections_are_lists(array $package)
+    {
+        foreach (self::sections() as $section) {
+            if (array_key_exists($section, $package) && !is_array($package[$section])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -862,19 +903,20 @@ class Tolka_Writer
     }
 
     /**
-     * Build the writer result. Any problem sentence means the run is not ok.
+     * Build the writer result. `ok` means the package was stored.
      *
      * @param array $counts Section counts.
      * @param array $errors Problem sentences.
      * @param int   $hidden Problems kept out of the list.
+     * @param bool  $stored Whether the package option was saved.
      * @return array
      */
-    private static function result(array $counts, array $errors, $hidden)
+    private static function result(array $counts, array $errors, $hidden, $stored)
     {
         $errors = self::finish_errors($errors, $hidden);
 
         return array(
-            'ok' => $errors === array(),
+            'ok' => (bool) $stored,
             'counts' => $counts,
             'errors' => array_values($errors),
         );

@@ -113,9 +113,12 @@ class Tolka_Schema
             $copy = array();
             foreach ($value as $key => $item) {
                 if (is_string($key)) {
-                    $key = self::text($key);
+                    $key = trim(self::text($key));
                 }
                 $copy[$key] = self::snapshot($item, $seen, $depth + 1);
+                if ($key === 'group' && is_string($copy[$key])) {
+                    $copy[$key] = trim($copy[$key]);
+                }
             }
             return $copy;
         }
@@ -133,7 +136,14 @@ class Tolka_Schema
             return self::text($value);
         }
 
-        if (is_int($value) || is_float($value) || is_bool($value) || $value === null) {
+        if (is_float($value)) {
+            if (!is_finite($value)) {
+                return null;
+            }
+            return $value;
+        }
+
+        if (is_int($value) || is_bool($value) || $value === null) {
             return $value;
         }
 

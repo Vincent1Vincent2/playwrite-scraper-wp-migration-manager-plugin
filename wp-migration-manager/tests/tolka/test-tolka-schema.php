@@ -197,6 +197,27 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(10, $saved['id']);
     }
 
+    public function test_non_finite_numbers_do_not_make_the_package_unreadable()
+    {
+        $package = Tolka_Schema::package(array(
+            'strings' => array(
+                'items' => array(
+                    array(
+                        'name' => 'broken',
+                        'string' => INF,
+                        'context' => 'theme',
+                        'translations' => array('en' => NAN),
+                    ),
+                ),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assertNull($package['strings'][0]['string']);
+        $this->assertNull($package['strings'][0]['translations']['en']);
+        $this->assertNotFalse(json_encode($package));
+    }
+
     public function test_cyclic_exporter_object_does_not_hang()
     {
         $translation = new stdClass();
@@ -363,7 +384,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertFalse($result['ok']);
+        $this->assertTrue($result['ok']);
         $this->assertSame(1, $result['counts']['posts']);
         $this->assertSame(
             array(
@@ -394,7 +415,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertFalse($result['ok']);
+        $this->assertTrue($result['ok']);
         $this->assertCount(6, $result['errors']);
         $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
         foreach ($result['errors'] as $error) {
@@ -422,6 +443,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         ));
 
         $this->assertFalse($result['ok']);
+        $this->assertNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
         $this->assertSame(5, $result['counts']['posts']);
         $this->assertSame(0, $result['counts']['terms']);
         $this->assertSame(
@@ -431,6 +453,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                 'A post translation has no group id, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'A post translation in group "post:9" has no language code, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'The terms part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
+                'The Tolka package was not saved because part of it was not a list. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
@@ -462,7 +485,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertFalse($result['ok']);
+        $this->assertTrue($result['ok']);
         $this->assertSame(
             array(
                 'Post 10 was listed as "en" in group "post:10" and as "sv" in group "post:11", so Tolka kept "sv" in group "post:11". Check that translation before you switch the site to Tolka. Nothing was deleted, and your Polylang content is still in place.',
@@ -572,7 +595,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertFalse($result['ok']);
+        $this->assertTrue($result['ok']);
         $this->assertSame(
             array(
                 'WordPress could not tag translated posts for Tolka because this site cannot store post details. Nothing was deleted, and your Polylang content is still in place.',
@@ -597,7 +620,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertFalse($result['ok']);
+        $this->assertTrue($result['ok']);
         $this->assertSame(
             array(
                 'Tolka could not save the language "en" on post 10. Nothing was deleted, and your Polylang content is still in place.',
@@ -648,7 +671,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
 
         $result = Tolka_Writer::write(array('posts' => $posts));
 
-        $this->assertFalse($result['ok']);
+        $this->assertTrue($result['ok']);
         $this->assertCount(31, $result['errors']);
         $this->assertSame(
             '10 more problems were found. Review the preview, then run the migration again. Nothing was deleted, and your Polylang content is still in place.',
@@ -669,6 +692,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         ));
 
         $this->assertFalse($result['ok']);
+        $this->assertNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
         $this->assertSame(
             array(
                 'The languages part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
@@ -677,12 +701,38 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                 'The strings part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'The menus part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
                 'The media part of the Tolka package was not a list, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
+                'The Tolka package was not saved because part of it was not a list. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
         foreach ($result['counts'] as $count) {
             $this->assertSame(0, $count);
         }
+    }
+
+    public function test_unsaved_package_is_explained_after_many_row_errors()
+    {
+        $posts = array();
+        for ($index = 0; $index < 40; $index++) {
+            $posts[] = array(
+                'group' => 'post:' . $index,
+                'translations' => array(
+                    'en' => array('title' => 'Missing'),
+                ),
+            );
+        }
+
+        $result = Tolka_Writer::write(array(
+            'posts' => $posts,
+            'terms' => 'bad',
+        ));
+
+        $this->assertFalse($result['ok']);
+        $this->assertNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertStringContainsString(
+            'The Tolka package was not saved because part of it was not a list.',
+            implode("\n", $result['errors'])
+        );
     }
 
     public function test_write_outside_wordpress_reports_a_clear_error()
@@ -880,48 +930,107 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertFunctionsStayInsideTolka();
     }
 
-    public function test_ok_is_false_only_when_a_sentence_explains_why()
+    public function test_ok_means_the_package_was_stored()
     {
-        $cases = array(
-            Tolka_Schema::package(array()),
-            array(
-                'posts' => array(
-                    array(
-                        'group' => 'post:1',
-                        'type' => 'post',
-                        'translations' => array(
-                            'en' => array(
-                                'id' => 1,
-                                'title' => 'Hello',
-                                'slug' => 'hello',
-                                'status' => 'publish',
-                                'excerpt' => '',
-                                'content' => 'Body',
-                            ),
-                        ),
+        $saved = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:1',
+                    'translations' => array(
+                        'en' => 1,
+                        'sv' => array('title' => 'Missing id'),
                     ),
                 ),
             ),
-            array(
-                'version' => 9,
-                'posts' => array(
-                    array(
-                        'group' => 'post:1',
-                        'translations' => array('en' => 1),
-                    ),
-                ),
-            ),
-            array('posts' => 'nope'),
-        );
+        ));
+        $this->assertTrue($saved['ok']);
+        $this->assertNotEmpty($saved['errors']);
+        $this->assertNotNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
 
-        foreach ($cases as $package) {
-            $result = Tolka_Writer::write($package);
-            $this->assertSame($result['errors'] === array(), $result['ok']);
+        $GLOBALS['wmm_tolka_schema_driver']['stored_package'] = null;
+        $GLOBALS['wmm_tolka_schema_driver']['calls'] = array();
+
+        $blocked = Tolka_Writer::write(array(
+            'version' => 9,
+            'posts' => array(
+                array(
+                    'group' => 'post:1',
+                    'translations' => array('en' => 1),
+                ),
+            ),
+        ));
+        $this->assertFalse($blocked['ok']);
+        $this->assertNotEmpty($blocked['errors']);
+        $this->assertNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+
+        foreach (array($saved, $blocked) as $result) {
             foreach ($result['errors'] as $error) {
                 $this->assertMatchesRegularExpression('/^[A-Z].*\.$/', $error);
                 $this->assertStringContainsString('Nothing was deleted, and your Polylang content is still in place.', $error);
             }
         }
+    }
+
+    public function test_schema_package_is_stored_unchanged()
+    {
+        $package = $this->sample_package();
+        $result = Tolka_Writer::write($package);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame($package, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+    }
+
+    public function test_language_tags_are_trimmed_and_content_whitespace_is_kept()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => ' post:21 ',
+                    'type' => 'post',
+                    'translations' => array(
+                        ' en ' => array(
+                            'id' => 21,
+                            'title' => 'Hello',
+                            'content' => '  keep  ',
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][21]['_wmm_tolka_lang']);
+        $this->assertSame('post:21', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][21]['_wmm_tolka_group']);
+        $this->assertSame('post:21', $stored['posts'][0]['group']);
+        $this->assertSame('  keep  ', $stored['posts'][0]['translations']['en']['content']);
+    }
+
+    public function test_repeated_language_keeps_the_last_copy()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:30',
+                    'translations' => array(
+                        'en' => 30,
+                        ' en ' => 31,
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(
+            array(
+                'Translation group "post:30" lists the language "en" more than once, so Tolka kept the last copy. Nothing was deleted, and your Polylang content is still in place.',
+            ),
+            $result['errors']
+        );
+        $this->assertArrayNotHasKey(30, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_lang']);
+        $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
     public function test_database_unsafe_text_is_removed_before_save()
@@ -980,7 +1089,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertFalse($skipped['ok']);
+        $this->assertTrue($skipped['ok']);
         $this->assertSame(
             array(
                 'A post translation in group "post:13" had a language code WordPress cannot store, so Tolka skipped it. Nothing was deleted, and your Polylang content is still in place.',
