@@ -535,6 +535,31 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(3, $result['items']);
     }
 
+    public function test_uppercase_swedish_letters_are_not_folded(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(50, 'ÅÄÖ', 'Å-ä-ö', 'category', 'sv'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $item = $this->itemByGroup($second['items'], 'term:50');
+
+        $this->assertSame('ÅÄÖ', $item['translations']['sv']['name']);
+        $this->assertSame('Å-ä-ö', $item['translations']['sv']['slug']);
+        $this->assertNotSame('åäö', $item['translations']['sv']['name']);
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertCount(1, $second['items']);
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(
