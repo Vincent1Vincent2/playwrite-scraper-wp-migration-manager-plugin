@@ -207,6 +207,23 @@ abstract class Tolka_Test_Case extends TestCase
             $label . ' expected ' . $expected . ' and got ' . $actual . '.'
         );
     }
+
+    /**
+     * A message a person can read ends as a sentence.
+     *
+     * @param string $message Message text.
+     * @param string $label Case label.
+     */
+    protected function assert_finished_sentence($message, $label = '')
+    {
+        $message = trim((string) $message);
+        $this->assertNotSame('', $message, $label);
+        $last = substr($message, -1);
+        $this->assertTrue(
+            $last === '.' || $last === '!' || $last === '?',
+            $label . ' should end as a sentence: ' . $message
+        );
+    }
 }
 
 /**
@@ -237,6 +254,21 @@ trait Tolka_Contract_Tests
             array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
             $benchmarks
         );
+        $exact = $this->expected_projection(
+            array('ok' => true, 'total_ms' => 100),
+            array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+        $tenth = $this->expected_projection(
+            array('ok' => true, 'total_ms' => 300),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+        $negative = $this->expected_projection(
+            array('ok' => true, 'total_ms' => -5),
+            array('language_count' => -2, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
 
         $this->assertSame(78, $under['overhead_ms']);
         $this->assertSame(934, $under['tolka_ms']);
@@ -248,6 +280,16 @@ trait Tolka_Contract_Tests
         $this->assertSame(0, $floor['overhead_ms']);
         $this->assertSame(1, $floor['tolka_ms']);
         $this->assert_close(0.0, $floor['faster_percent'], 'Floor at one millisecond');
+        $this->assertSame(70, $exact['overhead_ms']);
+        $this->assertSame(42, $exact['tolka_ms']);
+        $this->assert_close(58.0, $exact['faster_percent'], 'Overhead exactly at the cap');
+        $this->assertSame(35, $tenth['overhead_ms']);
+        $this->assertSame(271, $tenth['tolka_ms']);
+        $this->assert_close(9.7, $tenth['faster_percent'], 'One decimal place');
+        $this->assertSame(1, $negative['current_ms']);
+        $this->assertSame(0, $negative['overhead_ms']);
+        $this->assertSame(1, $negative['tolka_ms']);
+        $this->assert_close(0.0, $negative['faster_percent'], 'Negative inputs');
     }
 
     /**
@@ -271,6 +313,18 @@ trait Tolka_Contract_Tests
                 'measurement' => array('ok' => true, 'total_ms' => 0),
                 'metrics' => array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
             ),
+            'overhead exactly at the cap' => array(
+                'measurement' => array('ok' => true, 'total_ms' => 100),
+                'metrics' => array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 0),
+            ),
+            'one decimal place' => array(
+                'measurement' => array('ok' => true, 'total_ms' => 300),
+                'metrics' => array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            ),
+            'negative inputs' => array(
+                'measurement' => array('ok' => true, 'total_ms' => -5),
+                'metrics' => array('language_count' => -2, 'has_polylang_switcher' => false, 'script_count' => 0),
+            ),
         );
 
         foreach ($cases as $label => $case) {
@@ -282,7 +336,14 @@ trait Tolka_Contract_Tests
             $this->assertSame($expected['current_ms'], (int) $result['current_ms'], $label);
             $this->assertSame($expected['tolka_ms'], (int) $result['tolka_ms'], $label);
             $this->assertSame($expected['overhead_ms'], (int) $result['overhead_ms'], $label);
+            $this->assert_whole_milliseconds($result['current_ms'], $label . ' current');
+            $this->assert_whole_milliseconds($result['tolka_ms'], $label . ' tolka');
+            $this->assert_whole_milliseconds($result['overhead_ms'], $label . ' overhead');
             $this->assert_close($expected['faster_percent'], $result['faster_percent'], $label);
+            $this->assertTrue(is_array($result['coefficients']), $label);
+            foreach (array('polylang_extra_ms_per_language', 'polylang_switcher_ms', 'polylang_extra_ms_per_script', 'tolka_ms_per_language', 'max_overhead_ratio') as $key) {
+                $this->assertEquals($benchmarks[$key], $result['coefficients'][$key], $label . ' ' . $key);
+            }
             $this->assertSame('Measured page load plus coefficients from benchmarks.json', $result['basis'], $label);
             $this->assertSame('placeholder', $result['provenance'], $label);
             $this->assertSame($benchmarks['provenance_note'], $result['provenance_note'], $label);
@@ -374,6 +435,7 @@ trait Tolka_Contract_Tests
         $html = '<!DOCTYPE html><html><head>'
             . '<link rel="stylesheet" href="/a.css">'
             . '<link rel="stylesheet" href="/b.css">'
+            . '<link href="/c.css" rel="stylesheet">'
             . '<link rel="alternate" hreflang="en" href="https://example.com/en">'
             . '<link rel="alternate" hreflang="sv" href="https://example.com/sv">'
             . '<link rel="alternate" hreflang="de" href="https://example.com/de">'
@@ -393,7 +455,7 @@ trait Tolka_Contract_Tests
         $this->assertSame(3, (int) $metrics['hreflang_count']);
         $this->assertSame(3, (int) $metrics['language_count']);
         $this->assertSame(2, (int) $metrics['script_count']);
-        $this->assertSame(2, (int) $metrics['stylesheet_count']);
+        $this->assertSame(3, (int) $metrics['stylesheet_count']);
         $this->assertSame(3, (int) $metrics['image_count']);
         $this->assertTrue((bool) $metrics['has_polylang_switcher']);
         $this->assertTrue(is_bool($metrics['truncated']));
@@ -410,6 +472,11 @@ trait Tolka_Contract_Tests
         $this->assertSame(0, (int) $plain['hreflang_count']);
         $this->assertSame(1, (int) $plain['language_count']);
         $this->assertFalse((bool) $plain['has_polylang_switcher']);
+
+        $only_default = $this->analyze_html('<link rel="alternate" hreflang="x-default" href="https://example.com/">');
+        $this->assertSame(0, (int) $only_default['hreflang_count']);
+        $this->assertSame(1, (int) $only_default['language_count']);
+        $this->assertFalse((bool) $only_default['has_polylang_switcher']);
 
         $tokens = array('POLYLANG', 'PLL-Switcher', 'Lang-Item', 'pll-parent-menu-item');
 
@@ -469,6 +536,7 @@ trait Tolka_Contract_Tests
         );
         $stamp = strtotime($package['generated_at']);
         $this->assertTrue($stamp !== false && abs($stamp - time()) < 172800);
+        $this->assertStringNotContainsString('No post translations were found.', json_encode($package));
     }
 
     /**
@@ -497,6 +565,15 @@ trait Tolka_Contract_Tests
             'http://[::1]/',
             'http://',
             'https://',
+            'http:///missing-host',
+            'javascript:alert(1)',
+            'http://10.0.0.0/',
+            'http://10.255.255.255/',
+            'http://172.16.0.0/',
+            'http://192.168.0.0/',
+            'http://127.255.255.255/',
+            'http://169.254.255.254/',
+            'http://user:secret@127.0.0.1/path',
         );
 
         foreach ($urls as $url) {
@@ -506,6 +583,7 @@ trait Tolka_Contract_Tests
             $this->assertSame('', $result['html'], $url);
             $this->assertNull($result['ttfb_ms'], $url);
             $this->assertTrue(is_string($result['error']) && $result['error'] !== '', $url);
+            $this->assert_finished_sentence($result['error'], $url);
         }
     }
 
@@ -528,6 +606,9 @@ trait Tolka_Contract_Tests
 
         foreach ($status['errors'] as $error) {
             $this->assertTrue(is_string($error));
+            if ($error !== '') {
+                $this->assert_finished_sentence($error, 'detector');
+            }
         }
     }
 
@@ -562,6 +643,11 @@ trait Tolka_Contract_Tests
 
             foreach ($result['errors'] as $error) {
                 $this->assertTrue(is_string($error) && $error !== '', $short);
+                $this->assert_finished_sentence($error, $short);
+            }
+
+            if (count($result['items']) > 0) {
+                $this->assert_export_items($short, $result['items']);
             }
         }
 
@@ -609,6 +695,7 @@ trait Tolka_Contract_Tests
         $preview = $this->call_static(Migration_Runner::class, 'preview', array());
 
         $this->assertArrayHasKey('counts', $preview);
+        $this->assert_section_counts($preview['counts'], 'preview');
         $this->assertArrayHasKey('sample', $preview);
         $this->assertArrayHasKey('errors', $preview);
         $this->assertTrue(is_array($preview['errors']));
@@ -642,6 +729,7 @@ trait Tolka_Contract_Tests
         $this->assertTrue(is_bool($run['ok']));
         $this->assertTrue(is_array($run['errors']));
         $this->assertTrue(is_array($run['missing']));
+        $this->assert_section_counts($run['counts'], 'run');
     }
 
     /**
@@ -667,9 +755,20 @@ trait Tolka_Contract_Tests
         $this->assertTrue(is_bool($result['ok']));
         $this->assertTrue(is_array($result['errors']));
 
+        if (isset($result['counts']) && is_array($result['counts'])) {
+            $this->assert_section_counts($result['counts'], 'writer');
+        } else {
+            $this->assert_section_counts($result, 'writer');
+        }
+
         if (!function_exists('update_option')) {
             $this->assertFalse($result['ok']);
             $this->assertNotEmpty($result['errors']);
+        }
+
+        foreach ($result['errors'] as $error) {
+            $this->assertTrue(is_string($error) && $error !== '');
+            $this->assert_finished_sentence($error, 'writer');
         }
     }
 
@@ -704,6 +803,8 @@ trait Tolka_Contract_Tests
         $this->assertTrue(is_bool($report['ok']));
         $this->assertTrue(is_string($report['title']) && trim($report['title']) !== '');
         $this->assertTrue(is_string($report['summary']) && trim($report['summary']) !== '');
+        $this->assert_finished_sentence($report['title'], 'title');
+        $this->assert_finished_sentence($report['summary'], 'summary');
         $this->assertTrue(is_array($report['lines']));
 
         foreach ($report['lines'] as $line) {
@@ -726,7 +827,162 @@ trait Tolka_Contract_Tests
         $this->assertSame(0, (int) $result['tolka_ms'], $label);
         $this->assertSame(0, (int) $result['overhead_ms'], $label);
         $this->assert_close(0, $result['faster_percent'], $label);
+        $this->assert_whole_milliseconds($result['current_ms'], $label);
+        $this->assert_whole_milliseconds($result['tolka_ms'], $label);
+        $this->assert_whole_milliseconds($result['overhead_ms'], $label);
         $this->assertTrue(is_string($result['error']) && $result['error'] !== '', $label);
+        $this->assert_finished_sentence($result['error'], $label);
+
+        if (isset($result['faster_label'])) {
+            $this->assert_close(0, str_replace('% faster', '', $result['faster_label']), $label . ' label');
+        }
+    }
+
+    /**
+     * Millisecond fields are whole numbers.
+     *
+     * @param mixed $value Reported time.
+     * @param string $label Case label.
+     */
+    private function assert_whole_milliseconds($value, $label)
+    {
+        $this->assertTrue(is_numeric($value), $label);
+        $this->assert_close((int) $value, $value, $label);
+    }
+
+    /**
+     * Counts for languages, posts, terms, strings, menus, and media.
+     *
+     * @param array $counts Section counts.
+     * @param string $label Case label.
+     */
+    private function assert_section_counts($counts, $label)
+    {
+        $this->assertTrue(is_array($counts), $label);
+
+        foreach (array('languages', 'posts', 'terms', 'strings', 'menus', 'media') as $section) {
+            $this->assertArrayHasKey($section, $counts, $label . ' ' . $section);
+            $this->assertTrue(is_numeric($counts[$section]), $label . ' ' . $section);
+            $this->assertGreaterThanOrEqual(0, $counts[$section], $label . ' ' . $section);
+        }
+    }
+
+    /**
+     * Item fields from the contract, checked only when an exporter returned rows.
+     *
+     * @param string $short Exporter class short name.
+     * @param array $items Exported items.
+     */
+    private function assert_export_items($short, $items)
+    {
+        foreach ($items as $item) {
+            $this->assertTrue(is_array($item), $short);
+
+            if ($short === 'Polylang_Languages') {
+                foreach (array('slug', 'name', 'locale', 'flag') as $key) {
+                    $this->assertTrue(isset($item[$key]) && is_string($item[$key]), $short . ' ' . $key);
+                }
+                $this->assertTrue(is_bool($item['is_default']), $short);
+                $this->assertTrue(is_numeric($item['term_id']), $short);
+                continue;
+            }
+
+            if ($short === 'Polylang_Posts') {
+                $this->assertTrue((bool) preg_match('/^post:\d+$/', (string) $item['group']), $short);
+                $this->assertTrue(is_string($item['type']), $short);
+                $this->assert_translation_map($item, $short);
+                continue;
+            }
+
+            if ($short === 'Polylang_Terms') {
+                $this->assertTrue(is_string($item['taxonomy']), $short);
+                $this->assertTrue((bool) preg_match('/^term:\d+$/', (string) $item['group']), $short);
+                $this->assert_translation_map($item, $short);
+                continue;
+            }
+
+            if ($short === 'Polylang_Strings') {
+                foreach (array('name', 'string', 'context') as $key) {
+                    $this->assertTrue(isset($item[$key]) && is_string($item[$key]), $short . ' ' . $key);
+                }
+                $this->assertTrue(is_array($item['translations']), $short);
+                foreach ($item['translations'] as $translated) {
+                    $this->assertTrue(is_string($translated), $short);
+                }
+                continue;
+            }
+
+            if ($short === 'Polylang_Menus') {
+                $this->assertTrue(isset($item['location']) && is_string($item['location']), $short);
+                $this->assert_menu_items($item, $short);
+                continue;
+            }
+
+            if ($short === 'Polylang_Media') {
+                $this->assertTrue(is_numeric($item['attachment_id']), $short);
+                $this->assertTrue(is_string($item['file']), $short);
+                $this->assertTrue(is_array($item['alt']), $short);
+                $this->assertTrue(is_array($item['title']), $short);
+                foreach (array('alt', 'title') as $map) {
+                    foreach ($item[$map] as $value) {
+                        $this->assertTrue(is_string($value), $short);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * A translation map is either ids or records that carry an id.
+     *
+     * @param array $item Exported item.
+     * @param string $short Exporter class short name.
+     */
+    private function assert_translation_map($item, $short)
+    {
+        $this->assertTrue(is_array($item['translations']), $short);
+
+        foreach ($item['translations'] as $value) {
+            if (is_array($value)) {
+                $this->assertTrue(isset($value['id']) && is_numeric($value['id']), $short);
+                continue;
+            }
+
+            $this->assertTrue(is_numeric($value), $short);
+        }
+    }
+
+    /**
+     * Menu rows carry title, url, object, and object id.
+     *
+     * @param array $item Exported menu.
+     * @param string $short Exporter class short name.
+     */
+    private function assert_menu_items($item, $short)
+    {
+        $lists = array();
+
+        if (isset($item['items']) && is_array($item['items'])) {
+            $lists[] = $item['items'];
+        }
+
+        if (isset($item['translations']) && is_array($item['translations'])) {
+            foreach ($item['translations'] as $value) {
+                if (is_array($value) && isset($value['items']) && is_array($value['items'])) {
+                    $lists[] = $value['items'];
+                }
+            }
+        }
+
+        foreach ($lists as $list) {
+            foreach ($list as $child) {
+                $this->assertTrue(is_array($child), $short);
+                $this->assertTrue(isset($child['title']) && is_string($child['title']), $short);
+                $this->assertTrue(isset($child['url']) && is_string($child['url']), $short);
+                $this->assertTrue(isset($child['object']) && is_string($child['object']), $short);
+                $this->assertTrue(isset($child['object_id']) && is_numeric($child['object_id']), $short);
+            }
+        }
     }
 
     /**
@@ -842,6 +1098,63 @@ class Harness_Test extends Tolka_Test_Case
             $this->assertStringContainsString('WMM\\Tolka\\Missing_From_The_Suite', $error->getMessage());
             $this->assertStringContainsString('skipped', strtolower($error->getMessage()));
             $this->assertStringContainsString('missing', strtolower($error->getMessage()));
+            $this->assert_finished_sentence($error->getMessage(), 'missing class');
+        }
+    }
+
+    /**
+     * Every slice class that has not landed skips with a finished sentence.
+     * The suite keeps running when none of those files exist.
+     */
+    public function test_every_missing_slice_class_skips_with_a_finished_sentence()
+    {
+        $classes = array(
+            'Polylang_Detector',
+            'Polylang_Languages',
+            'Polylang_Posts',
+            'Polylang_Terms',
+            'Polylang_Strings',
+            'Polylang_Menus',
+            'Polylang_Media',
+            'Tolka_Schema',
+            'Tolka_Writer',
+            'Migration_Runner',
+            'Migration_Report',
+            'Speed_Loader',
+            'Speed_Metrics',
+            'Speed_Estimate',
+        );
+        $missing = 0;
+
+        foreach ($classes as $short) {
+            if (class_exists('WMM\\Tolka\\' . $short, false)) {
+                $this->assertTrue(class_exists('WMM\\Tolka\\' . $short, false), $short);
+                continue;
+            }
+
+            $missing++;
+
+            try {
+                wmm_tolka_skip_without_class($short);
+                $this->fail($short . ' is not loaded, so the test should have skipped.');
+            } catch (Throwable $error) {
+                $this->assertTrue($this->is_skip_exception($error), get_class($error) . ' for ' . $short);
+                $this->assertStringContainsString('WMM\\Tolka\\' . $short, $error->getMessage(), $short);
+                $this->assertStringContainsString('skipped', strtolower($error->getMessage()), $short);
+                $this->assert_finished_sentence($error->getMessage(), $short);
+            }
+        }
+
+        if ($missing === count($classes)) {
+            $directory = WMM_TOLKA_PLUGIN_DIR . '/includes/tolka';
+            $files = is_dir($directory) ? glob($directory . '/class-*.php') : array();
+
+            if (!is_array($files) || count($files) === 0) {
+                $this->assertSame(array(), wmm_tolka_load_classes());
+                return;
+            }
+
+            $this->assertTrue(is_array(wmm_tolka_load_classes()));
         }
     }
 
@@ -857,6 +1170,7 @@ class Harness_Test extends Tolka_Test_Case
             $this->assertTrue($this->is_skip_exception($error), get_class($error));
             $this->assertStringContainsString('did not name a Tolka class', $error->getMessage());
             $this->assertStringContainsString('skipped', strtolower($error->getMessage()));
+            $this->assert_finished_sentence($error->getMessage(), 'blank class');
         }
     }
 
