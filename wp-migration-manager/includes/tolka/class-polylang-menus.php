@@ -960,7 +960,7 @@ class Polylang_Menus
     private function items_from_block_markup($content)
     {
         $content = $this->text($content);
-        if ($content === '' || ! preg_match_all('/<!--\s+(\/?)wp:([a-z0-9\/-]+)([^>]*?)-->/', $content, $matches, PREG_SET_ORDER)) {
+        if ($content === '' || ! preg_match_all('/<!--\s+(\/?)wp:([a-z0-9\/-]+)(.*?)-->/s', $content, $matches, PREG_SET_ORDER)) {
             return array();
         }
 

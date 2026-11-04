@@ -275,6 +275,34 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame('https://example.com/team', $items[0]['children'][0]['url']);
     }
 
+    public function test_navigation_title_keeps_html_and_drops_null_bytes(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'default_language' => 'en',
+            'languages' => array('en'),
+            'navigations' => array(
+                array(
+                    'id' => 30,
+                    'name' => 'Header',
+                    'slug' => 'header',
+                    'language' => 'en',
+                    'content' => '<!-- wp:navigation-link {"label":"<em>Ho\u0000me</em>","url":"https://example.com/\u0000x"} /-->',
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $item = $this->location($second, 'navigation:header')['translations']['en']['items'][0];
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame('<em>Home</em>', $item['title']);
+        $this->assertSame('https://example.com/x', $item['url']);
+        $this->assertStringNotContainsString("\0", $item['title']);
+        $this->assertStringNotContainsString("\0", $item['url']);
+    }
+
     public function test_second_export_does_not_duplicate_locations(): void
     {
         $fixture = $this->fixture(array(
