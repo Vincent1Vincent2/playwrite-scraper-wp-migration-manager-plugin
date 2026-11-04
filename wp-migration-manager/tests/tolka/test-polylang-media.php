@@ -439,6 +439,28 @@ class Test_Polylang_Media extends TestCase
         $this->assertArrayNotHasKey('fr', $result['items'][0]['title']);
     }
 
+    public function test_group_with_two_languages_that_share_one_file_is_one_item()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('fr' => 3, 'en' => 30),
+                'members' => array(3 => 'fr', 30 => 'en'),
+            ),
+        ), array(), array(3, 30), array('en', 'fr'), 'en', array(
+            3 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+            30 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 30, '2024/05/hero.jpg', array(
+            'en' => 'Harbor',
+            'fr' => 'Port',
+        ), array(
+            'en' => 'Hero',
+            'fr' => 'Visuel',
+        ));
+    }
+
     public function test_group_with_two_languages()
     {
         $result = $this->itemsFrom(array(
