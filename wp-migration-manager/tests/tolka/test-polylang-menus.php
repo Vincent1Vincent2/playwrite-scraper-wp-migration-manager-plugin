@@ -172,6 +172,7 @@ class Polylang_Menus_Test extends TestCase
 
         $english = $primary['translations']['en'];
         $this->assertSame(10, $english['menu_id']);
+        $this->assertSame('menu', $english['kind']);
         $this->assertSame(3, $english['link_count']);
         $this->assertFalse($english['items'][0]['switcher']);
         $this->assertSame('Fish & Chips', $english['name']);
@@ -852,6 +853,65 @@ class Polylang_Menus_Test extends TestCase
         );
     }
 
+    public function test_block_navigation_is_nested_by_language(): void
+    {
+        $english = <<<'HTML'
+<!-- wp:navigation-link {"label":"Home","type":"page","id":2,"url":"https://example.com/","kind":"post-type"} /-->
+<!-- wp:navigation-submenu {"label":"About","type":"page","id":3,"url":"https://example.com/about/","kind":"post-type"} -->
+<!-- wp:navigation-link {"label":"Team","type":"page","id":4,"url":"https://example.com/team/","kind":"post-type"} /-->
+<!-- /wp:navigation-submenu -->
+<!-- wp:polylang/language-switcher {"label":""} /-->
+HTML;
+        $swedish = <<<'HTML'
+<!-- wp:navigation-link {"label":"Hem","url":"https://example.com/sv/","kind":"custom"} /-->
+HTML;
+
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'default_language' => 'en',
+            'languages' => array('en', 'sv'),
+            'navigations' => array(
+                array(
+                    'id' => 20,
+                    'name' => 'Header',
+                    'slug' => 'header',
+                    'language' => 'en',
+                    'translations' => array('en' => 20, 'sv' => 21),
+                    'content' => $english,
+                ),
+                array(
+                    'id' => 21,
+                    'name' => 'Sidhuvud',
+                    'slug' => 'sidhuvud',
+                    'language' => 'sv',
+                    'translations' => array('en' => 20, 'sv' => 21),
+                    'content' => $swedish,
+                ),
+            ),
+        ));
+
+        $result = $fixture->run();
+        $navigation = $this->location($result, 'navigation:header');
+
+        $this->assertSame('Header', $navigation['label']);
+        $this->assertSame(array('en', 'sv'), array_keys($navigation['translations']));
+        $this->assertSame(20, $navigation['translations']['en']['menu_id']);
+        $this->assertSame('navigation', $navigation['translations']['en']['kind']);
+        $this->assertSame(4, $navigation['translations']['en']['link_count']);
+        $this->assertSame('Home', $navigation['translations']['en']['items'][0]['title']);
+        $this->assertSame(2, $navigation['translations']['en']['items'][0]['object_id']);
+        $this->assertSame('page', $navigation['translations']['en']['items'][0]['object']);
+        $this->assertSame('About', $navigation['translations']['en']['items'][1]['title']);
+        $this->assertSame('Team', $navigation['translations']['en']['items'][1]['children'][0]['title']);
+        $this->assertSame(4, $navigation['translations']['en']['items'][1]['children'][0]['object_id']);
+        $this->assertTrue($navigation['translations']['en']['items'][2]['switcher']);
+        $this->assertSame('Languages', $navigation['translations']['en']['items'][2]['title']);
+        $this->assertSame('#pll_switcher', $navigation['translations']['en']['items'][2]['url']);
+        $this->assertSame('Hem', $navigation['translations']['sv']['items'][0]['title']);
+        $this->assertSame(1, $navigation['translations']['sv']['link_count']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
     public function test_bad_rows_are_skipped_instead_of_throwing(): void
     {
         $fixture = $this->fixture(array(
@@ -1209,6 +1269,11 @@ class Polylang_Menus_Fixture extends Polylang_Menus
     public $skipped = array();
 
     /**
+     * @var array<int, array<string, mixed>>
+     */
+    public $navigations = array();
+
+    /**
      * @return array{items: array, errors: string[]}
      */
     public function run()
@@ -1333,6 +1398,14 @@ class Polylang_Menus_Fixture extends Polylang_Menus
             return array();
         }
         return $this->items[$menu_id];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function read_navigation_posts()
+    {
+        return $this->navigations;
     }
 
     /**
