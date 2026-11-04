@@ -760,7 +760,7 @@ function wmm_tolka_render_status()
     if (!class_exists($detector) || !method_exists($detector, 'status')) {
         wmm_tolka_notice(
             'warning',
-            __('Polylang cannot be checked on this install yet. You can still use any step that is ready. Nothing has been deleted.', 'migration-manager')
+            __('Polylang cannot be checked on this install yet. Nothing has been deleted.', 'migration-manager')
         );
         return;
     }
@@ -817,29 +817,48 @@ function wmm_tolka_render_status()
 }
 
 /**
- * Tell the site owner which steps are not installed yet.
+ * Human sentences for steps that cannot run yet, keyed by measure, preview, and run.
+ *
+ * @return array
  */
-function wmm_tolka_render_gaps()
+function wmm_tolka_gap_messages()
 {
     $gaps = array();
 
     if (wmm_tolka_unavailable(wmm_tolka_speed_requirements())) {
-        $gaps[] = __('A speed estimate is not available on this install yet.', 'migration-manager');
+        $gaps['measure'] = __('A speed estimate is not available on this install yet.', 'migration-manager');
     }
 
     if (wmm_tolka_unavailable(wmm_tolka_preview_requirements())) {
-        $gaps[] = __('Migration preview is not available on this install yet.', 'migration-manager');
+        $gaps['preview'] = __('Migration preview is not available on this install yet.', 'migration-manager');
     }
 
     if (wmm_tolka_unavailable(wmm_tolka_run_requirements())) {
-        $gaps[] = __('Running the migration is not available on this install yet.', 'migration-manager');
+        $gaps['run'] = __('Running the migration is not available on this install yet.', 'migration-manager');
     }
+
+    return $gaps;
+}
+
+/**
+ * Tell the site owner which steps are not installed yet.
+ */
+function wmm_tolka_render_gaps()
+{
+    $gaps = wmm_tolka_gap_messages();
 
     if (empty($gaps)) {
         return;
     }
 
     echo '<div class="notice notice-info wmm-tolka-notice"><p>';
+
+    if (count($gaps) === 3) {
+        echo esc_html__('Speed estimates, migration preview, and running the migration are not available on this install yet. Nothing has been deleted.', 'migration-manager');
+        echo '</p></div>';
+        return;
+    }
+
     echo esc_html__('Some steps are not available on this install yet. Use the steps that are ready. Nothing has been deleted.', 'migration-manager');
     echo '</p><ul class="wmm-tolka-gaps">';
 
@@ -851,17 +870,55 @@ function wmm_tolka_render_gaps()
 }
 
 /**
+ * Action button. Unavailable steps are disabled so they cannot look ready.
+ *
+ * @param string $id           Element id.
+ * @param string $label        Visible label.
+ * @param string $unavailable  Empty when the step can run.
+ * @param bool   $primary      Use the primary button style when the step can run.
+ * @param string $described_by Space-separated ids.
+ */
+function wmm_tolka_render_button($id, $label, $unavailable, $primary = false, $described_by = '')
+{
+    $class = 'button';
+
+    if ($unavailable === '' && $primary) {
+        $class .= ' button-primary';
+    }
+
+    echo '<button type="button" class="' . esc_attr($class) . '" id="' . esc_attr($id) . '"';
+
+    if ($described_by !== '') {
+        echo ' aria-describedby="' . esc_attr($described_by) . '"';
+    }
+
+    if ($unavailable !== '') {
+        echo ' disabled aria-disabled="true" title="' . esc_attr($unavailable) . '"';
+    }
+
+    echo '>' . esc_html($label) . '</button>';
+}
+
+/**
  * Saved or empty migration result.
  *
  * @param array $report Formatted report.
  */
-function wmm_tolka_render_report_body($report)
+function wmm_tolka_render_report_body($report, $unavailable = '')
 {
     if (!wmm_tolka_report_has_body($report)) {
         echo '<p class="wmm-tolka-empty">';
-        echo esc_html__('No migration has been run from this screen yet. Running the migration writes Tolka data and leaves Polylang data in place.', 'migration-manager');
+        if ($unavailable !== '') {
+            echo esc_html($unavailable . ' ' . __('Nothing was changed.', 'migration-manager'));
+        } else {
+            echo esc_html__('No migration has been run from this screen yet. Running the migration writes Tolka data and leaves Polylang data in place.', 'migration-manager');
+        }
         echo '</p>';
         return;
+    }
+
+    if ($unavailable !== '') {
+        echo '<p class="wmm-tolka-empty">' . esc_html($unavailable) . '</p>';
     }
 
     if (isset($report['title'])) {
@@ -921,6 +978,7 @@ function wmm_tolka_render_fallback_wizard()
 {
     $home = wmm_tolka_home_url();
     $report = wmm_tolka_saved_report();
+    $gaps = wmm_tolka_gap_messages();
     $report_class = 'wmm-tolka-panel';
 
     if (wmm_tolka_report_has_body($report) && isset($report['ok']) && $report['ok'] === false) {
@@ -940,9 +998,23 @@ function wmm_tolka_render_fallback_wizard()
     echo '</p></div>';
 
     echo '<p class="wmm-tolka-actions">';
-    echo '<button type="button" class="button" id="wmm-tolka-measure">' . esc_html__('Measure speed', 'migration-manager') . '</button>';
-    echo '<button type="button" class="button" id="wmm-tolka-preview">' . esc_html__('Preview migration', 'migration-manager') . '</button>';
-    echo '<button type="button" class="button button-primary" id="wmm-tolka-run" aria-describedby="wmm-tolka-run-hint">' . esc_html__('Run migration', 'migration-manager') . '</button>';
+    wmm_tolka_render_button(
+        'wmm-tolka-measure',
+        __('Measure speed', 'migration-manager'),
+        isset($gaps['measure']) ? $gaps['measure'] : ''
+    );
+    wmm_tolka_render_button(
+        'wmm-tolka-preview',
+        __('Preview migration', 'migration-manager'),
+        isset($gaps['preview']) ? $gaps['preview'] : ''
+    );
+    wmm_tolka_render_button(
+        'wmm-tolka-run',
+        __('Run migration', 'migration-manager'),
+        isset($gaps['run']) ? $gaps['run'] : '',
+        true,
+        'wmm-tolka-run-hint'
+    );
     echo '</p>';
     echo '<p class="wmm-tolka-hint" id="wmm-tolka-run-hint">';
     echo esc_html__('Running the migration writes a Tolka package and translation meta. Polylang content, terms, and settings stay in place.', 'migration-manager');
@@ -951,9 +1023,13 @@ function wmm_tolka_render_fallback_wizard()
     echo '<section class="wmm-tolka-section" aria-labelledby="wmm-tolka-speed-heading">';
     echo '<h2 id="wmm-tolka-speed-heading" class="wmm-tolka-heading">' . esc_html__('Speed', 'migration-manager') . '</h2>';
     echo '<div id="wmm-tolka-speed" class="wmm-tolka-panel" aria-live="polite">';
-    $speed = wmm_tolka_capture_partial('views/speed-estimate.php');
+    $speed = isset($gaps['measure']) ? '' : wmm_tolka_capture_partial('views/speed-estimate.php');
     if ($speed !== '') {
         echo $speed;
+    } elseif (isset($gaps['measure'])) {
+        echo '<p class="wmm-tolka-empty">';
+        echo esc_html($gaps['measure'] . ' ' . __('Nothing was changed.', 'migration-manager'));
+        echo '</p>';
     } else {
         echo '<p class="wmm-tolka-empty">';
         echo esc_html__('No measurement yet. Enter the public site URL, then choose Measure speed. If the check fails, this screen shows an error and does not invent a percent.', 'migration-manager');
@@ -965,13 +1041,17 @@ function wmm_tolka_render_fallback_wizard()
     echo '<h2 id="wmm-tolka-preview-heading" class="wmm-tolka-heading">' . esc_html__('Preview', 'migration-manager') . '</h2>';
     echo '<div id="wmm-tolka-preview-result" class="wmm-tolka-panel" aria-live="polite">';
     echo '<p class="wmm-tolka-empty">';
-    echo esc_html__('Nothing has been previewed yet. Preview lists languages, posts, terms, strings, menus, and media, and does not change the site.', 'migration-manager');
+    if (isset($gaps['preview'])) {
+        echo esc_html($gaps['preview'] . ' ' . __('Nothing was changed.', 'migration-manager'));
+    } else {
+        echo esc_html__('Nothing has been previewed yet. Preview lists languages, posts, terms, strings, menus, and media, and does not change the site.', 'migration-manager');
+    }
     echo '</p></div></section>';
 
     echo '<section class="wmm-tolka-section" aria-labelledby="wmm-tolka-report-heading">';
     echo '<h2 id="wmm-tolka-report-heading" class="wmm-tolka-heading">' . esc_html__('Result', 'migration-manager') . '</h2>';
     echo '<div id="wmm-tolka-report" class="' . esc_attr($report_class) . '" aria-live="polite">';
-    wmm_tolka_render_report_body($report);
+    wmm_tolka_render_report_body($report, isset($gaps['run']) ? $gaps['run'] : '');
     echo '</div></section>';
 
     echo '<section class="wmm-tolka-section" aria-labelledby="wmm-tolka-help-heading">';
@@ -1022,6 +1102,8 @@ function wmm_tolka_render_fallback_css()
     echo '#wmm-tolka-wizard .wmm-tolka-url{max-width:40rem}';
     echo '#wmm-tolka-wizard .wmm-tolka-actions{display:flex;flex-wrap:wrap;gap:8px}';
     echo '#wmm-tolka-wizard .wmm-tolka-actions .button{margin:0}';
+    echo '#wmm-tolka-wizard .button[disabled]{opacity:.65;cursor:not-allowed}';
+    echo '#wmm-tolka-wizard .wmm-tolka-measured-url{word-break:break-all;margin:0 0 8px;color:#50575e}';
     echo '#wmm-tolka-wizard .wmm-tolka-heading{margin:1.4em 0 .4em}';
     echo '#wmm-tolka-wizard .wmm-tolka-panel{background:#fff;border:1px solid #c3c4c7;box-shadow:0 1px 1px rgba(0,0,0,.04);padding:12px 16px}';
     echo '#wmm-tolka-wizard .wmm-tolka-panel-error{border-color:#d63638}';
@@ -1076,6 +1158,7 @@ function wmm_tolka_fallback_copy()
         'languageCount' => __('Languages counted', 'migration-manager'),
         'noEstimate' => __('No speed estimate is available for this URL. Nothing was changed.', 'migration-manager'),
         'problems' => __('Details', 'migration-manager'),
+        'measuredUrl' => __('Address checked', 'migration-manager'),
     );
 }
 
@@ -1127,6 +1210,21 @@ function wmm_tolka_fallback_script()
             onClick(job);
         });
     });
+
+    var urlInput = document.getElementById("wmm-tolka-url");
+    if (urlInput && urlInput.getAttribute("data-wmm-tolka-bound") !== "1") {
+        urlInput.setAttribute("data-wmm-tolka-bound", "1");
+        urlInput.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter") {
+                return;
+            }
+            event.preventDefault();
+            var measure = document.getElementById("wmm-tolka-measure");
+            if (measure && !measure.disabled) {
+                measure.click();
+            }
+        });
+    }
 
     function onClick(job) {
         if (active) {
@@ -1281,14 +1379,29 @@ function wmm_tolka_fallback_script()
         return String(Math.round(number)) + " ms";
     }
 
+    function checkedAddress() {
+        var input = document.getElementById("wmm-tolka-url");
+        if (!input || !input.value) {
+            return "";
+        }
+        return text("measuredUrl", "Address checked") + ": " + input.value;
+    }
+
     function renderSpeed(target, data) {
         clear(target);
         target.classList.remove("wmm-tolka-panel-error");
         var estimate = data.estimate || {};
         var metrics = data.metrics || {};
+        var address = checkedAddress();
         if (estimate.ok !== true && estimate.ok !== 1) {
             showError(target, estimate.error || text("noEstimate", "No speed estimate is available for this URL."));
+            if (address) {
+                addParagraph(target, "wmm-tolka-measured-url", address);
+            }
             return;
+        }
+        if (address) {
+            addParagraph(target, "wmm-tolka-measured-url", address);
         }
         addStat(target, text("currentLoad", "Measured load"), formatMs(estimate.current_ms));
         addStat(target, text("tolkaLoad", "Estimated on Tolka"), formatMs(estimate.tolka_ms));
@@ -1331,11 +1444,15 @@ function wmm_tolka_fallback_script()
             parts = [item.file, item.attachment_id];
         }
         var line = [];
-        parts.forEach(function (part) {
+            parts.forEach(function (part) {
             if (part === undefined || part === null || part === "") {
                 return;
             }
-            line.push(String(part));
+            var str = String(part);
+            if (str.length > 180) {
+                str = str.slice(0, 180) + "...";
+            }
+            line.push(str);
         });
         if (!line.length) {
             return text("unreadableItem", "This item could not be read.");
@@ -1381,6 +1498,9 @@ function wmm_tolka_fallback_script()
         var sample = data.sample || {};
         var total = 0;
         var known = 0;
+        if (data.errors && data.errors.length) {
+            renderProblems(target, { errors: data.errors });
+        }
         sections.forEach(function (section) {
             var count = counts[section[0]];
             var number = typeof count === "number" ? count : parseInt(count, 10);
@@ -1416,13 +1536,13 @@ function wmm_tolka_fallback_script()
             });
             target.appendChild(list);
         });
-        if (known === sections.length && total === 0) {
+        if (known === sections.length && total === 0 && !(data.errors && data.errors.length)) {
             var empty = document.createElement("p");
             empty.className = "wmm-tolka-empty";
             empty.textContent = text("previewEmpty", "Nothing to migrate was found. The site was not changed.");
             target.insertBefore(empty, target.firstChild);
         }
-        renderProblems(target, data);
+        renderProblems(target, { missing: data.missing });
     }
 
     function plainValue(value) {
