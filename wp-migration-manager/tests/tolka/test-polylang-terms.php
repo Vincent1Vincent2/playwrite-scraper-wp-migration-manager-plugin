@@ -1078,6 +1078,54 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(2, $second['items']);
     }
 
+    public function test_terms_linked_to_a_list_description_are_still_exported(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = '<p>Meny åäö</p> &amp; <em>News</em>';
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array(99, 70)));
+        $database->links = array(1 => array(12, 70));
+        $database->catalog = array(
+            $this->term(12, 'Höst', 'HÖST', 'category', 'sv', '4', $html),
+            $this->term(70, 'Main', 'MAIN', 'nav_menu', 'de', 0, $html),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array('term:12'), $this->groupIds($second['items']));
+        $item = $this->itemByGroup($second['items'], 'term:12');
+        $this->assertSame('category', $item['taxonomy']);
+        $this->assertSame(array('sv'), array_keys($item['translations']));
+        $this->assertArrayNotHasKey('0', $item['translations']);
+        $this->assertSame('höst', $item['translations']['sv']['slug']);
+        $this->assertSame('Höst', $item['translations']['sv']['name']);
+        $this->assertSame($html, $item['translations']['sv']['description']);
+        $this->assertSame(4, $item['translations']['sv']['parent']);
+        $this->assertIsInt($item['translations']['sv']['parent']);
+        $this->assertNotContains('term:70', $this->groupIds($second['items']));
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertContains(
+            'A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.',
+            $second['errors']
+        );
+        $this->assertContains(
+            'Term 12 is linked to a translation group but was missing from its stored description. It was added as sv.',
+            $second['errors']
+        );
+        $this->assertCount(1, $second['items']);
+    }
+
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
     {
         if (!$this->canUseDatabaseStub()) {
