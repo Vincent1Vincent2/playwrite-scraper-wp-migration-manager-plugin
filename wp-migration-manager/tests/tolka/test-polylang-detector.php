@@ -447,7 +447,7 @@ class Polylang_Detector_Test extends TestCase
             array(
                 'active' => false,
                 'version' => '',
-                'errors' => array(self::INACTIVE_HEADER),
+                'errors' => array(self::INACTIVE_HEADER . ' ' . self::ALSO_MISSING_PRO),
             ),
             Polylang_Detector_Fixture::status()
         );
