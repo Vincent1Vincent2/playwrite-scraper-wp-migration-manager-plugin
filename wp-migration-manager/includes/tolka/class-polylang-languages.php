@@ -56,14 +56,15 @@ class Polylang_Languages
      * Export languages.
      *
      * `items` is a list of languages. Each item has `slug`, `name`, `locale`,
-     * `is_default` (bool), `term_id` (int), and `flag` (string). `flag` is the
-     * Polylang flag code when one is stored.
+     * `is_default` (bool), `term_id` (int), and `flag` (string). ASCII slugs
+     * are lowercase. `flag` is the Polylang flag code when one is stored.
+     * `locale` uses underscores, as in en_US.
      *
      * `errors` is empty when at least one language was read. Otherwise it
      * holds one sentence explaining what the site owner can do next.
      *
      * Languages that have no posts are included. The default language is
-     * listed first. Nothing is written.
+     * listed first. One language on its own is the default. Nothing is written.
      *
      * @return array
      */
@@ -930,7 +931,7 @@ class Polylang_Languages
             'locale' => $this->plain_locale($locale),
             'is_default' => $this->is_truthy_flag($is_default),
             'term_id' => $term_id,
-            'flag' => $this->string_value($flag),
+            'flag' => $this->plain_flag($flag),
         );
     }
 
@@ -1172,6 +1173,25 @@ class Polylang_Languages
     private function is_language_slug($slug)
     {
         return is_string($slug) && preg_match('/^[A-Za-z][A-Za-z0-9_-]{0,199}$/', $slug) === 1;
+    }
+
+    /**
+     * Flag code, URL, or markup. Script and data URLs are dropped.
+     *
+     * @param mixed $flag Raw flag.
+     * @return string
+     */
+    private function plain_flag($flag)
+    {
+        $flag = $this->normalize_flag($flag);
+        if ($flag === '' || $this->is_flag_code($flag)) {
+            return $flag;
+        }
+        if (preg_match('/^(javascript|data|vbscript):/i', $flag) === 1) {
+            return '';
+        }
+
+        return $flag;
     }
 
     /**

@@ -634,6 +634,35 @@ PHP
         $this->assertSame(array(), $second['errors']);
     }
 
+    public function test_menu_settings_do_not_invent_languages()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+        ), '');
+        $db->option_value = serialize(array(
+            'default_lang' => 'en',
+            'nav_menus' => array(
+                'primary' => array(
+                    'de' => 3,
+                    'fr' => 4,
+                ),
+            ),
+            'post_types' => array('post', 'page'),
+            'version' => '3.6.4',
+        ));
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('en'), array_keys($by_slug));
+        $this->assertTrue($by_slug['en']['is_default']);
+        $this->assertArrayNotHasKey('de', $by_slug);
+        $this->assertArrayNotHasKey('fr', $by_slug);
+        $this->assertArrayNotHasKey('post', $by_slug);
+        $this->assertArrayNotHasKey('page', $by_slug);
+    }
+
     public function test_json_option_marks_the_default_language_first()
     {
         $db = $this->database_with_languages(array(
@@ -1796,6 +1825,36 @@ PHP
         $this->assertTrue($by_slug['en']['is_default']);
         $this->assertFalse($by_slug['de']['is_default']);
         $this->assertSame('de', $by_slug['de']['name']);
+    }
+
+    public function test_script_and_data_flag_urls_are_dropped()
+    {
+        $script = $this->language_term(4, 'English', 'en', 'en_US', '', 0, 1);
+        $script->description = serialize(array(
+            'locale' => 'en_US',
+            'flag' => 'javascript:alert(1)',
+        ));
+        $data = $this->language_term(8, 'Svenska', 'sv', 'sv_SE', '', 1, 0);
+        $data->description = serialize(array(
+            'locale' => 'sv_SE',
+            'flag' => 'data:image/svg+xml,xxxx',
+        ));
+        $script_host = $this->language_term(9, 'Norsk', 'no', 'nb_NO', '', 2, 0);
+        $script_host->description = serialize(array(
+            'locale' => 'nb_NO',
+            'flag' => 'vbscript:msgbox(1)',
+        ));
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($script, $data, $script_host), 'en');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame('', $by_slug['en']['flag']);
+        $this->assertSame('en_US', $by_slug['en']['locale']);
+        $this->assertSame('', $by_slug['sv']['flag']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertSame('', $by_slug['no']['flag']);
+        $this->assertSame('nb_NO', $by_slug['no']['locale']);
     }
 
     public function test_custom_flag_url_is_kept_when_no_flag_code_is_stored()
