@@ -1354,16 +1354,23 @@ function wmm_tolka_render_load_errors()
 }
 
 /**
- * Polylang status, or a clear message when the detector is missing.
+ * Polylang status, or one sentence when the detector is missing.
  */
 function wmm_tolka_render_status()
 {
     $detector = \WMM\Tolka\Polylang_Detector::class;
+    $ready = false;
 
-    if (!class_exists($detector) || !method_exists($detector, 'status')) {
-        wmm_tolka_notice(
+    try {
+        $ready = class_exists($detector) && method_exists($detector, 'status');
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+
+    if (!$ready) {
+        wmm_tolka_render_polylang_sentence(
             'warning',
-            __('Polylang cannot be checked on this install yet. Nothing has been deleted.', 'migration-manager')
+            __('Polylang cannot be checked on this install yet.', 'migration-manager')
         );
         return;
     }
@@ -1371,12 +1378,15 @@ function wmm_tolka_render_status()
     $result = wmm_tolka_invoke($detector, 'status', array());
 
     if (!$result['called'] || !is_array($result['value'])) {
-        wmm_tolka_notice('warning', __('Polylang status could not be read. Nothing was changed.', 'migration-manager'));
+        wmm_tolka_render_polylang_sentence(
+            'warning',
+            __('Polylang status could not be read.', 'migration-manager')
+        );
         return;
     }
 
     $status = $result['value'];
-    $active = !empty($status['active']);
+    $active = isset($status['active']) && ($status['active'] === true || $status['active'] === 1 || $status['active'] === '1');
     $version = '';
 
     if (isset($status['version']) && (is_string($status['version']) || is_numeric($status['version']))) {
@@ -1384,18 +1394,15 @@ function wmm_tolka_render_status()
     }
 
     if ($active && $version !== '') {
-        wmm_tolka_notice('success', sprintf(
+        wmm_tolka_render_polylang_sentence('success', sprintf(
             /* translators: %s: Polylang version */
             __('Polylang %s is active on this site.', 'migration-manager'),
             $version
         ));
     } elseif ($active) {
-        wmm_tolka_notice('success', __('Polylang is active on this site.', 'migration-manager'));
+        wmm_tolka_render_polylang_sentence('success', __('Polylang is active on this site.', 'migration-manager'));
     } else {
-        wmm_tolka_notice(
-            'warning',
-            __('Polylang is not active on this site. Preview and migration still will not delete Polylang data.', 'migration-manager')
-        );
+        wmm_tolka_render_polylang_sentence('warning', __('Polylang is not active on this site.', 'migration-manager'));
     }
 
     if (empty($status['errors']) || !is_array($status['errors'])) {
@@ -1410,7 +1417,7 @@ function wmm_tolka_render_status()
         }
 
         $text = trim(wmm_tolka_plain_value($error));
-        if ($text === '') {
+        if ($text === '' || preg_match('/stack trace|#\d+\s/i', $text)) {
             continue;
         }
 
@@ -1428,6 +1435,25 @@ function wmm_tolka_render_status()
     }
 
     echo '</ul>';
+}
+
+/**
+ * One finished sentence for the Polylang status.
+ *
+ * @param string $type     success, info, warning, or error.
+ * @param string $sentence Status sentence.
+ */
+function wmm_tolka_render_polylang_sentence($type, $sentence)
+{
+    $allowed = array('success', 'info', 'warning', 'error');
+
+    if (!in_array($type, $allowed, true)) {
+        $type = 'warning';
+    }
+
+    echo '<div id="wmm-tolka-polylang-status" class="notice notice-' . esc_attr($type) . ' wmm-tolka-notice" role="status">';
+    echo '<p>' . esc_html($sentence) . '</p>';
+    echo '</div>';
 }
 
 /**
