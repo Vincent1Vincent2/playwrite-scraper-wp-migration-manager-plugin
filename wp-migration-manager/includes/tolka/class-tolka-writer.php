@@ -1381,11 +1381,28 @@ class Tolka_Writer
         // string row cannot replace the version or the Zulu timestamp.
         $header['format'] = 'tolka-migration';
         $header['version'] = 1;
-        if (!isset($header['generated_at']) || !is_string($header['generated_at']) || substr($header['generated_at'], -1) !== 'Z') {
-            $header['generated_at'] = self::gmt_timestamp();
+        $stamp = isset($header['generated_at']) ? $header['generated_at'] : '';
+        if (!self::is_saved_zulu($stamp)) {
+            $stamp = self::gmt_timestamp();
         }
+        $header['generated_at'] = $stamp;
 
         return $header + $package;
+    }
+
+    /**
+     * Whether a timestamp is the saved Zulu form, such as 2024-05-06T07:08:09Z.
+     *
+     * @param mixed $value Candidate timestamp.
+     * @return bool
+     */
+    private static function is_saved_zulu($value)
+    {
+        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
+            return Tolka_Schema::is_zulu_timestamp($value);
+        }
+
+        return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value) === 1;
     }
 
     /**

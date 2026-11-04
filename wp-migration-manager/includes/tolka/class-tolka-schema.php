@@ -35,7 +35,8 @@ class Tolka_Schema
      * Package header saved for Tolka.
      *
      * Format is tolka-migration, version is the integer 1, and generated_at
-     * ends with Z. A GMT time written with +00:00 keeps its clock time.
+     * is a Zulu timestamp such as 2024-05-06T07:08:09Z. A GMT time written
+     * with +00:00 keeps its clock time.
      *
      * @param mixed $generated_at Candidate timestamp, or null for the current time.
      * @return array
@@ -79,13 +80,30 @@ class Tolka_Schema
             $stamp = strtotime($value);
             if ($stamp !== false) {
                 $formatted = gmdate('Y-m-d\TH:i:s\Z', $stamp);
-                if (is_string($formatted) && substr($formatted, -1) === 'Z') {
+                if (self::is_zulu_timestamp($formatted)) {
                     return $formatted;
                 }
             }
         }
 
         return self::gmt_timestamp();
+    }
+
+    /**
+     * Whether a timestamp is the saved Zulu form, such as 2024-05-06T07:08:09Z.
+     *
+     * A +00:00 offset is a valid GMT time, but it is not the saved form.
+     *
+     * @param mixed $value Candidate timestamp.
+     * @return bool
+     */
+    public static function is_zulu_timestamp($value)
+    {
+        if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value)) {
+            return false;
+        }
+
+        return self::is_gmt_timestamp($value);
     }
 
     /**

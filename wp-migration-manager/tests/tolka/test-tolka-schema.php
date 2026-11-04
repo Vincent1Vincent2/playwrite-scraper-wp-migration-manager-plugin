@@ -1982,6 +1982,146 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_package_header_uses_the_example_zulu_form()
+    {
+        $header = Tolka_Schema::header('2024-05-06T07:08:09+00:00');
+
+        $this->assertSame('tolka-migration', $header['format']);
+        $this->assertSame(1, $header['version']);
+        $this->assertTrue(is_int($header['version']));
+        $this->assertSame('2024-05-06T07:08:09Z', $header['generated_at']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($header['generated_at']));
+        $this->assertSame('2024-05-06T07:08:09Z', Tolka_Schema::header('2024-05-06T07:08:09z')['generated_at']);
+        $this->assertSame('2024-05-06T07:08:09Z', Tolka_Schema::header('2024-05-06T07:08:09Z')['generated_at']);
+
+        $package = Tolka_Schema::package(array(
+            'strings' => array(
+                'items' => array(
+                    array(
+                        'name' => 'log',
+                        'string' => '2024-05-06T07:08:09+00:00',
+                        'context' => '',
+                        'translations' => array(
+                            'sv' => '2024-05-06T07:08:09z',
+                        ),
+                    ),
+                ),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assertSame('2024-05-06T07:08:09+00:00', $package['strings'][0]['string']);
+        $this->assertSame('2024-05-06T07:08:09z', $package['strings'][0]['translations']['sv']);
+        $this->assertSame(1, $package['version']);
+        $this->assertTrue(is_int($package['version']));
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($package['generated_at']));
+        $this->assertSame(1, preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $package['generated_at']));
+    }
+
+    public function test_string_text_keeps_its_time_and_header_is_the_example_zulu_form()
+    {
+        $string = 'Backup taken 2024-05-06T07:08:09Z and 2024-05-06T07:08:09+00:00.';
+        $whole = '2024-05-06T07:08:09z';
+        $item = array(
+            'name' => 'log',
+            'string' => $string,
+            'context' => '2024-05-06T07:08:09Z',
+            'id' => 73,
+            'translations' => array(
+                'en' => $whole,
+                'sv' => 'Kopia 2024-05-06T07:08:09Z',
+            ),
+        );
+
+        $result = Tolka_Writer::write(array(
+            'version' => '1.0',
+            'generated_at' => '2024-05-06T07:08:09+00:00',
+            'strings' => array($item),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $saved = $stored['strings'][0];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame('2024-05-06T07:08:09Z', $stored['generated_at']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($stored['generated_at']));
+        $this->assertFalse(Tolka_Schema::is_zulu_timestamp('2024-05-06T07:08:09+00:00'));
+        $this->assertFalse(Tolka_Schema::is_zulu_timestamp($string));
+        $this->assertSame($string, $saved['string']);
+        $this->assertSame('2024-05-06T07:08:09Z', $saved['context']);
+        $this->assertSame($whole, $saved['translations']['en']);
+        $this->assertSame('Kopia 2024-05-06T07:08:09Z', $saved['translations']['sv']);
+        $this->assertSame(73, $saved['id']);
+        $this->assertArrayNotHasKey(73, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
+    public function test_missing_generated_at_is_still_zulu_when_strings_hold_a_time()
+    {
+        $string = '2024-05-06T07:08:09Z';
+        $result = Tolka_Writer::write(array(
+            'version' => 1,
+            'strings' => array(
+                array(
+                    'name' => 'exact',
+                    'string' => $string,
+                    'context' => 'theme',
+                    'translations' => array(
+                        'en' => '2024-05-06T07:08:09+00:00',
+                    ),
+                ),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame($string, $stored['strings'][0]['string']);
+        $this->assertSame('2024-05-06T07:08:09+00:00', $stored['strings'][0]['translations']['en']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($stored['generated_at']));
+        $this->assertNotSame('2024-05-06T07:08:09+00:00', $stored['generated_at']);
+        $this->assertSame(1, preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $stored['generated_at']));
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+    }
+
+    public function test_string_time_is_not_copied_into_generated_at()
+    {
+        $string = '2024-05-06T07:08:09Z';
+        $result = Tolka_Writer::write(array(
+            'version' => 1,
+            'generated_at' => '2020-01-02T03:04:05+00:00',
+            'strings' => array(
+                array(
+                    'name' => 'exact',
+                    'string' => $string,
+                    'context' => 'theme',
+                    'translations' => array(
+                        'sv' => $string,
+                    ),
+                ),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame($string, $stored['strings'][0]['string']);
+        $this->assertSame($string, $stored['strings'][0]['translations']['sv']);
+        $this->assertSame('2020-01-02T03:04:05Z', $stored['generated_at']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($stored['generated_at']));
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+    }
+
     public function test_empty_strings_still_save_zulu_time_and_integer_version()
     {
         $result = Tolka_Writer::write(array(
