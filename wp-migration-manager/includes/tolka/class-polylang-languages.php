@@ -1359,7 +1359,7 @@ class Polylang_Languages
     private function is_internal_language_slug($slug)
     {
         // pll_en is internal. pl is Polish and must stay.
-        return is_string($slug) && strpos($slug, 'pll_') === 0;
+        return is_string($slug) && strpos(strtolower($slug), 'pll_') === 0;
     }
 
     /**
