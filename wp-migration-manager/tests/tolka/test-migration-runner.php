@@ -323,6 +323,7 @@ namespace {
                 $this->assertSame(array(), $preview['sample'][$section]);
                 $this->assertSame(array(), $preview['sections'][$section]['labels']);
                 $this->assertSame(0, $preview['sections'][$section]['more']);
+                $this->assertSame('', $preview['sections'][$section]['more_label']);
                 $this->assertSame(0, $preview['sections'][$section]['error_count']);
                 $this->assertSame($message, $preview['sections'][$section]['message']);
             }
@@ -384,6 +385,7 @@ namespace {
             $this->assertSame('s19', $preview['sample']['posts'][19]['slug']);
             $this->assertSame('Item 19', $preview['sections']['posts']['labels'][19]);
             $this->assertSame(5, $preview['sections']['posts']['more']);
+            $this->assertSame('5 more are not shown.', $preview['sections']['posts']['more_label']);
             $this->assertSame(25, $preview['sections']['posts']['count']);
             $this->assertSame(
                 '25 posts are ready to migrate. The preview shows the first 20.',
@@ -977,6 +979,133 @@ namespace {
             $this->assertContains('Could not update post 5. Try again.', $run['errors']);
             $this->assertStringNotContainsString('<strong>', implode("\n", $run['errors']));
             $this->assertSame('failed', $run['state']);
+        }
+
+        public function test_writer_returning_ok_false_is_stored_and_not_successful()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => false,
+                'counts' => array(
+                    'languages' => 0,
+                    'posts' => 0,
+                    'terms' => 0,
+                    'strings' => 0,
+                    'menus' => 0,
+                    'media' => 0,
+                ),
+                'errors' => array('The Tolka package could not be stored.'),
+            );
+
+            $run = Migration_Runner_Test_Double::run();
+
+            $this->assertFalse($run['ok']);
+            $this->assertSame('failed', $run['state']);
+            $this->assertSame(\WMM\Tolka\RunnerTest\Writer::$result, $run['write']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Schema', $run['missing']);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Writer', $run['missing']);
+            $this->assertContains('The Tolka package could not be stored.', $run['errors']);
+            $this->assertNotContains(
+                'The migration could not be saved. Existing Polylang data was not changed.',
+                $run['errors']
+            );
+            $this->assertSame(1, $run['counts']['languages']);
+            $this->assertSame(
+                'The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.',
+                $run['message']
+            );
+            $this->assertArrayHasKey('languages', \WMM\Tolka\RunnerTest\Writer::$package);
+            $this->assertArrayNotHasKey('missing', \WMM\Tolka\RunnerTest\Schema::$parts);
+        }
+
+        public function test_missing_schema_does_not_call_the_writer()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('title' => 'Hello'));
+            Migration_Runner_Test_Double::$schema = 'WMM\\Tolka\\RunnerTest\\NoSchema';
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame('ready', $preview['state']);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\NoSchema', $preview['missing']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertFalse($run['ok']);
+            $this->assertSame('blocked', $run['state']);
+            $this->assertNull($run['write']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertContains('WMM\\Tolka\\RunnerTest\\NoSchema', $run['missing']);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Writer', $run['missing']);
+            $this->assertSame(1, $run['counts']['posts']);
+            $this->assertContains(
+                'The migration package could not be built because NoSchema is not available. Nothing was written, and existing Polylang data was not changed.',
+                $run['errors']
+            );
+            $this->assertSame(
+                'The migration did not run. Nothing was written, and existing Polylang data was not changed.',
+                $run['message']
+            );
+        }
+
+        public function test_preview_caps_only_the_section_longer_than_twenty()
+        {
+            $this->reset_doubles();
+            $posts = array();
+            for ($i = 0; $i < 21; $i++) {
+                $posts[] = array('title' => 'Post ' . $i, 'group' => 'post:' . $i);
+            }
+            $strings = array();
+            for ($i = 0; $i < 20; $i++) {
+                $strings[] = array('name' => 'String ' . $i);
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array(array('name' => 'English', 'slug' => 'en', 'is_default' => true)),
+                    'errors' => array(),
+                ),
+                1 => array('items' => $posts, 'errors' => array()),
+                2 => array('items' => array(), 'errors' => array()),
+                3 => array('items' => $strings, 'errors' => array()),
+                4 => array('items' => array(), 'errors' => array()),
+                5 => array('items' => array(), 'errors' => array()),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+
+            $this->assertSame(21, $preview['counts']['posts']);
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertSame('Post 0', $preview['sample']['posts'][0]['title']);
+            $this->assertSame('Post 19', $preview['sample']['posts'][19]['title']);
+            $this->assertSame(1, $preview['sections']['posts']['more']);
+            $this->assertSame('1 more is not shown.', $preview['sections']['posts']['more_label']);
+            $this->assertSame(
+                '21 posts are ready to migrate. The preview shows the first 20.',
+                $preview['sections']['posts']['message']
+            );
+            $titles = array();
+            foreach ($preview['sample']['posts'] as $item) {
+                $titles[] = $item['title'];
+            }
+            $this->assertNotContains('Post 20', $titles);
+
+            $this->assertCount(1, $preview['sample']['languages']);
+            $this->assertSame(0, $preview['sections']['languages']['more']);
+            $this->assertSame('', $preview['sections']['languages']['more_label']);
+            $this->assertSame('1 language is ready to migrate.', $preview['sections']['languages']['message']);
+
+            $this->assertCount(20, $preview['sample']['strings']);
+            $this->assertSame(20, $preview['counts']['strings']);
+            $this->assertSame(0, $preview['sections']['strings']['more']);
+            $this->assertSame('', $preview['sections']['strings']['more_label']);
+            $this->assertSame('20 strings are ready to migrate.', $preview['sections']['strings']['message']);
+            $this->assertSame(array(), $preview['sample']['terms']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
         }
     }
 }

@@ -409,6 +409,7 @@ class Migration_Runner
                 'message' => $message,
                 'labels' => $labels,
                 'more' => max(0, $count - count($presented)),
+                'more_label' => self::more_label(max(0, $count - count($presented))),
                 'error_count' => count($section_errors),
             );
             foreach ($section_errors as $error) {
@@ -546,6 +547,21 @@ class Migration_Runner
             return self::line('The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.');
         }
         return self::line('The migration did not run. Nothing was written, and existing Polylang data was not changed.');
+    }
+
+    /**
+     * @param int $more
+     * @return string
+     */
+    private static function more_label($more)
+    {
+        if ($more === 1) {
+            return self::line('1 more is not shown.');
+        }
+        if ($more > 1) {
+            return sprintf(self::line('%d more are not shown.'), $more);
+        }
+        return '';
     }
 
     /**
