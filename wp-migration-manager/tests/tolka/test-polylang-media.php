@@ -149,6 +149,55 @@ class Test_Polylang_Media extends TestCase
         $this->assertStringContainsString('not active', strtolower($result['errors'][0]));
     }
 
+    public function test_shared_file_keeps_the_default_language_attachment()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 4, 'lang' => 'fr'),
+            array('id' => 20, 'lang' => 'en'),
+        ), array(4, 20), array('en', 'fr'), 'en', array(
+            4 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+            20 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(20, $result['items'][0]['attachment_id']);
+        $this->assertSame(array('en' => 'Harbor', 'fr' => 'Port'), $result['items'][0]['alt']);
+    }
+
+    public function test_found_polylang_row_with_a_failed_library_read_is_not_inactive()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('pll_languages_list') || function_exists('get_posts')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                unset($args);
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                unset($query);
+                return '15';
+            }
+        };
+        try {
+            $result = (new Polylang_Media())->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertNotEmpty($result['errors']);
+        $this->assertStringNotContainsString('not active', strtolower($result['errors'][0]));
+        $this->assertStringContainsString('Nothing was changed', $result['errors'][0]);
+    }
+
     public function test_two_attachments_that_share_one_file_are_one_item()
     {
         $result = $this->itemsFrom(array(), array(
@@ -167,6 +216,9 @@ class Test_Polylang_Media extends TestCase
             'en' => 'Hero',
             'fr' => 'Visuel',
         ));
+        $encoded = json_encode($result['items']);
+        $this->assertIsString($encoded);
+        $this->assertStringStartsWith('[', $encoded);
     }
 
     public function test_shared_server_path_and_relative_path_are_one_item()
