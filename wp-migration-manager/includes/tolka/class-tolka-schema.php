@@ -57,14 +57,22 @@ class Tolka_Schema
      */
     public static function zulu($value)
     {
-        if (is_string($value) && substr($value, -1) === 'z') {
-            $value = substr($value, 0, -1) . 'Z';
+        if (is_string($value)) {
+            $value = trim(self::text($value));
+            if (substr($value, -6) === '+00:00') {
+                $value = substr($value, 0, -6) . 'Z';
+            } elseif (substr($value, -1) === 'z') {
+                $value = substr($value, 0, -1) . 'Z';
+            }
         }
 
         if (self::is_gmt_timestamp($value)) {
             $stamp = strtotime($value);
             if ($stamp !== false) {
-                return gmdate('Y-m-d\TH:i:s\Z', $stamp);
+                $formatted = gmdate('Y-m-d\TH:i:s\Z', $stamp);
+                if (is_string($formatted) && substr($formatted, -1) === 'Z') {
+                    return $formatted;
+                }
             }
         }
 
