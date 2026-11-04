@@ -2739,8 +2739,10 @@ class Polylang_Menus
     /**
      * Decode stored entities once so titles match what editors see.
      *
-     * Tags and letters such as å, ä, and ö stay in the text. A failed decode
-     * keeps the original string. Null bytes are removed.
+     * `&auml;` becomes ä. `&amp;auml;` stays `&auml;` because the decode is not
+     * repeated. Tags and letters such as å, ä, and ö stay in the text. A
+     * failed decode keeps the original string. Null bytes are removed before
+     * the decode, including a null inside an entity, and again afterwards.
      *
      * @param mixed $value Raw text.
      * @return string
