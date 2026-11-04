@@ -398,6 +398,32 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame("Children's books", $result['items'][0]['translations']['en']['name']);
     }
 
+    public function test_encoded_names_and_descriptions_are_shown_as_text(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('en' => 10)));
+        $database->catalog = array(
+            $this->term(10, 'Fish &amp; Chips', 'fish-chips', 'category', 'en', 0, 'Tom &amp; Jerry'),
+            $this->term(20, 'Salt &amp; pepper', 'salt-pepper', 'post_tag', 'en'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $group = $this->itemByGroup($result['items'], 'term:10');
+        $loose = $this->itemByGroup($result['items'], 'term:20');
+
+        $this->assertSame('Fish & Chips', $group['translations']['en']['name']);
+        $this->assertSame('Tom & Jerry', $group['translations']['en']['description']);
+        $this->assertSame('fish-chips', $group['translations']['en']['slug']);
+        $this->assertSame('Salt & pepper', $loose['translations']['en']['name']);
+        $this->assertSame('salt-pepper', $loose['translations']['en']['slug']);
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(

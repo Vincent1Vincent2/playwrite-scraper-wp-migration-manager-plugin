@@ -288,9 +288,9 @@ class Polylang_Terms
             'translations' => array(
                 $lang => array(
                     'id' => $id,
-                    'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
+                    'name' => $this->plainText(isset($term['name']) ? $term['name'] : ''),
                     'slug' => $this->stringValue(isset($term['slug']) ? $term['slug'] : ''),
-                    'description' => $this->stringValue(isset($term['description']) ? $term['description'] : ''),
+                    'description' => $this->plainText(isset($term['description']) ? $term['description'] : ''),
                     'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
                 ),
             ),
@@ -458,9 +458,9 @@ class Polylang_Terms
             $groupedIds[$translatedId] = true;
             $translations[$lang] = array(
                 'id' => $translatedId,
-                'name' => $details['name'],
-                'slug' => $details['slug'],
-                'description' => isset($details['description']) ? $details['description'] : '',
+                'name' => $this->plainText($details['name']),
+                'slug' => $this->stringValue($details['slug']),
+                'description' => $this->plainText(isset($details['description']) ? $details['description'] : ''),
                 'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
             );
         }
@@ -1310,9 +1310,9 @@ class Polylang_Terms
     {
         if (is_array($row)) {
             $id = isset($row['id']) ? (int) $row['id'] : 0;
-            $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
+            $name = $this->plainText(isset($row['name']) ? $row['name'] : '');
             $slug = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
-            $description = $this->stringValue(isset($row['description']) ? $row['description'] : '');
+            $description = $this->plainText(isset($row['description']) ? $row['description'] : '');
             $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
         } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
             $id = (int) $row;
@@ -1874,6 +1874,24 @@ class Polylang_Terms
             return str_replace("\0", '', (string) $value);
         }
         return '';
+    }
+
+    /**
+     * Term text as an editor would show it. Slugs stay encoded.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function plainText($value)
+    {
+        $text = $this->stringValue($value);
+        if ($text === '') {
+            return '';
+        }
+        if (function_exists('wp_specialchars_decode')) {
+            return wp_specialchars_decode($text, ENT_QUOTES);
+        }
+        return html_entity_decode($text, ENT_QUOTES, 'UTF-8');
     }
 
     /**
