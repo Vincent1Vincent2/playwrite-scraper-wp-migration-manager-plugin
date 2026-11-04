@@ -56,14 +56,15 @@ class Polylang_Languages
      * Export languages.
      *
      * `items` is a list of languages. Each item has `slug`, `name`, `locale`,
-     * `is_default` (bool), `term_id` (int), and `flag` (string). `flag` is the
-     * Polylang flag code when one is stored.
+     * `is_default` (bool), `term_id` (int), and `flag` (string). ASCII slugs
+     * are lowercase. `flag` is the Polylang flag code when one is stored.
+     * `locale` uses underscores, as in en_US.
      *
      * `errors` is empty when at least one language was read. Otherwise it
      * holds one sentence explaining what the site owner can do next.
      *
      * Languages that have no posts are included. The default language is
-     * listed first. Nothing is written.
+     * listed first. One language on its own is the default. Nothing is written.
      *
      * @return array
      */
