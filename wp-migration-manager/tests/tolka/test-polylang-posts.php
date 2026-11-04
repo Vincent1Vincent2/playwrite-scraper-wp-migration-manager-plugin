@@ -907,6 +907,42 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('', $alone['translations']['sv']['content']);
     }
 
+    public function test_duplicate_private_language_keeps_the_first_and_the_trash_sibling()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 82,
+                'description' => 'a:3:{s:2:"en";i:30;s:2:"sv";i:4;s:2:"en";i:7;}',
+            ),
+        );
+        $fake->posts_rows = array(
+            30 => $this->db_post(30, 'private', 'Hemligt', 'hemligt', 'post', '', ''),
+            4 => $this->db_post(4, 'trash', 'Borttagen', 'borttagen', 'post', '', '<p>ä ö å</p>'),
+            7 => $this->db_post(7, 'publish', 'Later', 'later', 'post', '', 'Not first'),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame('post:30', $second['items'][0]['group']);
+        $this->assertSame('private', $second['items'][0]['translations']['en']['status']);
+        $this->assertSame('', $second['items'][0]['translations']['en']['content']);
+        $this->assertSame('trash', $second['items'][0]['translations']['sv']['status']);
+        $this->assertSame('<p>ä ö å</p>', $second['items'][0]['translations']['sv']['content']);
+        $this->assertCount(1, $second['errors']);
+        $this->assertSame(
+            'Language en is listed more than once in this translation group. Post 30 was kept.',
+            $second['errors'][0]
+        );
+        $encoded = json_encode($second);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Not first', $encoded);
+    }
+
     public function test_pending_future_private_and_trash_keep_their_status()
     {
         $exporter = new Polylang_Posts_Fixture();
