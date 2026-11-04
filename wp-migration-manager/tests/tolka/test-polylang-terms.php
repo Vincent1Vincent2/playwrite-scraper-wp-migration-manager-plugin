@@ -473,6 +473,7 @@ class Polylang_Terms_Test extends TestCase
                             'id' => 9,
                             'name' => "<em>News</em>\0 &amp; Notes",
                             'slug' => "news\0-notes",
+                            'description' => "Hello\0 <em>there</em>",
                         ),
                     ),
                 ),
@@ -484,6 +485,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame('news-notes', $result['items'][0]['translations']['en']['slug']);
         $this->assertStringNotContainsString("\0", $result['items'][0]['translations']['en']['name']);
         $this->assertStringNotContainsString("\0", $result['items'][0]['translations']['en']['slug']);
+        $this->assertSame('Hello <em>there</em>', $result['items'][0]['translations']['en']['description']);
     }
 
     public function test_storage_reads_groups_untranslated_terms_and_skips_bad_rows(): void
