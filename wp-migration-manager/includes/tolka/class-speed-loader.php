@@ -391,6 +391,7 @@ class Speed_Loader
         }
 
         $trimmed = self::with_https_scheme($trimmed);
+        $trimmed = self::bracket_bare_ipv6($trimmed);
 
         if (strlen($trimmed) > 4096) {
             $none['url'] = $trimmed;
@@ -1074,6 +1075,66 @@ class Speed_Loader
     }
 
     /**
+     * Put brackets around an IPv6 host typed without them.
+     *
+     * https://::1 is otherwise read as host ":" and port 1.
+     *
+     * @param string $url Address that may already include a scheme.
+     * @return string
+     */
+    private static function bracket_bare_ipv6($url)
+    {
+        if ($url === '' || strpos($url, '[') !== false) {
+            return $url;
+        }
+
+        $scheme = '';
+        $rest = $url;
+        if (preg_match('#^(https?://)(.*)$#i', $url, $matches)) {
+            $scheme = $matches[1];
+            $rest = $matches[2];
+        } else {
+            return $url;
+        }
+
+        $end = strlen($rest);
+        foreach (array('/', '?', '#') as $mark) {
+            $pos = strpos($rest, $mark);
+            if ($pos !== false && $pos < $end) {
+                $end = $pos;
+            }
+        }
+        $authority = substr($rest, 0, $end);
+        $tail = substr($rest, $end);
+        $user = '';
+        $hostport = $authority;
+        $at = strrpos($authority, '@');
+        if ($at !== false) {
+            $user = substr($authority, 0, $at + 1);
+            $hostport = substr($authority, $at + 1);
+        }
+        if (substr_count($hostport, ':') < 2) {
+            return $url;
+        }
+
+        $host = $hostport;
+        $port = '';
+        if (filter_var($hostport, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            $host = $hostport;
+        } elseif (
+            preg_match('/^(.*):(\d+)$/', $hostport, $parts)
+            && filter_var($parts[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)
+        ) {
+            $host = $parts[1];
+            $port = ':' . $parts[2];
+        } else {
+            return $url;
+        }
+
+        return $scheme . $user . '[' . $host . ']' . $port . $tail;
+    }
+
+    /**
      * Treat a pasted host, such as example.com, as https.
      *
      * A scheme that is already present is left alone, including ftp and
@@ -1086,6 +1147,9 @@ class Speed_Loader
     {
         if ($url === '') {
             return $url;
+        }
+        if (filter_var($url, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return 'https://[' . $url . ']';
         }
         // A dotted name before the colon is host:port, not a scheme.
         // user:pass@host is credentials, not a scheme. javascript: is a scheme.
