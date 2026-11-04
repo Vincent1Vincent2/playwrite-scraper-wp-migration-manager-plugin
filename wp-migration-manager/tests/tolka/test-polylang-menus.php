@@ -413,6 +413,95 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame('primary (newer)', $this->location($fallback_result, 'newer:primary')['label']);
     }
 
+    public function test_theme_mod_fills_locations_the_polylang_map_never_saved(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'default_language' => 'en',
+            'registered' => array(
+                'primary' => 'Primary',
+                'footer' => 'Footer',
+            ),
+            'menus' => array(
+                10 => 'Main',
+                11 => 'Swedish',
+                12 => 'Footer menu',
+            ),
+            'term_languages' => array(
+                12 => 'en',
+            ),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 10),
+                    ),
+                ),
+            ),
+            'theme_locations' => array(
+                'primary' => 99,
+                'primary___sv' => 11,
+                'footer' => 12,
+            ),
+        ));
+
+        $result = $fixture->run();
+
+        $this->assertSame(10, $this->location($result, 'primary')['translations']['en']['menu_id']);
+        $this->assertSame(11, $this->location($result, 'primary')['translations']['sv']['menu_id']);
+        $this->assertSame(12, $this->location($result, 'footer')['translations']['en']['menu_id']);
+        $this->assertSame('Footer menu', $this->location($result, 'footer')['translations']['en']['name']);
+        $this->assertArrayNotHasKey(99, $this->menu_ids($result));
+    }
+
+    public function test_empty_language_switcher_uses_the_languages_title(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(10 => 'Main'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 10),
+                    ),
+                ),
+            ),
+            'items' => array(
+                10 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => '',
+                        'url' => '#pll_switcher',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 1,
+                    ),
+                    array(
+                        'id' => 2,
+                        'parent' => 0,
+                        'title' => '',
+                        'url' => '/spacer',
+                        'object' => 'custom',
+                        'object_id' => 2,
+                        'position' => 2,
+                    ),
+                ),
+            ),
+        ));
+
+        $items = $this->location($fixture->run(), 'primary')['translations']['en']['items'];
+
+        $this->assertSame('Languages', $items[0]['title']);
+        $this->assertTrue($items[0]['switcher']);
+        $this->assertSame('', $items[1]['title']);
+        $this->assertFalse($items[1]['switcher']);
+        $this->assertSame('/spacer', $items[1]['url']);
+    }
+
     public function test_unpublished_links_are_reported_and_left_out(): void
     {
         $fixture = $this->fixture(array(

@@ -3,10 +3,12 @@
 /**
  * Polylang navigation menu export for the Tolka migration.
  *
- * Each exported item is one theme location. `translations` maps a language
- * slug to that language's menu id, name, slug, and menu items. Locations the
- * theme registers but does not assign are still returned, with menu id 0.
- * Menu links are a tree: each item's `children` list holds its submenu.
+ * Each exported item is one theme location. `label` is the theme's name for
+ * that location, or a sentence when the menu is not assigned. `translations`
+ * maps a language slug to `menu_id`, `name`, `slug`, `link_count`, and
+ * `items`. Locations with no menu use menu id 0. Menu links are a tree:
+ * each item's `children` list holds its submenu. A language switcher has
+ * `switcher` set, and the title "Languages" when none was stored.
  *
  * Polylang keeps assignments on the `polylang` option at
  * nav_menus[stylesheet][location][language] = menu term id. When the
@@ -735,8 +737,47 @@ class Polylang_Menus
             }
         }
 
+        $this->fill_locations_from_theme_mod($assignments);
         $this->expand_with_translations($assignments);
         return $assignments;
+    }
+
+    /**
+     * Add theme-mod locations that Polylang's map never mentioned.
+     *
+     * Existing locations are left alone, including a language slot that was
+     * saved as "no menu".
+     *
+     * @param array<string, array<string, int>> $assignments Location => language => menu id.
+     * @return void
+     */
+    private function fill_locations_from_theme_mod(array &$assignments)
+    {
+        $raw = $this->read_theme_menu_locations();
+        if (! is_array($raw) || empty($raw)) {
+            return;
+        }
+
+        $known = array_keys($assignments);
+        $extra = array();
+        foreach ($raw as $key => $value) {
+            $split = $this->split_location_key($key);
+            if ($split['location'] === '') {
+                continue;
+            }
+            if (! in_array($split['location'], $known, true)) {
+                $extra[$key] = $value;
+                continue;
+            }
+            // primary___sv can supply a language the Polylang map never stored.
+            // A bare primary value is not allowed to replace the saved menu.
+            if ($split['lang'] !== '' && ! isset($assignments[$split['location']][$split['lang']])) {
+                $extra[$key] = $value;
+            }
+        }
+        if (! empty($extra)) {
+            $this->absorb_location_map($assignments, $extra);
+        }
     }
 
     /**
@@ -1205,6 +1246,9 @@ class Polylang_Menus
             $normalized['url'] = $this->resolve_url($normalized);
         }
         $normalized['switcher'] = ($normalized['url'] === '#pll_switcher');
+        if ($normalized['title'] === '' && $normalized['switcher']) {
+            $normalized['title'] = $this->message_switcher_title();
+        }
 
         return $normalized;
     }
@@ -2009,6 +2053,18 @@ class Polylang_Menus
         $text = 'Polylang menu assignments could not be read because the stored nav_menus value is invalid. Theme locations are still listed.';
         if (function_exists('__')) {
             $text = __('Polylang menu assignments could not be read because the stored nav_menus value is invalid. Theme locations are still listed.', 'migration-manager');
+        }
+        return $text;
+    }
+
+    /**
+     * @return string
+     */
+    private function message_switcher_title()
+    {
+        $text = 'Languages';
+        if (function_exists('__')) {
+            $text = __('Languages', 'migration-manager');
         }
         return $text;
     }
