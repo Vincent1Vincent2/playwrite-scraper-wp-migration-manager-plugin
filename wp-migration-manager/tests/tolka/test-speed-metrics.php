@@ -541,6 +541,178 @@ HTML;
         $this->assertSame(2000000, \WMM\Tolka\Speed_Metrics::HTML_BYTE_CAP);
     }
 
+    public function test_comments_do_not_add_assets_or_languages()
+    {
+        $html = <<<'HTML'
+<!-- <script src="/old.js"></script> -->
+<!-- <img src="/old.png"><link rel="stylesheet" href="/old.css"> -->
+<!-- <link rel="alternate" hreflang="de" href="/de/"> -->
+<img src="/live.png">
+<link rel="stylesheet" href="/live.css">
+HTML;
+
+        $result = $this->analyze($html);
+
+        $this->assertSame(0, $result['script_count']);
+        $this->assertSame(1, $result['image_count']);
+        $this->assertSame(1, $result['stylesheet_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+    }
+
+    public function test_commented_switcher_marker_still_matches_the_html_string()
+    {
+        $result = $this->analyze('<!-- <ul class="lang-item"></ul> -->');
+
+        $this->assertTrue($result['has_polylang_switcher']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(2, $result['language_count']);
+        $this->assertSame(0, $result['script_count']);
+    }
+
+    public function test_unclosed_script_hides_the_rest_of_a_cut_body()
+    {
+        $html = '<script>var sample = "<img src=\'/fake.png\'><link rel=\'stylesheet\' href=\'/fake.css\'><a hreflang=\'zz\' href=\'/zz/\'>";';
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(0, $result['image_count']);
+        $this->assertSame(0, $result['stylesheet_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+    }
+
+    public function test_unclosed_comment_hides_the_rest_of_a_cut_body()
+    {
+        $html = '<!-- cut mid-comment <img src="/fake.png"><script src="/fake.js"></script><a hreflang="fr" href="/fr/">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(0, $result['script_count']);
+        $this->assertSame(0, $result['image_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+    }
+
+    public function test_markup_after_a_closed_script_still_counts()
+    {
+        $html = '<script src="/a.js"></script><img src="/a.png"><link rel="stylesheet" href="/a.css">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(1, $result['image_count']);
+        $this->assertSame(1, $result['stylesheet_count']);
+    }
+
+    public function test_noscript_fallback_image_counts()
+    {
+        $result = $this->analyze('<noscript><img src="/fallback.png"></noscript>');
+
+        $this->assertSame(0, $result['script_count']);
+        $this->assertSame(1, $result['image_count']);
+    }
+
+    public function test_browser_ends_a_script_at_the_first_closing_tag()
+    {
+        $html = '<script>var end = "</script>";</script><img src="/after.png">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(1, $result['image_count']);
+    }
+
+    public function test_polylang_home_page_counts_live_languages_and_assets()
+    {
+        $result = $this->analyze($this->polylang_home_html());
+
+        $this->assertSame(2, $result['hreflang_count']);
+        $this->assertSame(2, $result['language_count']);
+        $this->assertTrue($result['has_polylang_switcher']);
+        $this->assertSame(3, $result['script_count']);
+        $this->assertSame(2, $result['stylesheet_count']);
+        $this->assertSame(2, $result['image_count']);
+        $this->assertFalse($result['truncated']);
+    }
+
+    public function test_data_hreflang_is_not_a_language()
+    {
+        $result = $this->analyze('<div data-hreflang="zz">Hello</div>');
+
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+    }
+
+    public function test_one_image_tag_counts_once_with_srcset()
+    {
+        $html = '<img src="/a.jpg" srcset="/a.jpg 1x, /a@2.jpg 2x" alt="">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['image_count']);
+    }
+
+    public function test_scientific_notation_and_negative_byte_counts_are_ignored()
+    {
+        $html = '<img src="/a.png">';
+
+        $scientific = $this->analyze($html, array('html_bytes' => '2e6'));
+        $negative = $this->analyze($html, array('html_bytes' => -1));
+        $blank = $this->analyze($html, array('html_bytes' => ''));
+
+        $this->assertFalse($scientific['truncated']);
+        $this->assertFalse($negative['truncated']);
+        $this->assertFalse($blank['truncated']);
+        $this->assertSame(1, $scientific['image_count']);
+    }
+
+    public function test_prefixes_of_a_page_never_lose_a_completed_signal()
+    {
+        $html = $this->polylang_home_html();
+        $length = strlen($html);
+        $previous = null;
+
+        for ($i = 0; $i <= $length; $i++) {
+            $result = $this->analyze_measurement(array(
+                'html' => substr($html, 0, $i),
+                'html_bytes' => $length,
+            ));
+
+            if ($i === 0 || $i === $length) {
+                $this->assertFalse($result['truncated'], 'byte ' . $i);
+            } else {
+                $this->assertTrue($result['truncated'], 'byte ' . $i);
+            }
+
+            if ($result['hreflang_count'] > 0) {
+                $this->assertSame($result['hreflang_count'], $result['language_count'], 'byte ' . $i);
+            } elseif ($result['has_polylang_switcher']) {
+                $this->assertSame(2, $result['language_count'], 'byte ' . $i);
+            } else {
+                $this->assertSame(1, $result['language_count'], 'byte ' . $i);
+            }
+
+            if ($previous === null) {
+                $previous = $result;
+                continue;
+            }
+
+            $this->assertGreaterThanOrEqual($previous['hreflang_count'], $result['hreflang_count'], 'hreflang at byte ' . $i);
+            $this->assertGreaterThanOrEqual($previous['script_count'], $result['script_count'], 'script at byte ' . $i);
+            $this->assertGreaterThanOrEqual($previous['stylesheet_count'], $result['stylesheet_count'], 'stylesheet at byte ' . $i);
+            $this->assertGreaterThanOrEqual($previous['image_count'], $result['image_count'], 'image at byte ' . $i);
+
+            if ($previous['has_polylang_switcher']) {
+                $this->assertTrue($result['has_polylang_switcher'], 'switcher at byte ' . $i);
+            }
+
+            $previous = $result;
+        }
+
+        $this->assertSame(2, $previous['language_count']);
+        $this->assertSame(2, $previous['hreflang_count']);
+    }
+
     public function test_result_repeats_for_the_same_measurement()
     {
         $measurement = array(
@@ -553,6 +725,50 @@ HTML;
             \WMM\Tolka\Speed_Metrics::analyze($measurement),
             \WMM\Tolka\Speed_Metrics::analyze($measurement)
         );
+    }
+
+    /**
+     * A small Polylang front page: assets first, then live hreflang.
+     *
+     * The retired German alternate is inside a comment. Counting it would
+     * tell the site owner the page has a language it does not serve.
+     *
+     * @return string
+     */
+    private function polylang_home_html()
+    {
+        return <<<'HTML'
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<title>Northwind Studio</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/wp-content/themes/northwind/style.css">
+<link rel="stylesheet" href="/wp-content/plugins/polylang/css/frontend.css?ver=3.6.2">
+<script src="/wp-includes/js/jquery/jquery.min.js"></script>
+<script src="/wp-content/themes/northwind/theme.js"></script>
+<script src="/wp-content/plugins/polylang/js/frontend.js?ver=3.6.2"></script>
+<!-- retired translation
+<link rel="alternate" hreflang="de" href="https://example.com/de/" />
+<script src="/old.js"></script>
+<img src="/old.png">
+-->
+<link rel="alternate" href="https://example.com/" hreflang="en" />
+<link rel="alternate" href="https://example.com/sv/" hreflang="sv" />
+<link rel="alternate" href="https://example.com/" hreflang="x-default" />
+</head>
+<body>
+<header>
+<img src="/logo.svg" alt="Northwind">
+<nav><ul><li class="pll-parent-menu-item"><a href="/">English</a>
+<ul class="sub-menu"><li class="lang-item lang-item-sv"><a href="/sv/" hreflang="sv">Svenska</a></li></ul>
+</li></ul></nav>
+</header>
+<img src="/hero.jpg" alt="">
+</body>
+</html>
+HTML;
     }
 
     /**
