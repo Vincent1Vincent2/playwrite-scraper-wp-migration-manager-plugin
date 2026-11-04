@@ -1978,8 +1978,12 @@ class Polylang_Terms
         if (is_int($value)) {
             return $value > 0 ? $value : 0;
         }
-        if (is_string($value) && preg_match('/^[0-9]+$/', $value)) {
-            return (int) $value;
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value !== '' && preg_match('/^[0-9]+$/', $value)) {
+                $number = (int) $value;
+                return $number > 0 ? $number : 0;
+            }
         }
         if (is_float($value) && is_finite($value) && $value > 0 && floor($value) === $value && $value <= PHP_INT_MAX) {
             return (int) $value;

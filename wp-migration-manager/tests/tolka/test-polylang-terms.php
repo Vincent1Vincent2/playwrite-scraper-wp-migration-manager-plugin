@@ -547,6 +547,63 @@ class Polylang_Terms_Test extends TestCase
         $this->assertNotContains('Polylang is not active. Term translations were not exported.', $result['errors']);
     }
 
+    public function test_export_on_an_instance_keeps_parent_ids(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('en' => 4, 'sv' => 15)));
+        $database->catalog = array(
+            $this->term(4, 'News', 'news', 'category', 'en', '0'),
+            array(
+                'id' => 15,
+                'name' => 'Local',
+                'slug' => 'local',
+                'taxonomy' => 'category',
+                'lang' => 'sv',
+                'parent' => ' 4 ',
+                'description' => '',
+            ),
+            array(
+                'id' => 16,
+                'name' => 'Orphan',
+                'slug' => 'orphan',
+                'taxonomy' => 'category',
+                'lang' => 'en',
+                'description' => '',
+            ),
+            $this->term(17, 'Tag', 'tag', 'post_tag', 'en', null),
+            $this->term(99, 'Missing parent target', 'dangling', 'category', 'en', 99),
+            $this->term(18, 'Float parent', 'float-parent', 'category', 'en', 8.0),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $this->assertTrue(is_callable(array($exporter, 'export')));
+        $result = $exporter->export();
+
+        $news = $this->itemByGroup($result['items'], 'term:4');
+        $this->assertSame(0, $news['translations']['en']['parent']);
+        $this->assertSame(4, $news['translations']['sv']['parent']);
+        $this->assertIsInt($news['translations']['en']['parent']);
+        $this->assertIsInt($news['translations']['sv']['parent']);
+
+        $orphan = $this->itemByGroup($result['items'], 'term:16');
+        $this->assertSame(0, $orphan['translations']['en']['parent']);
+
+        $tag = $this->itemByGroup($result['items'], 'term:17');
+        $this->assertSame(0, $tag['translations']['en']['parent']);
+
+        $dangling = $this->itemByGroup($result['items'], 'term:99');
+        $this->assertSame(99, $dangling['translations']['en']['parent']);
+
+        $floatParent = $this->itemByGroup($result['items'], 'term:18');
+        $this->assertSame(8, $floatParent['translations']['en']['parent']);
+    }
+
     public function test_a_term_with_no_translation_is_exported_on_its_own(): void
     {
         if (!$this->canUseDatabaseStub()) {
@@ -1306,7 +1363,7 @@ class Polylang_Terms_Database
             'name' => $term['name'],
             'slug' => $term['slug'],
             'taxonomy' => $term['taxonomy'],
-            'parent' => isset($term['parent']) ? (int) $term['parent'] : 0,
+            'parent' => array_key_exists('parent', $term) ? $term['parent'] : null,
             'description' => isset($term['description']) ? $term['description'] : '',
         );
     }
