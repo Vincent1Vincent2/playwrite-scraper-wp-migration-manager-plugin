@@ -370,6 +370,71 @@ class Test_Polylang_Media extends TestCase
         );
     }
 
+    public function test_whitespace_only_file_path_is_missing_and_a_real_path_is_not()
+    {
+        $blank = $this->itemsFrom(array(), array(
+            array('id' => 15, 'lang' => 'sv'),
+            array('id' => 16, 'lang' => 'en'),
+        ), array(15, 16), array('en', 'sv'), 'sv', array(
+            15 => array(
+                'file' => " \t\n\r ",
+                'alt' => 'Skärgård',
+                'title' => 'Ö',
+            ),
+            16 => array(
+                'file' => "\xC2\xA0\xC2\xA0",
+                'alt' => 'Å',
+                'title' => 'Ä',
+            ),
+        ));
+
+        $this->assertCount(2, $blank['items']);
+        $this->assertSame('', $blank['items'][0]['file']);
+        $this->assertSame('', $blank['items'][1]['file']);
+        $this->assertSame('Ö', $blank['items'][0]['title']['sv']);
+        $this->assertSame('Ä', $blank['items'][1]['title']['en']);
+        $blank_errors = $this->call('errors_for_result', array(0, $blank['items']));
+        $this->assertCount(1, $blank_errors);
+        $this->assertCustomerSentence($blank_errors[0]);
+        $this->assertSame(
+            '2 media items have no file path and were exported with an empty file. Nothing was changed.',
+            $blank_errors[0]
+        );
+
+        $real = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'sv'),
+        ), array(10, 11), array('en', 'sv'), 'en', array(
+            10 => array(
+                'file' => '  2024/05/hero.jpg  ',
+                'alt' => 'Harbor',
+                'title' => 'Hero',
+            ),
+            11 => array(
+                'file' => '2024/05/mitt filnamn.jpg',
+                'alt' => 'En färja',
+                'title' => 'Över ön',
+            ),
+        ));
+
+        $this->assertCount(2, $real['items']);
+        $this->assertSame('2024/05/hero.jpg', $real['items'][0]['file']);
+        $this->assertSame('2024/05/mitt filnamn.jpg', $real['items'][1]['file']);
+        $this->assertSame(array(), $this->call('errors_for_result', array(0, $real['items'])));
+
+        $padded = $this->itemsFrom(array(), array(
+            array('id' => 8, 'lang' => 'sv'),
+        ), array(8), array('sv'), 'sv', array(
+            8 => array(
+                'file' => " \t2024/05/bröd.jpg\n ",
+                'alt' => 'Bröd',
+                'title' => 'Bröd',
+            ),
+        ));
+        $this->assertSame('2024/05/bröd.jpg', $padded['items'][0]['file']);
+        $this->assertSame(array(), $this->call('errors_for_result', array(0, $padded['items'])));
+    }
+
     public function test_attachment_with_no_file_path_is_exported_with_an_empty_file_and_one_error()
     {
         $result = $this->itemsFrom(array(), array(
@@ -449,6 +514,7 @@ class Test_Polylang_Media extends TestCase
                 }
                 if (strpos($query, 'meta_value') !== false) {
                     return array(
+                        array('post_id' => 15, 'meta_key' => '_wp_attached_file', 'meta_value' => " \t\n "),
                         array('post_id' => 15, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Skärgård'),
                     );
                 }

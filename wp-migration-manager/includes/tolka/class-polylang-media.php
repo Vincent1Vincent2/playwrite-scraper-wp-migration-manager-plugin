@@ -1543,6 +1543,27 @@ class Polylang_Media
     }
 
     /**
+     * A path that contains only spaces, tabs, or other whitespace is missing.
+     *
+     * Surrounding whitespace is removed from a real path. Spaces inside a
+     * file name are kept.
+     *
+     * @param string $file
+     * @return string
+     */
+    private function blank_if_only_whitespace($file)
+    {
+        if (!is_string($file) || $file === '') {
+            return '';
+        }
+        $trimmed = preg_replace('/^[\p{Z}\s]+|[\p{Z}\s]+$/u', '', $file);
+        if (!is_string($trimmed) || $trimmed === '') {
+            return '';
+        }
+        return $trimmed;
+    }
+
+    /**
      * Store a path Tolka can use on another server.
      *
      * Absolute uploads paths become the path relative to the uploads directory.
@@ -1554,8 +1575,8 @@ class Polylang_Media
      */
     private function portable_file($file, $uploads_basedir = null)
     {
-        $file = str_replace('\\', '/', $this->string_value($file));
-        if (trim($file) === '') {
+        $file = $this->blank_if_only_whitespace(str_replace('\\', '/', $this->string_value($file)));
+        if ($file === '') {
             return '';
         }
         if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $file) === 1) {
