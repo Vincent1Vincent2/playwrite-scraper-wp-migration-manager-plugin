@@ -68,11 +68,9 @@ class Polylang_Strings
         try {
             return $this->build($this->read_snapshot());
         } catch (\Throwable $e) {
-            return array(
-                'items' => array(),
-                'errors' => array(
-                    $this->text('String translations could not be read. Existing Polylang data was left unchanged.'),
-                ),
+            return $this->envelope(
+                array(),
+                array($this->text('String translations could not be read. Existing Polylang data was left unchanged.'))
             );
         }
     }
@@ -213,9 +211,36 @@ class Polylang_Strings
             );
         }
 
+        return $this->envelope($this->align_languages($items, $languages), $errors);
+    }
+
+    /**
+     * Items are a JSON list. Every error is a non-empty string.
+     *
+     * @param array $items  Built items.
+     * @param array $errors Collected messages, which may include non-strings.
+     * @return array{items: array<int, array>, errors: string[]}
+     */
+    protected function envelope(array $items, array $errors)
+    {
+        $list = array();
+        foreach (array_values($items) as $item) {
+            if (is_array($item)) {
+                $list[] = $item;
+            }
+        }
+
+        $messages = array();
+        foreach ($errors as $error) {
+            if (!is_string($error) || $error === '') {
+                continue;
+            }
+            $messages[] = $error;
+        }
+
         return array(
-            'items' => $this->align_languages($items, $languages),
-            'errors' => array_values(array_unique($errors)),
+            'items' => $list,
+            'errors' => array_values(array_unique($messages)),
         );
     }
 
