@@ -169,9 +169,15 @@ class Polylang_Detector
         }
 
         // The file that defined the loaded code is the running plugin file.
-        // It wins even when a sibling copy reports a different version.
+        // Inside a Pro package, official polylang.php still beats a stub
+        // in the same folder, even when the stub is the file that loaded.
         $parsed_origin = static::inspect_plugin_file($origin);
         if (!empty($parsed_origin['is_polylang'])) {
+            $official = self::official_pro_file_beside($origin);
+            if ($official !== '') {
+                return $official;
+            }
+
             return $origin;
         }
 
@@ -234,20 +240,84 @@ class Polylang_Detector
         if ($running_pro) {
             $pro = array();
             foreach ($matches as $match) {
-                $label = '';
-                if (isset($match['parsed']['label']) && is_string($match['parsed']['label'])) {
-                    $label = $match['parsed']['label'];
-                }
-                if ($label === 'Polylang Pro') {
+                if (self::match_label($match) === 'Polylang Pro') {
                     $pro[] = $match;
                 }
             }
             if ($pro !== array()) {
                 $matches = $pro;
             }
+
+            foreach ($matches as $match) {
+                $path = isset($match['path']) && is_string($match['path']) ? $match['path'] : '';
+                $basename = strtolower(basename(str_replace('\\', '/', $path)));
+                if ($basename === 'polylang.php' && self::match_version($match) !== '') {
+                    return $path;
+                }
+            }
         }
 
         return $matches[0]['path'];
+    }
+
+    /**
+     * Official polylang.php for a Pro package, when it sits beside a stub.
+     *
+     * A free polylang.php in the same folder is not this file. An official
+     * header with no version is skipped so a stub version is not wiped.
+     */
+    private static function official_pro_file_beside(string $origin): string
+    {
+        $directory = dirname($origin);
+        if (!is_string($directory) || $directory === '' || self::is_walk_boundary($directory)) {
+            return '';
+        }
+
+        $official = rtrim($directory, '/\\') . '/polylang.php';
+        if ($official === $origin) {
+            return '';
+        }
+        $official_resolved = self::resolve_path($official);
+        $origin_resolved = self::resolve_path($origin);
+        if ($official_resolved !== '' && $official_resolved === $origin_resolved) {
+            return '';
+        }
+
+        $parsed = static::inspect_plugin_file($official);
+        if (empty($parsed['is_polylang'])) {
+            return '';
+        }
+        $label = isset($parsed['label']) && is_string($parsed['label']) ? $parsed['label'] : '';
+        $version = isset($parsed['version']) && is_string($parsed['version']) ? $parsed['version'] : '';
+        if ($label !== 'Polylang Pro' || $version === '') {
+            return '';
+        }
+
+        return $official;
+    }
+
+    /**
+     * @param array{path: string, parsed: array<string, mixed>} $match
+     */
+    private static function match_label(array $match): string
+    {
+        if (isset($match['parsed']['label']) && is_string($match['parsed']['label'])) {
+            return $match['parsed']['label'];
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array{path: string, parsed: array<string, mixed>} $match
+     */
+    private static function match_version(array $match): string
+    {
+        if (isset($match['parsed']['version']) && is_string($match['parsed']['version'])) {
+            return $match['parsed']['version'];
+        }
+
+        return '';
     }
 
     /**

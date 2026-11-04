@@ -1520,6 +1520,44 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($first, $second);
     }
 
+    public function test_official_polylang_php_wins_when_the_loaded_file_is_the_stub(): void
+    {
+        $root = $this->temp_dir();
+        $stub = $this->write_plugin(
+            $root,
+            'polylang-pro/polylang-pro.php',
+            $this->wordpress_header('Polylang Pro', '9.9.9')
+        );
+        $this->write_plugin(
+            $root,
+            'polylang-pro/polylang.php',
+            "<?php\r\n/**\r\n * Plugin Name: Polylang Pro\r\n * Version: 3.9.1 \r\n */\r\n"
+        );
+        $other = $this->temp_dir();
+        $this->write_plugin($other, 'polylang-pro/polylang-pro.php', $this->wordpress_header('Polylang Pro', '9.9.9'));
+        Polylang_Detector_Fixture::$active = true;
+        Polylang_Detector_Fixture::$use_loaded = true;
+        Polylang_Detector_Fixture::$use_list = true;
+        Polylang_Detector_Fixture::$listed = array('polylang-pro/polylang-pro.php');
+        Polylang_Detector_Fixture::$origin = $stub;
+        Polylang_Detector_Fixture::$directories = array($other, $root);
+
+        $first = Polylang_Detector_Fixture::status();
+        $second = Polylang_Detector_Fixture::status();
+
+        $this->assertTrue($first['active']);
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertSame(5, strlen($first['version']));
+        $this->assertNotSame('9.9.9', $first['version']);
+        $this->assertNotSame('3.9', $first['version']);
+        $this->assertSame(array(), $first['errors']);
+        $this->assertStringNotContainsString('not installed', implode("\n", $second['errors']));
+        $this->assertStringNotContainsString('9.9.9', $second['version']);
+        $this->assertStringNotContainsString('9.9.9', implode("\n", $second['errors']));
+        $this->assertSame($first, $second);
+        $this->assertSame($second['errors'], array_values(array_unique($second['errors'])));
+    }
+
     public function test_loaded_file_several_directories_down_still_finds_the_header(): void
     {
         $root = $this->temp_dir();
@@ -1984,6 +2022,48 @@ class Polylang_Detector_Test extends TestCase
         $this->write_plugin($other, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '9.9.9'));
         Polylang_Detector_Running_Versus_Listed_Fixture::$directories = array($other, $running);
         Polylang_Detector_Running_Versus_Listed_Fixture::$listed = array('polylang-pro/polylang.php');
+
+        $first = Polylang_Detector_Running_Versus_Listed_Fixture::status();
+        $second = Polylang_Detector_Running_Versus_Listed_Fixture::status();
+
+        $this->assertTrue(function_exists('pll_languages_list'));
+        $this->assertTrue($first['active']);
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertSame(5, strlen($first['version']));
+        $this->assertNotSame('9.9.9', $first['version']);
+        $this->assertSame(array(), $first['errors']);
+        $this->assertStringNotContainsString('not installed', implode("\n", $second['errors']));
+        $this->assertStringNotContainsString('9.9.9', $second['version']);
+        $this->assertStringNotContainsString('9.9.9', implode("\n", $second['errors']));
+        $this->assertSame($first, $second);
+        $this->assertSame($second['errors'], array_values(array_unique($second['errors'])));
+        $this->assertSame(array(), Polylang_Detector_Running_Versus_Listed_Fixture::expose_warnings());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_loaded_stub_does_not_replace_official_pro_version_3_9_1(): void
+    {
+        $package = $this->temp_dir() . '/polylang-pro';
+        mkdir($package, 0777, true);
+        file_put_contents(
+            $package . '/polylang.php',
+            "<?php\r\n/**\r\n * Plugin Name: Polylang Pro\r\n * Version: 3.9.1 \r\n */\r\n"
+        );
+        $stub = $package . '/polylang-pro.php';
+        file_put_contents(
+            $stub,
+            "<?php\n/**\n * Plugin Name: Polylang Pro\n * Version: 9.9.9\n */\n"
+            . "function pll_languages_list()\n{\n    throw new RuntimeException('pll_languages_list must not be called');\n}\n"
+        );
+        require_once $stub;
+
+        $other = $this->temp_dir();
+        $this->write_plugin($other, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '9.9.9'));
+        Polylang_Detector_Running_Versus_Listed_Fixture::$directories = array($other, dirname($package));
+        Polylang_Detector_Running_Versus_Listed_Fixture::$listed = array('polylang-pro/polylang-pro.php');
 
         $first = Polylang_Detector_Running_Versus_Listed_Fixture::status();
         $second = Polylang_Detector_Running_Versus_Listed_Fixture::status();
