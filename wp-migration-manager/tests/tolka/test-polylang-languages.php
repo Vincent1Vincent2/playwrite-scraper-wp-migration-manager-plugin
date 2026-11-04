@@ -1839,7 +1839,12 @@ PHP
             'locale' => 'sv_SE',
             'flag' => 'data:image/svg+xml,xxxx',
         ));
-        $GLOBALS['wpdb'] = $this->database_with_languages(array($script, $data), 'en');
+        $script_host = $this->language_term(9, 'Norsk', 'no', 'nb_NO', '', 2, 0);
+        $script_host->description = serialize(array(
+            'locale' => 'nb_NO',
+            'flag' => 'vbscript:msgbox(1)',
+        ));
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($script, $data, $script_host), 'en');
 
         $result = Polylang_Languages::export();
         $by_slug = $this->index_by_slug($result['items']);
@@ -1848,6 +1853,8 @@ PHP
         $this->assertSame('en_US', $by_slug['en']['locale']);
         $this->assertSame('', $by_slug['sv']['flag']);
         $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertSame('', $by_slug['no']['flag']);
+        $this->assertSame('nb_NO', $by_slug['no']['locale']);
     }
 
     public function test_custom_flag_url_is_kept_when_no_flag_code_is_stored()

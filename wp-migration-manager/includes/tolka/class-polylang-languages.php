@@ -1187,7 +1187,7 @@ class Polylang_Languages
         if ($flag === '' || $this->is_flag_code($flag)) {
             return $flag;
         }
-        if (preg_match('/^(javascript|data):/i', $flag) === 1) {
+        if (preg_match('/^(javascript|data|vbscript):/i', $flag) === 1) {
             return '';
         }
 
