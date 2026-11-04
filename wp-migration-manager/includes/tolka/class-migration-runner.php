@@ -481,6 +481,13 @@ class Migration_Runner
             );
         }
         if ($state === 'error') {
+            $labels = self::labels_for_status($view, 'error');
+            if (!empty($labels)) {
+                return sprintf(
+                    self::line('The preview finished with errors in %s. Review them before migrating. Existing Polylang data was not changed.'),
+                    self::join_clauses($labels)
+                );
+            }
             return self::line('The preview finished with errors. Review them before migrating. Existing Polylang data was not changed.');
         }
         if ($state === 'empty') {
@@ -545,6 +552,13 @@ class Migration_Runner
                     self::join_clauses($labels)
                 );
             }
+            $failed = self::labels_for_status($view, 'error');
+            if (!empty($failed)) {
+                return sprintf(
+                    self::line('The Tolka package was saved, but %s could not be fully read. Existing Polylang data was not changed.'),
+                    self::join_clauses($failed)
+                );
+            }
             return self::line('The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.');
         }
         if ($attempted) {
@@ -604,9 +618,19 @@ class Migration_Runner
      */
     private static function missing_labels($view)
     {
+        return self::labels_for_status($view, 'missing');
+    }
+
+    /**
+     * @param array  $view
+     * @param string $status
+     * @return string[]
+     */
+    private static function labels_for_status($view, $status)
+    {
         $labels = array();
         foreach (self::section_keys() as $section) {
-            if ($view['sections'][$section]['status'] === 'missing') {
+            if ($view['sections'][$section]['status'] === $status) {
                 $labels[] = $view['sections'][$section]['label'];
             }
         }

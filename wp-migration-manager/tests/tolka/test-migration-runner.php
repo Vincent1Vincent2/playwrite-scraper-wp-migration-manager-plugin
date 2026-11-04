@@ -565,7 +565,7 @@ namespace {
             );
             $this->assertSame('error', $preview['state']);
             $this->assertSame(
-                'The preview finished with errors. Review them before migrating. Existing Polylang data was not changed.',
+                'The preview finished with errors in Languages, Posts, Terms, Strings, Menus, and Media. Review them before migrating. Existing Polylang data was not changed.',
                 $preview['message']
             );
 
@@ -574,7 +574,7 @@ namespace {
             $this->assertSame('partial', $run['state']);
             $this->assertTrue($run['write']['ok']);
             $this->assertSame(
-                'The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Languages, Posts, Terms, Strings, Menus, and Media could not be fully read. Existing Polylang data was not changed.',
                 $run['message']
             );
             $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
@@ -1209,7 +1209,7 @@ namespace {
                 $run['errors']
             );
             $this->assertSame(
-                'The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Languages could not be fully read. Existing Polylang data was not changed.',
                 $run['message']
             );
 
@@ -1230,6 +1230,10 @@ namespace {
             );
             $this->assertSame(0, $posts['counts']['posts']);
             $this->assertSame(array(), $posts['sample']['posts']);
+            $this->assertSame(
+                'The Tolka package was saved, but Posts could not be fully read. Existing Polylang data was not changed.',
+                $posts['message']
+            );
         }
 
         public function test_schema_non_array_does_not_call_the_writer()
