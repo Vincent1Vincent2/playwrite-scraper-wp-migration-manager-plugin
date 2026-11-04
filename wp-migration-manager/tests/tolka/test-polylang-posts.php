@@ -1060,6 +1060,56 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('page', $alone['type']);
     }
 
+    public function test_scheduled_product_and_missing_default_language_use_the_lowest_remaining_id()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 60,
+                'description' => serialize(array('en' => 7, 'sv' => 60)),
+            ),
+            array(
+                'term_taxonomy_id' => 61,
+                'description' => serialize(array('sv' => 4, 'de' => 20, 'fr' => 11)),
+            ),
+        );
+        $fake->languages = array(7 => 'en', 60 => 'sv', 20 => 'de', 11 => 'fr');
+        $fake->posts_rows = array(
+            7 => $this->db_post(7, 'publish', 'Shoe', 'shoe', 'product', '', 'Live shoe'),
+            60 => $this->db_post(60, 'future', 'Sko', 'sko', 'product', '', ''),
+            20 => $this->db_post(20, 'future', 'Schuh', 'schuh', 'product', '', 'Morgen'),
+            11 => $this->db_post(11, 'draft', 'Chaussure', 'chaussure', 'product', '', ''),
+        );
+        $exporter = new Polylang_Posts();
+        $result = $exporter->export();
+        $again = $exporter->export();
+        $this->assertSame($result, $again);
+        $this->assertSame(array('post:11', 'post:60'), $this->groups($result));
+
+        $product = $result['items'][1];
+        $this->assertSame('post:60', $product['group']);
+        $this->assertSame('product', $product['type']);
+        $this->assertSame('future', $product['translations']['sv']['status']);
+        $this->assertSame('', $product['translations']['sv']['content']);
+        $this->assertSame('Sko', $product['translations']['sv']['title']);
+
+        $fallback = $result['items'][0];
+        $this->assertSame('post:11', $fallback['group']);
+        $this->assertSame('draft', $fallback['translations']['fr']['status']);
+        $this->assertSame('future', $fallback['translations']['de']['status']);
+        $this->assertArrayNotHasKey('sv', $fallback['translations']);
+        $this->assertStringContainsString(
+            'Post 4 is part of translation group post:11, but that post no longer exists.',
+            $result['errors'][0]
+        );
+        $this->assertStringContainsString(
+            'Translation group post:11 does not include the default language (sv). The group is named after post 11.',
+            implode("\n", $result['errors'])
+        );
+    }
+
     public function test_multilingual_group_without_the_default_language_names_the_lowest_id()
     {
         $exporter = new Polylang_Posts_Fixture();
