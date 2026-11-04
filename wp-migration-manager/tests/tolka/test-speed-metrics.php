@@ -1437,6 +1437,28 @@ HTML;
         $this->assertFalse($result['has_polylang_switcher']);
     }
 
+    public function test_marker_only_inside_an_attribute_does_not_count_but_body_does()
+    {
+        $only = $this->analyze('<p title="lang-item pll-switcher polylang pll-parent-menu-item">Hello</p><img alt="polylang"><link title="stylesheet" href="/not.css"><div data-html="<script src=/fake.js></script><img src=/fake.png srcset=/a.jpg,/b.jpg><link rel=stylesheet href=/print.css media=print>"></div>');
+        $this->assertFalse($only['has_polylang_switcher']);
+        $this->assertSame(1, $only['language_count']);
+        $this->assertSame(0, $only['hreflang_count']);
+        $this->assertSame(0, $only['image_count']);
+        $this->assertSame(0, $only['stylesheet_count']);
+        $this->assertSame(0, $only['script_count']);
+
+        $body = $this->analyze('<p title="lang-item">Hello</p><nav class="lang-item"></nav><img alt="polylang" src="/shown.png" srcset="/shown.png 1x, /shown@2.png 2x"><link title="nope" href=/style.css rel=stylesheet><link rel="stylesheet" href="/print.css" media="print"><script src="/theme.js"></script>');
+        $this->assertTrue($body['has_polylang_switcher']);
+        $this->assertSame(2, $body['language_count']);
+        $this->assertSame(1, $body['image_count']);
+        $this->assertSame(2, $body['stylesheet_count']);
+        $this->assertSame(1, $body['script_count']);
+
+        $text = $this->analyze('<p>The pll-switcher is described in the body.</p>');
+        $this->assertTrue($text['has_polylang_switcher']);
+        $this->assertSame(2, $text['language_count']);
+    }
+
     public function test_markup_inside_an_attribute_is_not_a_real_tag()
     {
         $images = $this->analyze('<div data-html="<img src=/fake.png srcset=/a.jpg,/b.jpg,/c.jpg>"><img src="/real.png" srcset="/real.png 1x, /real@2.png 2x"></div>');

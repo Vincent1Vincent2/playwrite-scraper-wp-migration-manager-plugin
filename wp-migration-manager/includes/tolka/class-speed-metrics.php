@@ -819,9 +819,21 @@ class Speed_Metrics
     }
 
     /**
-     * Whether a real attribute value contains a switcher marker.
+     * Class names and script URLs can be the live switcher.
      *
-     * A value that itself contains "<" is stored HTML, not the live switcher.
+     * Title, alt, and data attributes are not, even when they contain the
+     * same word. A value that itself contains "<" is stored HTML.
+     *
+     * @param string $name Lowercased attribute name.
+     * @return bool
+     */
+    private static function switcher_attribute($name)
+    {
+        return $name === 'class' || $name === 'src';
+    }
+
+    /**
+     * Whether a real attribute value contains a switcher marker.
      *
      * @param string $tag One start tag.
      * @return bool
@@ -844,6 +856,8 @@ class Speed_Metrics
                 break;
             }
 
+            $name_start = $i;
+
             while (
                 $i < $length
                 && !self::is_ascii_space($tag[$i])
@@ -853,6 +867,8 @@ class Speed_Metrics
             ) {
                 $i++;
             }
+
+            $attr = substr($tag, $name_start, $i - $name_start);
 
             while ($i < $length && self::is_ascii_space($tag[$i])) {
                 $i++;
@@ -904,7 +920,11 @@ class Speed_Metrics
                 $value = substr($tag, $start, $i - $start);
             }
 
-            if (strpos($value, '<') === false && self::string_has_marker($value)) {
+            if (
+                self::switcher_attribute($attr)
+                && strpos($value, '<') === false
+                && self::string_has_marker($value)
+            ) {
                 return true;
             }
         }
