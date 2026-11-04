@@ -463,6 +463,18 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(856, $estimate['tolka_ms']);
         $this->assertSame(14.4, $estimate['faster_percent']);
         $this->assertSame($benchmarks, $estimate['coefficients']);
+
+        $decimal = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => '1000.0'),
+            array('language_count' => '3.0', 'has_polylang_switcher' => true, 'script_count' => '4.0'),
+            self::contractBenchmarks()
+        );
+        $this->assertTrue($decimal['ok']);
+        $this->assertSame(1000, $decimal['current_ms']);
+        $this->assertSame(856, $decimal['tolka_ms']);
+        $this->assertSame(162, $decimal['overhead_ms']);
+        $this->assertSame(14.4, $decimal['faster_percent']);
+        $this->assertSame('14.4% faster', $decimal['faster_label']);
     }
 
     public function test_switcher_flag_accepts_common_forms()
