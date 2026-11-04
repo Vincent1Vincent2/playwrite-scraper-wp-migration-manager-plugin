@@ -2111,5 +2111,39 @@ namespace {
             $this->assertNotSame($post['content'], $written_post['content']);
             $this->assertTrue($run['ok']);
         }
+
+        public function test_multibyte_preview_text_does_not_replace_the_writer_string()
+        {
+            $this->reset_doubles();
+            $exact = str_repeat('é', 400);
+            $over = str_repeat('é', 401);
+            $this->assertSame(800, strlen($exact));
+            $this->assertSame(802, strlen($over));
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Post',
+                        'excerpt' => $exact,
+                        'content' => $over,
+                    )),
+                    'errors' => array(),
+                ),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $sample = $preview['sample']['posts'][0];
+            $this->assertSame($exact, $sample['excerpt']);
+            $this->assertSame($exact . '...', $sample['content']);
+            $this->assertSame(400, mb_strlen($exact, 'UTF-8'));
+            $this->assertNotSame($over, $sample['content']);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            Migration_Runner_Test_Double::run();
+            $written = \WMM\Tolka\RunnerTest\Writer::$package['posts'][0];
+            $this->assertSame($exact, $written['excerpt']);
+            $this->assertSame($over, $written['content']);
+            $this->assertSame(802, strlen($written['content']));
+            $this->assertNotSame($sample['content'], $written['content']);
+        }
     }
 }
