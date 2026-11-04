@@ -2714,6 +2714,46 @@ PHP
         $this->assertSame('', $result['items'][0]['translations']['sv']['content']);
     }
 
+    public function test_rebuilt_group_folds_SV_and_sv_and_keeps_the_default_post()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'SV'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 81,
+                'description' => '',
+            ),
+        );
+        $fake->relationships = array(81 => array(50, 8, 2));
+        $fake->languages = array(50 => ' SV ', 8 => 'EN', 2 => 'sv');
+        $fake->posts_rows = array(
+            50 => $this->db_post(50, 'future', 'Fågel', 'fågel-öl', 'post', '', '<p>ä ö å</p>'),
+            8 => $this->db_post(8, 'draft', 'Bird', 'bird', 'post', '', ''),
+            2 => $this->db_post(2, 'publish', 'Earlier number', 'earlier', 'post', '', 'Not first'),
+        );
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:50', $result['items'][0]['group']);
+        $this->assertSame(array('sv', 'en'), array_keys($result['items'][0]['translations']));
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['translations']);
+        $this->assertSame(50, $result['items'][0]['translations']['sv']['id']);
+        $this->assertSame('future', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Fågel', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('fågel-öl', $result['items'][0]['translations']['sv']['slug']);
+        $this->assertSame('<p>ä ö å</p>', $result['items'][0]['translations']['sv']['content']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame(
+            array('Language sv is listed more than once in this translation group. Post 50 was kept.'),
+            $result['errors']
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Not first', $encoded);
+    }
+
     private function skip_when_wordpress_or_polylang_is_loaded()
     {
         if (function_exists('get_post') || function_exists('get_option') || function_exists('get_posts') || function_exists('pll_get_post_translations') || function_exists('pll_default_language') || class_exists('PLL') || class_exists('Polylang')) {
