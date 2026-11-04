@@ -444,6 +444,116 @@ namespace WMM\Tolka {
             );
         }
 
+        public function test_rejected_nonce_is_an_error_without_a_percent()
+        {
+            $this->requireStubs();
+
+            $requests = array(
+                array(),
+                array('nonce' => ''),
+                array('nonce' => 'rejected'),
+                array('url' => 'https://public.example.test/'),
+            );
+            $handlers = array(
+                'wmm_tolka_ajax_measure',
+                'wmm_tolka_ajax_preview',
+                'wmm_tolka_ajax_run',
+            );
+
+            foreach ($requests as $post) {
+                foreach ($handlers as $handler) {
+                    $GLOBALS['wmm_tolka_test_nonce_valid'] = false;
+                    $GLOBALS['wmm_tolka_test_can'] = true;
+                    $_POST = $post;
+                    unset($GLOBALS['wmm_tolka_test_json']);
+
+                    ob_start();
+                    $this->capture(function () use ($handler) {
+                        $handler();
+                    });
+                    $output = ob_get_clean();
+
+                    $this->assertSame('', $output);
+                    $payload = $GLOBALS['wmm_tolka_test_json'];
+                    $this->assertFalse($payload['success']);
+                    $this->assertStringContainsString('security check failed', $payload['data']['message']);
+                    $this->assertArrayNotHasKey('estimate', $payload['data']);
+                    $this->assertArrayNotHasKey('missing', $payload['data']);
+                    $this->assertNoSpeedPercent($payload);
+                }
+            }
+        }
+
+        public function test_user_without_manage_options_is_rejected()
+        {
+            $this->requireStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = false;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => 'https://public.example.test/',
+            );
+
+            foreach (array('wmm_tolka_ajax_measure', 'wmm_tolka_ajax_preview', 'wmm_tolka_ajax_run') as $handler) {
+                unset($GLOBALS['wmm_tolka_test_json']);
+                ob_start();
+                $this->capture(function () use ($handler) {
+                    $handler();
+                });
+                $output = ob_get_clean();
+
+                $this->assertSame('', $output);
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+                $this->assertFalse($payload['success']);
+                $this->assertStringContainsString('permission', $payload['data']['message']);
+                $this->assertStringContainsString('do not have permission', $payload['data']['message']);
+                $this->assertArrayNotHasKey('estimate', $payload['data']);
+                $this->assertArrayNotHasKey('missing', $payload['data']);
+                $this->assertNoSpeedPercent($payload);
+            }
+        }
+
+        public function test_measure_without_speed_classes_returns_no_percent()
+        {
+            $this->requireStubs();
+
+            if (
+                class_exists(Speed_Loader::class)
+                || class_exists(Speed_Metrics::class)
+                || class_exists(Speed_Estimate::class)
+            ) {
+                $this->markTestSkipped('Speed classes are already loaded.');
+            }
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => 'https://public.example.test/',
+            );
+
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $output = ob_get_clean();
+
+            $this->assertSame('', $output);
+            $payload = $GLOBALS['wmm_tolka_test_json'];
+            $this->assertFalse($payload['success']);
+            $this->assertSame(
+                array('Speed_Loader', 'Speed_Metrics', 'Speed_Estimate'),
+                $payload['data']['missing']
+            );
+            $this->assertArrayNotHasKey('estimate', $payload['data']);
+            $this->assertArrayNotHasKey('metrics', $payload['data']);
+            $this->assertArrayNotHasKey('faster_percent', $payload['data']);
+            $this->assertArrayNotHasKey('faster_label', $payload['data']);
+            $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+            $this->assertNoSpeedPercent($payload);
+        }
+
         public function test_fallback_screen_has_empty_states_and_required_ids()
         {
             $this->requireStubs();
@@ -850,6 +960,30 @@ PHP
                 $this->fail('Expected the JSON response to stop the handler.');
             } catch (\RuntimeException $e) {
                 $this->assertStringStartsWith('json_', $e->getMessage());
+            }
+        }
+
+        /**
+         * A failed measure must not carry a speed percent.
+         *
+         * @param mixed $value Response payload.
+         */
+        private function assertNoSpeedPercent($value)
+        {
+            if (is_string($value)) {
+                $this->assertDoesNotMatchRegularExpression('/faster_percent|faster_label|%\\s*faster|\\d+(?:\\.\\d+)?\\s*%/i', $value);
+                return;
+            }
+
+            if (!is_array($value)) {
+                return;
+            }
+
+            foreach ($value as $key => $item) {
+                if ($key === 'faster_percent' || $key === 'faster_label') {
+                    $this->fail('A speed percent was returned.');
+                }
+                $this->assertNoSpeedPercent($item);
             }
         }
 
