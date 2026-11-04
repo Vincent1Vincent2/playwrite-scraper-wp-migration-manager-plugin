@@ -344,10 +344,12 @@ class Migration_Runner
     private static function take_sample($items)
     {
         $limit = (int) self::SAMPLE_LIMIT;
-        if ($limit < 1) {
+        if ($limit < 1 || !is_array($items)) {
             return array();
         }
         $sample = array();
+        // Walk insertion order. A numeric for-loop would follow the keys and
+        // could pull a later post forward when those keys sort first.
         foreach ($items as $item) {
             if (count($sample) >= $limit) {
                 break;
@@ -713,7 +715,7 @@ class Migration_Runner
     {
         if ($count > self::SAMPLE_LIMIT) {
             $message .= ' ' . sprintf(
-                self::line('The preview shows the first %d.'),
+                self::line('The preview shows the first %d, in the order they were exported.'),
                 self::SAMPLE_LIMIT
             );
         }

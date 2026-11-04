@@ -618,7 +618,7 @@ namespace {
             $this->assertSame('5 more are not shown.', $preview['sections']['posts']['more_label']);
             $this->assertSame(25, $preview['sections']['posts']['count']);
             $this->assertSame(
-                '25 posts are ready to migrate. The preview shows the first 20.',
+                '25 posts are ready to migrate. The preview shows the first 20, in the order they were exported.',
                 $preview['sections']['posts']['message']
             );
             $encoded = json_encode($preview['sample']);
@@ -1342,7 +1342,7 @@ namespace {
             $this->assertSame(1, $preview['sections']['posts']['more']);
             $this->assertSame('1 more is not shown.', $preview['sections']['posts']['more_label']);
             $this->assertSame(
-                '21 posts are ready to migrate. The preview shows the first 20.',
+                '21 posts are ready to migrate. The preview shows the first 20, in the order they were exported.',
                 $preview['sections']['posts']['message']
             );
             $titles = array();
@@ -1389,7 +1389,7 @@ namespace {
             $this->assertSame(1, $preview['sections']['posts']['more']);
             $this->assertSame('1 more is not shown.', $preview['sections']['posts']['more_label']);
             $this->assertSame(
-                'Posts could not be fully read. Review the errors before migrating. 21 posts were still found. The preview shows the first 20.',
+                'Posts could not be fully read. Review the errors before migrating. 21 posts were still found. The preview shows the first 20, in the order they were exported.',
                 $preview['sections']['posts']['message']
             );
             $this->assertContains('Posts: One post could not be read.', $preview['errors']);
@@ -2675,8 +2675,14 @@ namespace {
             $this->assertIsInt($preview['counts']['posts']);
             $this->assertSame(25, $preview['counts']['posts']);
             $this->assertSame(25, $preview['sections']['posts']['count']);
+            $this->assertSame(range(0, 19), array_keys($preview['sample']['posts']));
             $this->assertCount(20, $preview['sample']['posts']);
             $this->assertArrayNotHasKey(20, $preview['sample']['posts']);
+            $this->assertSame(5, $preview['sections']['posts']['more']);
+            $this->assertSame(
+                '25 posts are ready to migrate. The preview shows the first 20, in the order they were exported.',
+                $preview['sections']['posts']['message']
+            );
             for ($i = 0; $i < 20; $i++) {
                 $this->assertSame('Post ' . $i, $preview['sample']['posts'][$i]['title']);
                 $this->assertSame('body ' . $i, $preview['sample']['posts'][$i]['content']);
@@ -2712,6 +2718,73 @@ namespace {
             $this->assertSame('AAA sorts first', $written[24]['title']);
             $this->assertSame($last_text, $written[24]['content']);
             $this->assertSame(490, strlen($written[24]['content']));
+        }
+
+        public function test_descending_post_keys_keep_export_order_and_the_full_last_post()
+        {
+            $this->reset_doubles();
+            $last_text = 'LAST-POST-' . str_repeat('z', 480);
+            $posts = array();
+            $expected_keys = array();
+            for ($i = 0; $i < 25; $i++) {
+                $key = 1000 - $i;
+                $expected_keys[] = $key;
+                $posts[$key] = array(
+                    'title' => ($i === 24) ? 'AAA sorts first' : (($i === 21) ? '000 sorts before Post 0' : 'Post ' . $i),
+                    'content' => ($i === 24) ? $last_text : 'body ' . $i,
+                );
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array('items' => $posts, 'errors' => array()),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertIsInt($preview['counts']['posts']);
+            $this->assertSame(25, $preview['counts']['posts']);
+            $this->assertSame(range(0, 19), array_keys($preview['sample']['posts']));
+            $this->assertSame('[', substr(json_encode($preview['sample']['posts']), 0, 1));
+            for ($i = 0; $i < 20; $i++) {
+                $this->assertSame('Post ' . $i, $preview['sample']['posts'][$i]['title']);
+                $this->assertSame('body ' . $i, $preview['sample']['posts'][$i]['content']);
+                $this->assertSame('Post ' . $i, $preview['sections']['posts']['labels'][$i]);
+            }
+            $this->assertStringNotContainsString('AAA sorts first', json_encode($preview['sample']['posts']));
+            $this->assertStringNotContainsString('000 sorts before Post 0', json_encode($preview['sample']['posts']));
+            $this->assertStringNotContainsString('LAST-POST-', json_encode($preview['sample']['posts']));
+            $this->assertSame(
+                '25 posts are ready to migrate. The preview shows the first 20, in the order they were exported.',
+                $preview['sections']['posts']['message']
+            );
+            $shown = array_values($preview['posts']['items']);
+            $this->assertCount(25, $shown);
+            $this->assertSame('Post 0', $shown[0]['title']);
+            $this->assertSame('Post 19', $shown[19]['title']);
+            $this->assertSame('AAA sorts first', $shown[24]['title']);
+            $this->assertNotSame($last_text, $shown[24]['content']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertTrue($run['ok']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(range(0, 19), array_keys($run['sample']['posts']));
+            $this->assertSame('Post 0', $run['sample']['posts'][0]['title']);
+            $this->assertSame('Post 19', $run['sample']['posts'][19]['title']);
+            $written = \WMM\Tolka\RunnerTest\Writer::$package['posts'];
+            $this->assertSame($expected_keys, array_keys($written));
+            $values = array_values($written);
+            $this->assertCount(25, $values);
+            for ($i = 0; $i < 20; $i++) {
+                $this->assertSame('Post ' . $i, $values[$i]['title']);
+                $this->assertSame('body ' . $i, $values[$i]['content']);
+            }
+            $this->assertSame('Post 20', $values[20]['title']);
+            $this->assertSame('000 sorts before Post 0', $values[21]['title']);
+            $this->assertSame('Post 22', $values[22]['title']);
+            $this->assertSame('Post 23', $values[23]['title']);
+            $this->assertSame('AAA sorts first', $values[24]['title']);
+            $this->assertSame($last_text, $values[24]['content']);
+            $this->assertSame(490, strlen($values[24]['content']));
         }
     }
 }
