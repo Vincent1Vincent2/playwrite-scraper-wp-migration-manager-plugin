@@ -259,6 +259,10 @@ trait Tolka_Contract_Tests
         $overhead = (int) min($raw, $cap);
         $tolka = (int) max(1, $current - $overhead + min($languages * $tolka_per_language, $overhead));
 
+        $this->assertTrue(is_int($raw));
+        $this->assertTrue(is_int($cap));
+        $this->assertTrue(is_int($overhead));
+        $this->assertTrue(is_int($tolka));
         $this->assertSame(465, $raw);
         $this->assertSame(70, $cap);
         $this->assertSame(70, $overhead);
@@ -315,6 +319,55 @@ trait Tolka_Contract_Tests
         $this->assertSame(0, $negative['overhead_ms']);
         $this->assertSame(1, $negative['tolka_ms']);
         $this->assert_close(0.0, $negative['faster_percent'], 'Negative inputs');
+    }
+
+    /**
+     * Overhead cap in integer milliseconds. This does not need Speed_Estimate.
+     *
+     * Eight languages, the switcher, and 20 scripts on a 100 ms page:
+     * raw = 8*35 + 25 + 20*8 = 465, cap = floor(100*0.7) = 70, Tolka = 78.
+     */
+    public function test_overhead_cap_uses_integer_milliseconds()
+    {
+        $per_language = 35;
+        $switcher_ms = 25;
+        $per_script = 8;
+        $tolka_per_language = 6;
+        $ratio = 0.7;
+        $coefficients = $this->coefficients();
+
+        $this->assertSame($per_language, $coefficients['polylang_extra_ms_per_language']);
+        $this->assertSame($switcher_ms, $coefficients['polylang_switcher_ms']);
+        $this->assertSame($per_script, $coefficients['polylang_extra_ms_per_script']);
+        $this->assertSame($tolka_per_language, $coefficients['tolka_ms_per_language']);
+        $this->assertSame($ratio, $coefficients['max_overhead_ratio']);
+
+        $raw = (8 * $per_language) + $switcher_ms + (20 * $per_script);
+        $cap = (int) floor(100 * $ratio);
+        $overhead = (int) min($raw, $cap);
+        $tolka = (int) max(1, 100 - $overhead + min(8 * $tolka_per_language, $overhead));
+
+        $this->assertTrue(is_int($raw));
+        $this->assertTrue(is_int($cap));
+        $this->assertTrue(is_int($overhead));
+        $this->assertTrue(is_int($tolka));
+        $this->assertSame(465, $raw);
+        $this->assertSame(70, $cap);
+        $this->assertSame(70, $overhead);
+        $this->assertSame(78, $tolka);
+
+        $projected = $this->expected_projection(
+            array('ok' => true, 'total_ms' => 100),
+            array('language_count' => 8, 'has_polylang_switcher' => true, 'script_count' => 20),
+            $coefficients
+        );
+
+        $this->assertTrue(is_int($projected['current_ms']));
+        $this->assertTrue(is_int($projected['overhead_ms']));
+        $this->assertTrue(is_int($projected['tolka_ms']));
+        $this->assertSame(100, $projected['current_ms']);
+        $this->assertSame(70, $projected['overhead_ms']);
+        $this->assertSame(78, $projected['tolka_ms']);
     }
 
     /**
@@ -1847,7 +1900,7 @@ class Harness_Test extends Tolka_Test_Case
         $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary)
             . ' -c ' . escapeshellarg(WMM_TOLKA_PLUGIN_DIR . '/phpunit.xml.dist')
             . ' --do-not-cache-result' . $extra
-            . ' --filter ' . escapeshellarg('test_reference_formula_matches_worked_examples$');
+            . ' --filter ' . escapeshellarg('test_overhead_cap_uses_integer_milliseconds$');
         $output = array();
         $status = 1;
         exec($command . ' 2>&1', $output, $status);
