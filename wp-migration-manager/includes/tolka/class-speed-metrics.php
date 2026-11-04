@@ -661,12 +661,13 @@ class Speed_Metrics
                 } else {
                     $value_start = $i;
 
-                    while (
-                        $i < $length
-                        && !self::is_ascii_space($tag[$i])
-                        && $tag[$i] !== '>'
-                        && $tag[$i] !== '/'
-                    ) {
+                    while ($i < $length && !self::is_ascii_space($tag[$i]) && $tag[$i] !== '>') {
+                        // The slash in <link href=/a.css/> closes the tag. A slash
+                        // inside /css/style.css is part of the URL.
+                        if ($tag[$i] === '/' && ($i + 1 >= $length || $tag[$i + 1] === '>')) {
+                            break;
+                        }
+
                         $i++;
                     }
 

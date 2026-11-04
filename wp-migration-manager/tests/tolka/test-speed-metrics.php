@@ -438,6 +438,23 @@ HTML;
         $this->assertSame(2, $result['stylesheet_count']);
     }
 
+    public function test_unquoted_root_relative_url_does_not_hide_later_attributes()
+    {
+        $html = '<link href=/style.css rel=stylesheet><script src=/theme.js></script><a href=/sv/ hreflang=sv></a><a href=/ hreflang=x-default></a>';
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['stylesheet_count']);
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(1, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertFalse($result['truncated']);
+
+        $self_closing = $this->analyze('<link href=/css/style.css rel=stylesheet/>');
+        $this->assertSame(1, $self_closing['stylesheet_count']);
+        $this->assertSame(1, $self_closing['language_count']);
+    }
+
     public function test_one_script_tag_and_one_stylesheet_link_are_counted()
     {
         $html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script></head><body></body></html>';
