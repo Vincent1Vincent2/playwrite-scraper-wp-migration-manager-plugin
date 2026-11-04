@@ -1058,16 +1058,23 @@ function wmm_tolka_render_fallback_wizard()
     echo esc_html__('Use the public address visitors open. Local and private addresses are not measured.', 'migration-manager');
     echo '</p></div>';
 
+    $speed_html = isset($gaps['measure']) ? '' : wmm_tolka_capture_partial('views/speed-estimate.php');
+    $measure_note_id = $speed_html === '' ? 'wmm-tolka-measure-note' : '';
+
     echo '<p class="wmm-tolka-actions">';
     wmm_tolka_render_button(
         'wmm-tolka-measure',
         __('Measure speed', 'migration-manager'),
-        isset($gaps['measure']) ? $gaps['measure'] : ''
+        isset($gaps['measure']) ? $gaps['measure'] : '',
+        false,
+        $measure_note_id
     );
     wmm_tolka_render_button(
         'wmm-tolka-preview',
         __('Preview migration', 'migration-manager'),
-        isset($gaps['preview']) ? $gaps['preview'] : ''
+        isset($gaps['preview']) ? $gaps['preview'] : '',
+        false,
+        'wmm-tolka-preview-note'
     );
     wmm_tolka_render_button(
         'wmm-tolka-run',
@@ -1088,15 +1095,14 @@ function wmm_tolka_render_fallback_wizard()
     echo '<section class="wmm-tolka-section" aria-labelledby="wmm-tolka-speed-heading">';
     echo '<h2 id="wmm-tolka-speed-heading" class="wmm-tolka-heading">' . esc_html__('Speed', 'migration-manager') . '</h2>';
     echo '<div id="wmm-tolka-speed" class="wmm-tolka-panel" aria-live="polite">';
-    $speed = isset($gaps['measure']) ? '' : wmm_tolka_capture_partial('views/speed-estimate.php');
-    if ($speed !== '') {
-        echo $speed;
+    if ($speed_html !== '') {
+        echo $speed_html;
     } elseif (isset($gaps['measure'])) {
-        echo '<p class="wmm-tolka-empty">';
+        echo '<p class="wmm-tolka-empty" id="wmm-tolka-measure-note">';
         echo esc_html($gaps['measure'] . ' ' . __('Nothing was changed.', 'migration-manager'));
         echo '</p>';
     } else {
-        echo '<p class="wmm-tolka-empty">';
+        echo '<p class="wmm-tolka-empty" id="wmm-tolka-measure-note">';
         echo esc_html__('No measurement yet. Enter the public site URL, then choose Measure speed. If the check fails, this screen shows an error and does not invent a percent.', 'migration-manager');
         echo '</p>';
     }
@@ -1105,7 +1111,7 @@ function wmm_tolka_render_fallback_wizard()
     echo '<section class="wmm-tolka-section" aria-labelledby="wmm-tolka-preview-heading">';
     echo '<h2 id="wmm-tolka-preview-heading" class="wmm-tolka-heading">' . esc_html__('Preview', 'migration-manager') . '</h2>';
     echo '<div id="wmm-tolka-preview-result" class="wmm-tolka-panel" aria-live="polite">';
-    echo '<p class="wmm-tolka-empty">';
+    echo '<p class="wmm-tolka-empty" id="wmm-tolka-preview-note">';
     if (isset($gaps['preview'])) {
         echo esc_html($gaps['preview'] . ' ' . __('Nothing was changed.', 'migration-manager'));
     } else {

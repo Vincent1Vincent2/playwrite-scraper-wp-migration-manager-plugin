@@ -609,6 +609,9 @@ namespace WMM\Tolka {
             $this->assertSame(3, substr_count($html, ' disabled '));
             $this->assertStringContainsString('Polylang cannot be checked on this install yet.', $html);
             $this->assertStringContainsString('includes/tolka/data/benchmarks.json', $html);
+            $this->assertStringContainsString('id="wmm-tolka-measure-note"', $html);
+            $this->assertStringContainsString('aria-describedby="wmm-tolka-measure-note"', $html);
+            $this->assertStringContainsString('aria-describedby="wmm-tolka-preview-note"', $html);
             $this->assertStringContainsString('id="wmm-tolka-fallback"', $html);
             $this->assertStringContainsString('Enter', $html);
             $this->assertStringContainsString('Enable JavaScript', $html);
