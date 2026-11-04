@@ -80,15 +80,28 @@ class Polylang_Menus
         $this->catalog = null;
         $this->location_labels = array();
 
-        if (! $this->wordpress_loaded()) {
-            return array(
-                'items' => array(),
-                'errors' => array($this->message_wordpress_missing()),
-            );
-        }
-
         try {
+            if (! $this->wordpress_loaded()) {
+                return array(
+                    'items' => array(),
+                    'errors' => array($this->message_wordpress_missing()),
+                );
+            }
+
             $items = $this->build_items();
+            $errors = $this->warnings;
+            if (! $this->polylang_active() && ! $this->has_assigned_menu($items)) {
+                if (empty($items)) {
+                    $errors[] = $this->message_inactive_empty();
+                } else {
+                    $errors[] = $this->message_inactive_locations_only();
+                }
+            }
+
+            return array(
+                'items' => $items,
+                'errors' => array_values($errors),
+            );
         } catch (\Throwable $exception) {
             unset($exception);
             return array(
@@ -96,20 +109,6 @@ class Polylang_Menus
                 'errors' => array($this->message_read_failed()),
             );
         }
-
-        $errors = $this->warnings;
-        if (! $this->polylang_active() && ! $this->has_assigned_menu($items)) {
-            if (empty($items)) {
-                $errors[] = $this->message_inactive_empty();
-            } else {
-                $errors[] = $this->message_inactive_locations_only();
-            }
-        }
-
-        return array(
-            'items' => $items,
-            'errors' => array_values($errors),
-        );
     }
 
     /**
@@ -129,9 +128,14 @@ class Polylang_Menus
      */
     protected function polylang_active()
     {
-        return function_exists('pll_languages_list')
-            || class_exists('PLL')
-            || class_exists('Polylang');
+        try {
+            return function_exists('pll_languages_list')
+                || class_exists('PLL')
+                || class_exists('Polylang');
+        } catch (\Throwable $exception) {
+            unset($exception);
+            return false;
+        }
     }
 
     /**

@@ -455,6 +455,40 @@ class Polylang_Menus_Test extends TestCase
         $this->assertArrayNotHasKey(99, $this->menu_ids($result));
     }
 
+    public function test_explicit_empty_slot_is_not_filled_from_the_theme_mod(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en', 'sv'),
+            'menus' => array(
+                10 => 'English',
+                11 => 'Swedish',
+            ),
+            'term_languages' => array(
+                11 => 'sv',
+            ),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array(
+                            'en' => 10,
+                            'sv' => 0,
+                        ),
+                    ),
+                ),
+            ),
+            'theme_locations' => array(
+                'primary___sv' => 11,
+            ),
+        ));
+
+        $result = $fixture->run();
+
+        $this->assertSame(0, $this->location($result, 'primary')['translations']['sv']['menu_id']);
+        $this->assertSame(11, $this->location($result, '')['translations']['sv']['menu_id']);
+    }
+
     public function test_empty_language_switcher_uses_the_languages_title(): void
     {
         $fixture = $this->fixture(array(
