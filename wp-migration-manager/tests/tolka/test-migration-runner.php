@@ -639,6 +639,7 @@ namespace {
             $run = Migration_Runner_Test_Double::run();
             $this->assertSame(450, strlen($run['write'] === null ? '' : \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items'][0]['content']));
             $this->assertSame($content, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertNotSame($sample['content'], \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
             $this->assertArrayNotHasKey('missing', \WMM\Tolka\RunnerTest\Schema::$parts);
             $this->assertSame(
                 array('languages', 'posts', 'terms', 'strings', 'menus', 'media'),
@@ -2054,6 +2055,61 @@ namespace {
             $this->assertSame(10, $preview['sections']['posts']['more']);
             $this->assertSame('10 more are not shown.', $preview['sections']['posts']['more_label']);
             $this->assertCount(30, $preview['posts']['items']);
+        }
+
+        public function test_long_sample_strings_are_shortened_and_the_writer_keeps_the_original()
+        {
+            $this->assertSame(400, \WMM\Tolka\Migration_Runner::SAMPLE_TEXT_LIMIT);
+            $this->reset_doubles();
+            $exact = str_repeat('b', 400);
+            $over = str_repeat('c', 401);
+            $nested = str_repeat('d', 500);
+            $translated = str_repeat('e', 450);
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Post',
+                        'excerpt' => $exact,
+                        'content' => $over,
+                        'translations' => array(
+                            'en' => array('content' => $nested),
+                        ),
+                    )),
+                    'errors' => array(),
+                ),
+                3 => array(
+                    'items' => array(array(
+                        'name' => 'Greeting',
+                        'string' => $translated,
+                    )),
+                    'errors' => array(),
+                ),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $post = $preview['sample']['posts'][0];
+            $this->assertSame($exact, $post['excerpt']);
+            $this->assertSame(str_repeat('c', 400) . '...', $post['content']);
+            $this->assertNotSame($over, $post['content']);
+            $this->assertSame(str_repeat('d', 400) . '...', $post['translations']['en']['content']);
+            $this->assertNotSame($nested, $post['translations']['en']['content']);
+            $this->assertSame(str_repeat('e', 400) . '...', $preview['sample']['strings'][0]['string']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $written_post = \WMM\Tolka\RunnerTest\Writer::$package['posts'][0];
+            $written_string = \WMM\Tolka\RunnerTest\Writer::$package['strings'][0];
+            $this->assertSame($exact, $written_post['excerpt']);
+            $this->assertSame($over, $written_post['content']);
+            $this->assertSame($nested, $written_post['translations']['en']['content']);
+            $this->assertSame($translated, $written_string['string']);
+            $this->assertSame(401, strlen($written_post['content']));
+            $this->assertSame(500, strlen($written_post['translations']['en']['content']));
+            $this->assertSame(450, strlen($written_string['string']));
+            $this->assertNotSame($post['content'], $written_post['content']);
+            $this->assertTrue($run['ok']);
         }
     }
 }
