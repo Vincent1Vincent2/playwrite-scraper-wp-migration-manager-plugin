@@ -1594,8 +1594,10 @@ class Polylang_Menus
      * Turn a flat, possibly unordered item list into a tree.
      *
      * Items whose parent is missing, and items that point at each other in a
-     * cycle, are kept. Cycles are broken so the export cannot recurse forever.
-     * Sibling order follows menu position, then item id, then the original order.
+     * cycle, are kept. A child row may be stored before its parent. Nesting
+     * follows the parent id, not the row order. Cycles are broken so the
+     * export cannot recurse forever. Sibling order follows menu position,
+     * then item id, then the original order.
      *
      * @param array<int, mixed> $flat Raw items.
      * @return array<int, array>

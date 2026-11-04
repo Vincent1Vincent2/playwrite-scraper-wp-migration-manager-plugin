@@ -1791,6 +1791,213 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(array(), $second['errors']);
     }
 
+    public function test_child_row_stored_before_parent_stays_nested_under_sv(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'en',
+            'languages' => array('en', 'sv'),
+            'registered' => array(
+                'primary' => 'Primär',
+            ),
+            'menus' => array(8 => 'Meny'),
+            'term_languages' => array(8 => 'sv'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('sv' => 8),
+                    ),
+                ),
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => 30,
+                        'parent' => 10,
+                        'title' => 'Ärtor',
+                        'url' => '',
+                        'object' => 'page',
+                        'object_id' => 4,
+                        'position' => 1,
+                    ),
+                    array(
+                        'id' => 31,
+                        'parent' => 10,
+                        'title' => 'Öl',
+                        'url' => 'https://example.com/öl',
+                        'object' => 'custom',
+                        'object_id' => 5,
+                        'position' => 2,
+                    ),
+                    array(
+                        'id' => 10,
+                        'parent' => 0,
+                        'title' => 'Mat',
+                        'url' => 'https://example.com/mat',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 3,
+                    ),
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $items = $this->location($second, 'primary')['translations']['sv']['items'];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $items);
+        $this->assertSame('Mat', $items[0]['title']);
+        $this->assertSame('https://example.com/mat', $items[0]['url']);
+        $this->assertCount(2, $items[0]['children']);
+        $this->assertSame('Ärtor', $items[0]['children'][0]['title']);
+        $this->assertSame('', $items[0]['children'][0]['url']);
+        $this->assertSame(10, $items[0]['children'][0]['parent']);
+        $this->assertSame('Öl', $items[0]['children'][1]['title']);
+        $this->assertSame('https://example.com/öl', $items[0]['children'][1]['url']);
+        $this->assertSame(10, $items[0]['children'][1]['parent']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, $counts['primary']);
+    }
+
+    public function test_database_child_row_before_parent_stays_nested_under_sv(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->menus = array(
+            array(
+                'id' => 12,
+                'name' => 'Meny',
+                'slug' => 'meny',
+            ),
+        );
+        $database->term_languages = array(
+            12 => 'pll_sv',
+        );
+        $database->term_translations = array();
+        $database->menu_posts = array(
+            12 => array(
+                array(
+                    'id' => 32,
+                    'title' => 'Djup',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 0,
+                ),
+                array(
+                    'id' => 30,
+                    'title' => 'Ärtor',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 1,
+                ),
+                array(
+                    'id' => 31,
+                    'title' => 'Öl',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 2,
+                ),
+                array(
+                    'id' => 10,
+                    'title' => 'Mat',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 3,
+                ),
+            ),
+        );
+        $database->meta[32] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '0',
+            '_menu_item_menu_item_parent' => '30',
+            '_menu_item_url' => '',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[30] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'page',
+            '_menu_item_object_id' => '4',
+            '_menu_item_menu_item_parent' => '10',
+            '_menu_item_url' => '',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[31] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '5',
+            '_menu_item_menu_item_parent' => '10',
+            '_menu_item_url' => 'https://example.com/öl',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[10] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '1',
+            '_menu_item_menu_item_parent' => '0',
+            '_menu_item_url' => 'https://example.com/mat',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'en',
+            'nav_menus' => array(
+                'flavor' => array(
+                    'primary' => array('sv' => 12),
+                ),
+            ),
+        ));
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $menus = new Polylang_Menus();
+            $first = $menus->export();
+            $second = $menus->export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $items = $this->location($second, 'primary')['translations']['sv']['items'];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertCount(1, $items);
+        $this->assertSame('Mat', $items[0]['title']);
+        $this->assertSame('https://example.com/mat', $items[0]['url']);
+        $this->assertCount(2, $items[0]['children']);
+        $this->assertSame('Ärtor', $items[0]['children'][0]['title']);
+        $this->assertSame('', $items[0]['children'][0]['url']);
+        $this->assertSame(10, $items[0]['children'][0]['parent']);
+        $this->assertSame('Djup', $items[0]['children'][0]['children'][0]['title']);
+        $this->assertSame('', $items[0]['children'][0]['children'][0]['url']);
+        $this->assertSame(30, $items[0]['children'][0]['children'][0]['parent']);
+        $this->assertSame('Öl', $items[0]['children'][1]['title']);
+        $this->assertSame('https://example.com/öl', $items[0]['children'][1]['url']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, $counts['primary']);
+    }
+
     public function test_nested_item_stays_under_its_parent_for_a_lowercased_default(): void
     {
         $fixture = $this->fixture(array(
