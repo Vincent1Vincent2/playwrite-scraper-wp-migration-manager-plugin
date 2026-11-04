@@ -51,6 +51,13 @@ class Polylang_Posts
     protected $locale_map = null;
 
     /**
+     * Posts dropped because two rows resolved to the same language.
+     *
+     * @var array<int, array{kept: int, dropped: int, lang: string}>
+     */
+    protected $collapsed_languages = array();
+
+    /**
      * Export post translation groups.
      *
      * @return array{items: array<int, array>, errors: string[]}
@@ -60,6 +67,7 @@ class Polylang_Posts
         $this->record_cache = array();
         $this->type_cache = array();
         $this->locale_map = null;
+        $this->collapsed_languages = array();
 
         try {
             if (!$this->polylang_present()) {
@@ -166,15 +174,33 @@ class Polylang_Posts
                 $slug = '';
             }
             if (is_string($slug) && trim($slug) !== '') {
-                return trim($slug);
+                return $this->slug_for_language_key($slug);
             }
         }
 
         $option = $this->polylang_option();
+        $slug = '';
         if (is_array($option) && isset($option['default_lang']) && is_string($option['default_lang'])) {
-            return trim($option['default_lang']);
+            $slug = trim($option['default_lang']);
         }
-        return '';
+        return $this->slug_for_language_key($slug);
+    }
+
+    /**
+     * @param string $slug
+     * @return string
+     */
+    private function slug_for_language_key($slug)
+    {
+        $slug = is_string($slug) ? trim($slug) : '';
+        if ($slug === '') {
+            return '';
+        }
+        $locales = $this->locale_to_slug();
+        if (isset($locales[$slug])) {
+            return $locales[$slug];
+        }
+        return $slug;
     }
 
     /**
@@ -466,6 +492,7 @@ class Polylang_Posts
                 $this->note_duplicate_assignments($map, $errors);
             }
             $normalized = $this->normalize_id_map($map);
+            $this->flush_collapsed_languages($errors);
             if (!empty($normalized)) {
                 $prepared[] = $this->reconcile_languages($normalized, $errors);
             }
@@ -1030,13 +1057,35 @@ class Polylang_Posts
                 $lang = $locales[$lang];
             }
             $post_id = $this->normalize_post_id($post_id);
-            if ($lang === '' || $post_id <= 0 || isset($clean[$lang]) || isset($used[$post_id])) {
+            if ($lang === '' || $post_id <= 0 || isset($used[$post_id])) {
+                continue;
+            }
+            if (isset($clean[$lang]) && $clean[$lang] !== $post_id) {
+                $this->collapsed_languages[] = array(
+                    'kept' => $clean[$lang],
+                    'dropped' => $post_id,
+                    'lang' => $lang,
+                );
                 continue;
             }
             $clean[$lang] = $post_id;
             $used[$post_id] = true;
         }
         return $clean;
+    }
+
+    /**
+     * @param array<int, string> $errors
+     */
+    private function flush_collapsed_languages(array &$errors)
+    {
+        foreach ($this->collapsed_languages as $row) {
+            $errors[] = $this->say_sprintf(
+                'Posts %1$d and %2$d were both stored as %3$s. Post %1$d was kept.',
+                array($row['kept'], $row['dropped'], $row['lang'])
+            );
+        }
+        $this->collapsed_languages = array();
     }
 
     /**
@@ -1236,9 +1285,6 @@ class Polylang_Posts
     }
 
     /**
-     * @return array<int, array<string, mixed>>|null
-     */
-    /**
      * Polylang's language term description stores the locale. A translation
      * group sometimes names that locale instead of the slug.
      *
@@ -1249,11 +1295,11 @@ class Polylang_Posts
         if (is_array($this->locale_map)) {
             return $this->locale_map;
         }
-        $this->locale_map = array();
         $rows = $this->language_term_rows();
         if (!is_array($rows)) {
-            return $this->locale_map;
+            return array();
         }
+        $this->locale_map = array();
         foreach ($rows as $row) {
             $slug = isset($row['slug']) ? trim((string) $row['slug']) : '';
             $raw = '';
