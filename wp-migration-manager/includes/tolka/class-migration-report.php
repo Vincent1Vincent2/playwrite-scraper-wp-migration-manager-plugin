@@ -917,7 +917,7 @@ class Migration_Report
         }
 
         if ($unavailable && $count <= 0) {
-            return sprintf(self::text('%s, not read'), $phrase);
+            return sprintf(self::text('%s were not read.'), $phrase);
         }
 
         return $phrase;

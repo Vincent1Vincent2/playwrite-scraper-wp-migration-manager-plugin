@@ -149,7 +149,7 @@ class Test_Migration_Report extends TestCase
             'The migration did not finish, so the Tolka package was not saved. Required classes are missing, so those parts were skipped: Polylang_Languages (languages) and Tolka_Writer (saving). Update the plugin, then run the migration again from Migrate to Tolka. Your existing Polylang data was left in place.',
             $report['summary']
         );
-        $this->assertSame('0 languages, not read', $this->line($report, 'Languages'));
+        $this->assertSame('0 languages were not read.', $this->line($report, 'Languages'));
         $this->assertSame('0 posts', $this->line($report, 'Posts'));
         $missing = $this->lines_named($report, 'Missing step');
         $this->assertSame(
@@ -243,7 +243,7 @@ class Test_Migration_Report extends TestCase
             'errors' => array(),
         ));
 
-        $this->assertSame('0 posts, not read', $this->line($report, 'Posts'));
+        $this->assertSame('0 posts were not read.', $this->line($report, 'Posts'));
         $this->assertStringContainsString(
             'A required class is missing, so that part was skipped: Polylang_Posts (posts).',
             $report['summary']
@@ -267,7 +267,7 @@ class Test_Migration_Report extends TestCase
             $partial['summary']
         );
         $this->assertStringNotContainsString('unavailable', $partial['summary']);
-        $this->assertSame('0 posts, not read', $this->line($partial, 'Posts'));
+        $this->assertSame('0 posts were not read.', $this->line($partial, 'Posts'));
     }
 
     public function test_garbage_input_still_returns_a_report()
@@ -440,7 +440,7 @@ class Test_Migration_Report extends TestCase
             'Required classes are missing, so those parts were skipped: Polylang_Menus (menus) and Tolka_Schema (package builder).',
             $missing_only['summary']
         );
-        $this->assertSame('0 menus, not read', $this->line($missing_only, 'Menus'));
+        $this->assertSame('0 menus were not read.', $this->line($missing_only, 'Menus'));
         $this->assertSame('0 languages', $this->line($missing_only, 'Languages'));
         $this->assertSame(
             array(
@@ -449,6 +449,38 @@ class Test_Migration_Report extends TestCase
             ),
             $this->lines_named($missing_only, 'Missing step')
         );
+    }
+
+    public function test_missing_and_errors_can_be_a_single_string()
+    {
+        $report = Migration_Report::format(array(
+            'missing' => 'WMM\\Tolka\\Polylang_Strings',
+            'errors' => 'could not read the screen text',
+        ));
+
+        $this->assertSame('0 strings were not read.', $this->line($report, 'Strings'));
+        $this->assertSame('0 languages', $this->line($report, 'Languages'));
+        $this->assertStringContainsString(
+            'A required class is missing, so that part was skipped: Polylang_Strings (strings).',
+            $report['summary']
+        );
+        $this->assertStringContainsString('Could not read the screen text.', $report['summary']);
+        $this->assertSame(
+            array('Polylang_Strings (strings) is missing, so that part was skipped.'),
+            $this->lines_named($report, 'Missing step')
+        );
+
+        $duplicates = Migration_Report::format(array(
+            'missing' => array(
+                'Polylang_Menus',
+                'WMM\\Tolka\\Polylang_Menus',
+            ),
+        ));
+        $this->assertSame(
+            array('Polylang_Menus (menus) is missing, so that part was skipped.'),
+            $this->lines_named($duplicates, 'Missing step')
+        );
+        $this->assertSame(1, substr_count($duplicates['summary'], 'Polylang_Menus'));
     }
 
     public function test_section_count_lines_stay_in_contract_order()
