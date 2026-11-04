@@ -554,6 +554,126 @@ class Test_Polylang_Media extends TestCase
         );
     }
 
+    public function test_second_export_keeps_extra_language_alt_and_a_blank_file()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('get_posts') || function_exists('get_post_meta') || function_exists('pll_get_post_translations')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $posts = 'wp_posts';
+            public $terms = 'wp_terms';
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $term_relationships = 'wp_term_relationships';
+            public $options = 'wp_options';
+            public $postmeta = 'wp_postmeta';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                foreach ($args as $arg) {
+                    $replacement = is_int($arg) ? (string) $arg : "'" . (string) $arg . "'";
+                    $query = preg_replace('/%[sd]/', $replacement, $query, 1);
+                }
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                if (strpos($query, 'option_name') !== false) {
+                    return serialize(array('default_lang' => 'en'));
+                }
+                return '8';
+            }
+
+            public function get_results($query, $output = null)
+            {
+                unset($output);
+                if (strpos($query, 'AS attachment_id') !== false) {
+                    return array(
+                        array('attachment_id' => 21, 'language_slug' => 'XX'),
+                        array('attachment_id' => 22, 'language_slug' => 'en'),
+                    );
+                }
+                if (strpos($query, 'description') !== false) {
+                    return array(
+                        array(
+                            'term_taxonomy_id' => 9,
+                            'description' => serialize(array('XX' => 21)),
+                            'object_id' => 21,
+                            'language_slug' => 'XX',
+                        ),
+                        array(
+                            'term_taxonomy_id' => 10,
+                            'description' => serialize(array('en' => 22)),
+                            'object_id' => 22,
+                            'language_slug' => 'en',
+                        ),
+                    );
+                }
+                if (strpos($query, 'post_title') !== false) {
+                    return array(
+                        array('ID' => 21, 'post_title' => 'Ö'),
+                        array('ID' => 22, 'post_title' => 'Hero'),
+                    );
+                }
+                if (strpos($query, 'meta_value') !== false) {
+                    return array(
+                        array('post_id' => 21, 'meta_key' => '_wp_attached_file', 'meta_value' => " \t\n "),
+                        array('post_id' => 21, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Keep <em>me</em>'),
+                        array('post_id' => 22, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/hero.jpg'),
+                        array('post_id' => 22, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Harbor'),
+                    );
+                }
+                if (strpos($query, 'language_slug') !== false) {
+                    return array(
+                        array('language_slug' => 'en'),
+                        array('language_slug' => 'fr'),
+                    );
+                }
+                if (strpos($query, 'post_type') !== false) {
+                    return array(
+                        array('ID' => 21),
+                        array('ID' => 22),
+                    );
+                }
+                return array();
+            }
+        };
+
+        try {
+            $media = new Polylang_Media();
+            $first = $media->export();
+            $second = $media->export();
+            $first['items'][0]['alt']['xx'] = 'changed by the caller';
+            $third = $media->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame($second, $third);
+        $this->assertCount(2, $second['items']);
+        $this->assertSame(21, $second['items'][0]['attachment_id']);
+        $this->assertSame('', $second['items'][0]['file']);
+        $this->assertSame(array('xx'), array_keys($second['items'][0]['alt']));
+        $this->assertSame(array('xx'), array_keys($second['items'][0]['title']));
+        $this->assertSame('Keep <em>me</em>', $second['items'][0]['alt']['xx']);
+        $this->assertSame('Ö', $second['items'][0]['title']['xx']);
+        $this->assertArrayNotHasKey('XX', $second['items'][0]['alt']);
+        $this->assertArrayNotHasKey('en', $second['items'][0]['alt']);
+        $this->assertSame(22, $second['items'][1]['attachment_id']);
+        $this->assertSame('2024/05/hero.jpg', $second['items'][1]['file']);
+        $this->assertSame(array('en' => 'Harbor'), $second['items'][1]['alt']);
+        $this->assertCount(1, $second['errors']);
+        $this->assertCustomerSentence($second['errors'][0]);
+        $this->assertSame(
+            'One media item has no file path and was exported with an empty file. Nothing was changed.',
+            $second['errors'][0]
+        );
+        $this->assertSame('changed by the caller', $first['items'][0]['alt']['xx']);
+        $this->assertSame('Keep <em>me</em>', $third['items'][0]['alt']['xx']);
+    }
+
     public function test_file_path_that_is_only_a_null_byte_is_exported_empty()
     {
         $result = $this->itemsFrom(array(), array(
