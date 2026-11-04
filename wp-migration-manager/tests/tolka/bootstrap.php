@@ -360,6 +360,46 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
         }
 
         $restore = array();
+        $restored = false;
+        $put_back = function () use (&$restored, &$restore, $temp) {
+            if ($restored) {
+                return;
+            }
+
+            $restored = true;
+
+            foreach ($restore as $pair) {
+                if (is_link($pair[0])) {
+                    unlink($pair[0]);
+                }
+
+                if (is_file($pair[1]) && !file_exists($pair[0])) {
+                    rename($pair[1], $pair[0]);
+                }
+            }
+
+            $copies = glob($temp . '/*.php');
+
+            if (is_array($copies)) {
+                foreach ($copies as $copy) {
+                    unlink($copy);
+                }
+            }
+
+            @rmdir($temp);
+        };
+
+        register_shutdown_function($put_back);
+
+        if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
+            pcntl_async_signals(true);
+            $stop = function () use ($put_back) {
+                $put_back();
+                exit(1);
+            };
+            pcntl_signal(SIGINT, $stop);
+            pcntl_signal(SIGTERM, $stop);
+        }
 
         foreach ($files as $file) {
             if (is_link($file)) {
@@ -407,6 +447,7 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
             $backup = $file . '.wmm-source';
 
             if (!rename($file, $backup)) {
+                unlink($target);
                 throw new RuntimeException(
                     'The Tolka test bootstrap could not prepare ' . basename($file) . ' for PHPUnit ' . $version . '.'
                 );
@@ -420,51 +461,6 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
             }
 
             $restore[] = array($file, $backup);
-        }
-
-        if (empty($restore)) {
-            return;
-        }
-
-        $restored = false;
-        $put_back = function () use (&$restored, $restore, $temp) {
-            if ($restored) {
-                return;
-            }
-
-            $restored = true;
-
-            foreach ($restore as $pair) {
-                if (is_link($pair[0])) {
-                    unlink($pair[0]);
-                }
-
-                if (is_file($pair[1]) && !file_exists($pair[0])) {
-                    rename($pair[1], $pair[0]);
-                }
-            }
-
-            $copies = glob($temp . '/*.php');
-
-            if (is_array($copies)) {
-                foreach ($copies as $copy) {
-                    unlink($copy);
-                }
-            }
-
-            @rmdir($temp);
-        };
-
-        register_shutdown_function($put_back);
-
-        if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
-            pcntl_async_signals(true);
-            $stop = function () use ($put_back) {
-                $put_back();
-                exit(1);
-            };
-            pcntl_signal(SIGINT, $stop);
-            pcntl_signal(SIGTERM, $stop);
         }
     }
 }
