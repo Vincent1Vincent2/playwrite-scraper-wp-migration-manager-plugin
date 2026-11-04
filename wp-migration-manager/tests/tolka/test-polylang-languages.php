@@ -203,6 +203,19 @@ PHP
         $this->assertSame(11, $result['items'][2]['term_id']);
     }
 
+    public function test_html_entities_in_a_language_name_are_decoded()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(6, 'Fran&ccedil;ais', 'fr', 'fr_FR', 'fr', 0, 0),
+        ), 'fr');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame('Français', $result['items'][0]['name']);
+        $this->assertSame('fr', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_includes_languages_that_have_no_posts()
     {
         $db = $this->database_with_languages(array(

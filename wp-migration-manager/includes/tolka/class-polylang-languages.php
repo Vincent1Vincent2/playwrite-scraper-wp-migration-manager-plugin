@@ -859,7 +859,7 @@ class Polylang_Languages
     private function make_item($slug, $name, $locale, $is_default, $term_id, $flag)
     {
         $slug = $this->string_value($slug);
-        $name = $this->string_value($name);
+        $name = html_entity_decode($this->string_value($name), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         if ($name === '') {
             $name = $slug;
         }
