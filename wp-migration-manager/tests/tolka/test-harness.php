@@ -1170,8 +1170,62 @@ class Harness_Test extends Tolka_Test_Case
 
         $this->assertSame(0, $probe['status'], $probe['output']);
         $this->assertSame($sentinel, $probe['abspath']);
+        $this->assertNotSame(WMM_TOLKA_PLUGIN_DIR . '/', $probe['abspath']);
         $this->assertSame('', $probe['bootstrap_functions']);
         $this->assertFalse($probe['loaded']);
+        $this->assert_overhead_cap_is_465_70_78();
+    }
+
+    /**
+     * An existing ABSPATH survives two loads, and the cap stays 465, 70, and 78.
+     */
+    public function test_existing_abspath_is_unchanged_and_cap_stays_465_70_78()
+    {
+        $this->assert_overhead_cap_is_465_70_78();
+
+        $sentinel = '/wmm-tolka-keep-abspath-' . getmypid() . '/';
+        $this->assertNotSame(WMM_TOLKA_PLUGIN_DIR . '/', $sentinel);
+        $bootstrap = var_export(WMM_TOLKA_TEST_DIR . '/bootstrap.php', true);
+        $resolved = var_export(realpath(WMM_TOLKA_TEST_DIR . '/bootstrap.php'), true);
+        $runner = $this->make_temp_dir() . '/runner.php';
+        $script = "<?php\n"
+            . "error_reporting(E_ALL);\n"
+            . "ini_set('display_errors', '1');\n"
+            . "set_error_handler(function (\$severity, \$message) {\n"
+            . "    fwrite(STDERR, 'WARN ' . \$message . \"\\n\");\n"
+            . "    return true;\n"
+            . "});\n"
+            . 'define(\'ABSPATH\', ' . var_export($sentinel, true) . ");\n"
+            . "require $bootstrap;\n"
+            . "echo 'FIRST=' . ABSPATH . \"\\n\";\n"
+            . "require $resolved;\n"
+            . "include $bootstrap;\n"
+            . "\$raw = (8 * 35) + 25 + (20 * 8);\n"
+            . "\$cap = (int) floor(100 * 0.7);\n"
+            . "\$overhead = (int) min(\$raw, \$cap);\n"
+            . "\$tolka = (int) max(1, 100 - \$overhead + min(8 * 6, \$overhead));\n"
+            . "echo 'ABSPATH=' . ABSPATH . \"\\n\";\n"
+            . "echo 'RAW=' . \$raw . \"\\n\";\n"
+            . "echo 'CAP=' . \$cap . \"\\n\";\n"
+            . "echo 'TOLKA=' . \$tolka . \"\\n\";\n"
+            . "echo (is_int(\$raw) && is_int(\$cap) && is_int(\$tolka)) ? \"TYPES=int\\n\" : \"TYPES=other\\n\";\n";
+        file_put_contents($runner, $script);
+
+        $output = array();
+        $status = 1;
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' 2>&1', $output, $status);
+        $text = implode("\n", $output);
+
+        $this->assertSame(0, $status, $text);
+        $this->assertStringContainsString('FIRST=' . $sentinel, $text);
+        $this->assertStringContainsString('ABSPATH=' . $sentinel, $text);
+        $this->assertStringContainsString('RAW=465', $text);
+        $this->assertStringContainsString('CAP=70', $text);
+        $this->assertStringContainsString('TOLKA=78', $text);
+        $this->assertStringContainsString('TYPES=int', $text);
+        $this->assertStringNotContainsString('WARN', $text);
+        $this->assertStringNotContainsString('Cannot redeclare', $text);
+        $this->assertStringNotContainsString('ABSPATH=' . WMM_TOLKA_PLUGIN_DIR . '/', $text);
     }
 
     /**
