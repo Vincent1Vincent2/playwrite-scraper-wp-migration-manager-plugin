@@ -2546,7 +2546,10 @@ function wmm_tolka_fallback_script()
             if (part === undefined || part === null || part === "") {
                 return;
             }
-            var str = String(part);
+            var str = plainValue(part);
+            if (str === "") {
+                return;
+            }
             if (str.length > 180) {
                 str = str.slice(0, 180) + "...";
             }
@@ -2567,8 +2570,12 @@ function wmm_tolka_fallback_script()
                 if (typeof error !== "string" || error === "") {
                     return;
                 }
+                var message = plainValue(error);
+                if (message === "") {
+                    return;
+                }
                 var item = document.createElement("li");
-                item.textContent = error;
+                item.textContent = message;
                 list.appendChild(item);
             });
             if (list.childNodes.length) {
@@ -2643,6 +2650,7 @@ function wmm_tolka_fallback_script()
         renderProblems(target, { missing: data.missing });
     }
 
+    /* wmm-tolka-plain:start */
     function plainValue(value) {
         if (value === null || value === undefined) {
             return "";
@@ -2650,11 +2658,19 @@ function wmm_tolka_fallback_script()
         if (typeof value === "boolean") {
             return value ? text("yes", "Yes") : text("no", "No");
         }
-        if (typeof value === "string" || typeof value === "number") {
+        if (typeof value === "number") {
             return String(value);
         }
-        return text("storedDetail", "Stored with the report.");
+        if (typeof value !== "string") {
+            return text("storedDetail", "Stored with the report.");
+        }
+        var textValue = value.replace(/<!--[\s\S]*?-->/g, "");
+        textValue = textValue.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+        textValue = textValue.replace(/<[^>]*>/g, "");
+        textValue = textValue.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+        return textValue;
     }
+    /* wmm-tolka-plain:end */
 
     function renderReport(target, report) {
         clear(target);

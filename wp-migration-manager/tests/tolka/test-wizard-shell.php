@@ -1073,6 +1073,39 @@ namespace WMM\Tolka {
             }
         }
 
+        public function test_fallback_script_strips_markup_from_result_text()
+        {
+            $this->requireStubs();
+            $html = $this->render();
+            $this->assertSame(
+                1,
+                preg_match('/\/\* wmm-tolka-plain:start \*\/(.*?)\/\* wmm-tolka-plain:end \*\//s', $html, $matches)
+            );
+
+            $cases = array(
+                'Done & "<script>alert(1)</script>' => 'Done & "',
+                'Left & <img src=x onerror=alert(1)> in place.' => 'Left & in place.',
+                '<script>alert(1)</script>' => '',
+            );
+            $runner = tempnam(sys_get_temp_dir(), 'wmm-plain-');
+            $script = "function text(key, fallback) { return fallback; }\n" . $matches[1] . "\n";
+            $script .= 'var cases = ' . json_encode(array_keys($cases)) . ";\n";
+            $script .= 'var results = {}; cases.forEach(function (value) { results[value] = plainValue(value); });';
+            $script .= 'process.stdout.write(JSON.stringify(results));';
+            file_put_contents($runner, $script);
+            $output = shell_exec('node ' . escapeshellarg($runner) . ' 2>&1');
+            unlink($runner);
+
+            $this->assertIsString($output);
+            $results = json_decode($output, true);
+            $this->assertIsArray($results, $output);
+            foreach ($cases as $value => $plain) {
+                $this->assertSame($plain, $results[$value], $value);
+            }
+            $this->assertStringContainsString('plainValue(part)', $html);
+            $this->assertStringContainsString('plainValue(error)', $html);
+        }
+
         public function test_non_http_measure_urls_are_rejected()
         {
             $this->requireStubs();
