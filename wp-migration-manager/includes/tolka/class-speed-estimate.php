@@ -80,9 +80,11 @@ class Speed_Estimate
      * The returned array always has ok, current_ms, tolka_ms, faster_percent,
      * faster_label, overhead_ms, basis, provenance, provenance_note,
      * coefficients, and error. On success, faster_label is "{percent}% faster"
-     * with one decimal, and error is empty. On failure, the three times are 0,
+     * with one decimal, error is empty, and provenance and provenance_note are
+     * copied from the benchmarks argument. On failure, the three times are 0,
      * faster_percent is 0, faster_label is empty, and error is the sentence
      * to show the admin. basis is always the benchmarks.json sentence.
+     * benchmarks() returns the five coefficient keys stored in the file.
      *
      * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
@@ -547,7 +549,11 @@ class Speed_Estimate
                 $safe[$key] = self::json_safe_array($item, $depth + 1);
                 continue;
             }
-            if (is_string($item) || is_int($item) || is_bool($item) || $item === null) {
+            if (is_string($item)) {
+                $safe[$key] = preg_match('//u', $item) === 1 ? $item : '';
+                continue;
+            }
+            if (is_int($item) || is_bool($item) || $item === null) {
                 $safe[$key] = $item;
                 continue;
             }
@@ -574,6 +580,10 @@ class Speed_Estimate
     private static function copied_text(array $benchmarks, $key)
     {
         if (!array_key_exists($key, $benchmarks) || !is_string($benchmarks[$key])) {
+            return '';
+        }
+
+        if (preg_match('//u', $benchmarks[$key]) !== 1) {
             return '';
         }
 
