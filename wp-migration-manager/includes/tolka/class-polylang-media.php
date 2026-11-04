@@ -1125,19 +1125,103 @@ class Polylang_Media
      */
     private function file_from_records($map, $canonical_id, $records)
     {
-        $file = $this->record_string($records, $canonical_id, 'file');
-        if ($file === '') {
-            $ids = array_map('intval', array_values($map));
-            sort($ids, SORT_NUMERIC);
-            foreach ($ids as $id) {
-                $file = $this->record_string($records, $id, 'file');
-                if ($file !== '') {
-                    break;
-                }
+        $canonical_id = (int) $canonical_id;
+        $canonical = $this->portable_file($this->record_string($records, $canonical_id, 'file'));
+        $others = array();
+        $ids = array_map('intval', array_values($map));
+        sort($ids, SORT_NUMERIC);
+        foreach ($ids as $id) {
+            if ($id <= 0 || $id === $canonical_id) {
+                continue;
+            }
+            $file = $this->portable_file($this->record_string($records, $id, 'file'));
+            if ($file !== '') {
+                $others[] = $file;
             }
         }
 
-        return $this->portable_file($file);
+        if ($canonical !== '' && !$this->is_server_path($canonical)) {
+            return $canonical;
+        }
+
+        if ($canonical !== '' && $this->is_server_path($canonical)) {
+            foreach ($others as $file) {
+                if (!$this->is_server_path($file) && $this->same_media_file($canonical, $file)) {
+                    return $file;
+                }
+            }
+            return $canonical;
+        }
+
+        foreach ($others as $file) {
+            if (!$this->is_server_path($file)) {
+                return $file;
+            }
+        }
+
+        return $others === array() ? '' : $others[0];
+    }
+
+    /**
+     * A filesystem path that would not survive a move to another server.
+     *
+     * @param string $file
+     * @return bool
+     */
+    private function is_server_path($file)
+    {
+        if (!is_string($file) || $file === '') {
+            return false;
+        }
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $file) === 1) {
+            return false;
+        }
+        if ($file[0] === '/') {
+            return true;
+        }
+        return preg_match('#^[A-Za-z]:/#', $file) === 1;
+    }
+
+    /**
+     * True when two stored values point at the same uploads file.
+     *
+     * @param string $left
+     * @param string $right
+     * @return bool
+     */
+    private function same_media_file($left, $right)
+    {
+        $left = str_replace('\\', '/', $this->string_value($left));
+        $right = str_replace('\\', '/', $this->string_value($right));
+        if ($left === '' || $right === '') {
+            return false;
+        }
+        if ($left === $right) {
+            return true;
+        }
+        if (basename($left) === '' || basename($left) !== basename($right)) {
+            return false;
+        }
+        return $this->path_ends_with($left, $right) || $this->path_ends_with($right, $left);
+    }
+
+    /**
+     * @param string $path
+     * @param string $suffix
+     * @return bool
+     */
+    private function path_ends_with($path, $suffix)
+    {
+        $path = rtrim($path, '/');
+        $suffix = rtrim($suffix, '/');
+        if ($suffix === '' || strlen($suffix) > strlen($path)) {
+            return false;
+        }
+        if (substr($path, -strlen($suffix)) !== $suffix) {
+            return false;
+        }
+        $prefix_length = strlen($path) - strlen($suffix);
+        return $prefix_length === 0 || substr($path, $prefix_length - 1, 1) === '/';
     }
 
     /**
