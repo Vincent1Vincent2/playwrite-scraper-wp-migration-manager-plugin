@@ -655,6 +655,41 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_a_linked_term_missing_from_the_description_is_added(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->descriptions = array(serialize(array('en' => 10)));
+        $database->links = array(1 => array(10, 11, 12));
+        $database->catalog = array(
+            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(11, 'Nyheter', 'nyheter', 'category', 'sv'),
+            $this->term(12, 'Extra', 'extra', 'category', 'sv'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $item = $this->itemByGroup($result['items'], 'term:10');
+
+        $this->assertSame(array('en', 'sv'), array_keys($item['translations']));
+        $this->assertSame(11, $item['translations']['sv']['id']);
+        $this->assertSame('Nyheter', $item['translations']['sv']['name']);
+        $extra = $this->itemByGroup($result['items'], 'term:12');
+        $this->assertSame(array('sv'), array_keys($extra['translations']));
+        $this->assertSame('Extra', $extra['translations']['sv']['name']);
+        $this->assertContains(
+            'Term 11 is linked to a translation group but was missing from its stored description. It was added as sv.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 12 is linked to a translation group but was missing from its stored description. It was left out because sv is already used in that group.',
+            $result['errors']
+        );
+    }
+
     public function test_leftover_groups_are_exported_when_polylang_is_deactivated(): void
     {
         if (!$this->canUseDatabaseStub()) {
@@ -1049,6 +1084,13 @@ class Polylang_Terms_Database
     public $descriptions = array();
 
     /**
+     * Translation-group term_taxonomy_id => linked term ids.
+     *
+     * @var array<int, array<int, int>>
+     */
+    public $links = array();
+
+    /**
      * @var array<int, array<string, mixed>>
      */
     public $catalog = array();
@@ -1120,8 +1162,36 @@ class Polylang_Terms_Database
         }
         if (strpos($query, "taxonomy = 'term_translations'") !== false) {
             $rows = array();
+            $termTaxonomyId = 1;
             foreach ($this->descriptions as $description) {
-                $rows[] = array('description' => $description);
+                $rows[] = array(
+                    'description' => $description,
+                    'term_taxonomy_id' => $termTaxonomyId,
+                );
+                $termTaxonomyId++;
+            }
+            return $rows;
+        }
+        if (strpos($query, 'term_relationships') !== false && strpos($query, 'object_id') !== false && strpos($query, "taxonomy = 'term_language'") === false) {
+            $wanted = array();
+            if (preg_match('/term_taxonomy_id = (\d+)/', $query, $match)) {
+                $wanted[(int) $match[1]] = true;
+            } elseif (preg_match('/IN \(([^)]*)\)/', $query, $match) && trim($match[1]) !== '') {
+                foreach (explode(',', $match[1]) as $piece) {
+                    $wanted[(int) trim($piece)] = true;
+                }
+            }
+            $rows = array();
+            foreach ($this->links as $termTaxonomyId => $ids) {
+                if ($wanted !== array() && !isset($wanted[(int) $termTaxonomyId])) {
+                    continue;
+                }
+                foreach ($ids as $id) {
+                    $rows[] = array(
+                        'term_taxonomy_id' => (int) $termTaxonomyId,
+                        'object_id' => (int) $id,
+                    );
+                }
             }
             return $rows;
         }
