@@ -279,6 +279,13 @@ class WMM_Tolka_Strings_Db
     public $throw_on_languages = false;
 
     /**
+     * How many prepare() calls should throw before queries succeed.
+     *
+     * @var int
+     */
+    public $prepare_failures = 0;
+
+    /**
      * @var string[]
      */
     public $queries = array();
@@ -298,6 +305,10 @@ class WMM_Tolka_Strings_Db
      */
     public function prepare($query)
     {
+        if ($this->prepare_failures > 0) {
+            $this->prepare_failures--;
+            throw new RuntimeException('prepare threw');
+        }
         $args = func_get_args();
         array_shift($args);
         $index = 0;
@@ -1275,6 +1286,35 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertSame('Second', $by_string['Hello']);
         $this->assertSame('Plus', $by_string['Extra']);
         $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_throwing_prepare_does_not_discard_stored_strings()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->prepare_failures = 1;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Bonjour'))),
+            ),
+        );
+        $db->term_slug_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
+        $this->assertContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $result['errors']
+        );
+        $this->assertNotContains(
+            'String translations could not be read. Existing Polylang data was left unchanged.',
+            $result['errors']
+        );
     }
 
     /**

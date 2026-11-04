@@ -354,9 +354,10 @@ class Polylang_Strings
             return array();
         }
 
-        $sql = $db->prepare(
+        $sql = $this->safe_prepare(
+            $db,
             "SELECT t.term_id, t.slug FROM {$terms} t INNER JOIN {$taxonomy} tt ON t.term_id = tt.term_id WHERE tt.taxonomy = %s ORDER BY tt.term_group ASC, t.term_id ASC",
-            'language'
+            array('language')
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
@@ -654,10 +655,10 @@ class Polylang_Strings
             return;
         }
 
-        $sql = $db->prepare(
+        $sql = $this->safe_prepare(
+            $db,
             "SELECT ID, post_title, post_content FROM {$posts} WHERE post_type = %s AND post_status <> %s",
-            'polylang_mo',
-            'trash'
+            array('polylang_mo', 'trash')
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
@@ -667,9 +668,10 @@ class Polylang_Strings
 
         $meta_by_post = array();
         if ($postmeta !== '') {
-            $meta_sql = $db->prepare(
+            $meta_sql = $this->safe_prepare(
+                $db,
                 "SELECT post_id, meta_value FROM {$postmeta} WHERE meta_key = %s",
-                '_pll_strings_translations'
+                array('_pll_strings_translations')
             );
             $meta_rows = $this->query_rows($meta_sql);
             if (!is_array($meta_rows)) {
@@ -721,9 +723,10 @@ class Polylang_Strings
             return;
         }
 
-        $sql = $db->prepare(
+        $sql = $this->safe_prepare(
+            $db,
             "SELECT term_id, meta_value FROM {$termmeta} WHERE meta_key = %s",
-            '_pll_strings_translations'
+            array('_pll_strings_translations')
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
@@ -783,7 +786,7 @@ class Polylang_Strings
         }
         $placeholders = implode(', ', array_fill(0, count($ids), '%d'));
         $query = "SELECT term_id, slug FROM {$terms} WHERE term_id IN ({$placeholders})";
-        $sql = call_user_func_array(array($db, 'prepare'), array_merge(array($query), $ids));
+        $sql = $this->safe_prepare($db, $query, $ids);
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
             $this->slug_lookup_failed = true;
@@ -948,15 +951,12 @@ class Polylang_Strings
         }
 
         foreach (array('post_translations', 'term_translations') as $name) {
-            try {
-                $sql = $db->prepare(
-                    "SELECT tt.term_taxonomy_id FROM {$taxonomy} tt WHERE tt.taxonomy = %s LIMIT 1",
-                    $name
-                );
-                $this->query_rows($sql);
-            } catch (\Throwable $e) {
-                continue;
-            }
+            $sql = $this->safe_prepare(
+                $db,
+                "SELECT tt.term_taxonomy_id FROM {$taxonomy} tt WHERE tt.taxonomy = %s LIMIT 1",
+                array($name)
+            );
+            $this->query_rows($sql);
         }
     }
 
@@ -1537,11 +1537,16 @@ class Polylang_Strings
             return $this->saved_options;
         }
 
-        $like = $db->esc_like('polylang_mo_') . '%';
-        $sql = $db->prepare(
+        try {
+            $like = $db->esc_like('polylang_mo_') . '%';
+        } catch (\Throwable $e) {
+            $this->option_read_failed = true;
+            return $this->saved_options;
+        }
+        $sql = $this->safe_prepare(
+            $db,
             "SELECT option_name, option_value FROM {$table} WHERE option_name = %s OR option_name LIKE %s",
-            'polylang_wpml_strings',
-            $like
+            array('polylang_wpml_strings', $like)
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
@@ -1560,7 +1565,34 @@ class Polylang_Strings
     }
 
     /**
-     * @param string $sql Prepared SQL.
+     * Prepare a query without letting a database error abort the export.
+     *
+     * @param object $db    Database handle.
+     * @param string $query SQL with placeholders.
+     * @param array  $args  Placeholder values.
+     * @return string|null
+     */
+    protected function safe_prepare($db, $query, array $args)
+    {
+        if (!is_object($db) || !method_exists($db, 'prepare')) {
+            return null;
+        }
+        try {
+            $params = $args;
+            array_unshift($params, $query);
+            $sql = call_user_func_array(array($db, 'prepare'), $params);
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if (!is_string($sql) || $sql === '') {
+            return null;
+        }
+
+        return $sql;
+    }
+
+    /**
+     * @param string|null $sql Prepared SQL.
      * @return array|null Null when the query failed.
      */
     protected function query_rows($sql)
@@ -1597,7 +1629,15 @@ class Polylang_Strings
             return false;
         }
         try {
-            $sql = $db->prepare('SHOW TABLES LIKE %s', $db->esc_like($table));
+            $like = $db->esc_like($table);
+        } catch (\Throwable $e) {
+            return false;
+        }
+        $sql = $this->safe_prepare($db, 'SHOW TABLES LIKE %s', array($like));
+        if (!is_string($sql) || $sql === '') {
+            return false;
+        }
+        try {
             $found = $db->get_var($sql);
         } catch (\Throwable $e) {
             return false;
