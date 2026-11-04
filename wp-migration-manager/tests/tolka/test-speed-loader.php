@@ -1893,6 +1893,121 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame(array('http://example.com/'), Speed_Loader_Harness::$requested_urls);
     }
 
+    public function test_http_refresh_to_public_https_is_measured()
+    {
+        $this->requireHarness();
+        $headers = array(
+            '0;url=https://example.com/home',
+            '0; URL=https://example.com/home',
+            '0;url="https://example.com/home"',
+            'https://example.com/home',
+        );
+
+        foreach ($headers as $header) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            $redirect = $this->http_response(301, '<html>http hop</html>');
+            $redirect['headers']['Refresh'] = $header;
+            Speed_Loader_Harness::$queue = array(
+                $redirect,
+                $this->http_response(200, '<html>secure home</html>'),
+            );
+
+            $result = Speed_Loader_Harness::measure('http://example.com/');
+
+            $this->assertTrue($result['ok'], $header);
+            $this->assertSame(200, $result['status_code'], $header);
+            $this->assertSame('https://example.com/home', $result['url'], $header);
+            $this->assertSame('<html>secure home</html>', $result['html'], $header);
+            $this->assertSame(
+                array('http://example.com/', 'https://example.com/home'),
+                Speed_Loader_Harness::$requested_urls,
+                $header
+            );
+            $this->assertStringNotContainsString('http hop', (string) json_encode($result), $header);
+        }
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        $stay = $this->http_response(200, '<html>stay</html>');
+        $stay['headers']['Refresh'] = '0;url=https://example.com/other';
+        Speed_Loader_Harness::$response = $stay;
+        $page = Speed_Loader_Harness::measure('http://example.com/');
+        $this->assertTrue($page['ok']);
+        $this->assertSame('<html>stay</html>', $page['html']);
+        $this->assertSame('http://example.com/', $page['url']);
+        $this->assertSame(array('http://example.com/'), Speed_Loader_Harness::$requested_urls);
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        $both = $this->http_response(302, '<html>hop</html>', 'https://example.com/from-location');
+        $both['headers']['Refresh'] = '0;url=https://example.com/from-refresh';
+        Speed_Loader_Harness::$queue = array(
+            $both,
+            $this->http_response(200, '<html>from location</html>'),
+        );
+        $location_wins = Speed_Loader_Harness::measure('http://example.com/');
+        $this->assertTrue($location_wins['ok']);
+        $this->assertSame('https://example.com/from-location', $location_wins['url']);
+        $this->assertSame(
+            array('http://example.com/', 'https://example.com/from-location'),
+            Speed_Loader_Harness::$requested_urls
+        );
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        $private = $this->http_response(301, '<html>secret hop</html>', 'https://127.0.0.1/secret');
+        $private['headers']['Refresh'] = '0;url=https://example.com/home';
+        Speed_Loader_Harness::$queue = array(
+            $private,
+            $this->http_response(200, '<html>should not load</html>'),
+        );
+        $blocked = Speed_Loader_Harness::measure('http://example.com/');
+        $this->assertFalse($blocked['ok']);
+        $this->assertSame('', $blocked['html']);
+        $this->assertSame(301, $blocked['status_code']);
+        $this->assertSame(array('http://example.com/'), Speed_Loader_Harness::$requested_urls);
+        $this->assertStringNotContainsString('secret', (string) json_encode($blocked));
+        $this->assertStringNotContainsString('should not load', (string) json_encode($blocked));
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        $refresh_private = $this->http_response(302, '<html>secret hop</html>');
+        $refresh_private['headers']['Refresh'] = '0;url=https://10.1.2.3/secret';
+        Speed_Loader_Harness::$queue = array(
+            $refresh_private,
+            $this->http_response(200, '<html>should not load</html>'),
+        );
+        $refused = Speed_Loader_Harness::measure('http://example.com/');
+        $this->assertFalse($refused['ok']);
+        $this->assertSame('', $refused['html']);
+        $this->assertSame(302, $refused['status_code']);
+        $this->assertSame(
+            'The site redirected to a private or local address. Enter the public address visitors use.',
+            $refused['error']
+        );
+        $this->assertSame(array('http://example.com/'), Speed_Loader_Harness::$requested_urls);
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        $timeout_hop = $this->http_response(301, '');
+        $timeout_hop['headers']['Refresh'] = '0;url=https://example.com/secure';
+        Speed_Loader_Harness::$queue = array(
+            $timeout_hop,
+            new Speed_Loader_Transport_Error(
+                'cURL error 28: Operation timed out after 15000 milliseconds'
+            ),
+        );
+        $timeout = $this->measureWithoutThrowing('http://example.com/');
+        $this->assertTimeoutResult($timeout);
+        $this->assertSame(0, $timeout['status_code']);
+        $this->assertSame('', $timeout['html']);
+        $this->assertSame(
+            array('http://example.com/', 'https://example.com/secure'),
+            Speed_Loader_Harness::$requested_urls
+        );
+    }
+
     public function test_relative_redirect_stays_on_the_public_host()
     {
         $this->requireHarness();

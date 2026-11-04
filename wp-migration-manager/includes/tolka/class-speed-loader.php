@@ -81,9 +81,11 @@ class Speed_Loader
      * 2,000,000 bytes. A status outside 200–299 keeps that status and the
      * elapsed time, with html empty. A redirect is followed only after the
      * next address is checked, including an http address that redirects to a
-     * public https page. That https page is what gets measured. A private next
-     * hop is never requested, and the fourth redirect is not fetched. An
-     * address with a username or password is refused before any request.
+     * public https page. That https page is what gets measured. A 3xx response
+     * that names the next page only in a Refresh header is followed the same
+     * way. A private next hop is never requested, and the fourth redirect is
+     * not fetched. An address with a username or password is refused before
+     * any request.
      *
      * @param string $url Public http or https URL.
      * @return array{ok: bool, url: string, status_code: int, total_ms: int, ttfb_ms: null, html_bytes: int, html: string, error: string}
@@ -157,6 +159,16 @@ class Speed_Loader
                 $location = self::clean_location(self::response_header($response, 'location'));
             } catch (\Throwable $e) {
                 $location = '';
+            }
+            if ($location !== '' && preg_match('/[\r\n\x00]/', $location)) {
+                break;
+            }
+            if ($location === '') {
+                try {
+                    $location = self::refresh_target(self::response_header($response, 'refresh'));
+                } catch (\Throwable $e) {
+                    $location = '';
+                }
             }
             if ($location === '' || preg_match('/[\r\n\x00]/', $location)) {
                 break;
@@ -1913,6 +1925,31 @@ class Speed_Loader
         }
 
         return self::normalize_typed_url(substr($location, 1, -1));
+    }
+
+    /**
+     * Next page from a Refresh header, or an empty string when it has none.
+     *
+     * Used only when a redirect did not send Location. A normal 200 page is
+     * not passed here, so a Refresh hint on that page is not followed.
+     *
+     * @param string $header Refresh header value.
+     * @return string
+     */
+    private static function refresh_target($header)
+    {
+        $header = self::clean_location($header);
+        if ($header === '' || preg_match('/[\r\n\x00]/', $header)) {
+            return '';
+        }
+        if (preg_match('/\burl\s*=\s*(.*)$/i', $header, $matches)) {
+            return self::clean_location(trim($matches[1]));
+        }
+        if (preg_match('#^https?://#i', $header) || strpos($header, '//') === 0) {
+            return $header;
+        }
+
+        return '';
     }
 
     /**
