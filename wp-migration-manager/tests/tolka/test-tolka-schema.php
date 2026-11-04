@@ -1654,6 +1654,46 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_invalid_byte_between_html_tags_is_removed()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:31',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 31,
+                            'title' => "Head\xFF<em>line</em>",
+                            'content' => "<p>Before</p>\xFF<p>After</p>\0<em>End</em>",
+                        ),
+                    ),
+                ),
+            ),
+            'strings' => array(
+                array(
+                    'name' => 'note',
+                    'string' => "Go\xFF <strong>on</strong>\0",
+                    'context' => 'theme',
+                    'translations' => array(),
+                ),
+            ),
+        ));
+
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $post = $stored['posts'][0]['translations']['en'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('Head<em>line</em>', $post['title']);
+        $this->assertSame('<p>Before</p><p>After</p><em>End</em>', $post['content']);
+        $this->assertSame('Go <strong>on</strong>', $stored['strings'][0]['string']);
+        $this->assertSame(false, strpos(serialize($stored), "\0"));
+        $this->assertSame(false, strpos($post['content'], "\xFF"));
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
     public function test_clean_html_content_is_stored_unchanged()
     {
         $content = "<article>\n<h1>Title</h1>\n<p>Hello &amp; welcome</p>\n<ul><li>One</li></ul>\n<!-- comment -->\n</article>";

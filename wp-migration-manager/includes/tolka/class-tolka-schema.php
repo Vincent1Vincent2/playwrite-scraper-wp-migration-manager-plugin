@@ -220,10 +220,10 @@ class Tolka_Schema
         if (function_exists('iconv')) {
             $clean = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
             if (is_string($clean)) {
-                return $clean;
+                $text = $clean;
             }
         }
 
-        return $text;
+        return str_replace("\0", '', $text);
     }
 }
