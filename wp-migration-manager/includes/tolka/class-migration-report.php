@@ -58,8 +58,9 @@ class Migration_Report
         $missing = self::collect_missing($run);
         $unavailable = self::missing_section_keys($missing['classes']);
         $description = self::describe_content($counts, $unavailable);
+        $description['mismatch'] = self::mismatch_sentence($run, $write, $counts, $package);
         $total = self::total_items($counts);
-        $has_problems = !empty($errors) || !empty($missing['labels']);
+        $has_problems = !empty($errors) || !empty($missing['labels']) || $description['mismatch'] !== '';
         $status = self::decide($run_ok, $package, $has_problems, $total);
         $inactive = self::polylang_is_inactive($errors);
         $next = self::next_step($status, $inactive, count($missing['labels']), $has_problems);
@@ -74,7 +75,7 @@ class Migration_Report
             'ok' => ($status === 'complete' || $status === 'empty'),
             'title' => $title,
             'summary' => $summary,
-            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors),
+            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch']),
         );
     }
 
@@ -559,11 +560,12 @@ class Migration_Report
                 $parts[] = self::text('The plugin could not confirm that the Tolka package was saved.');
             }
 
-            if (!$run_ok && $missing_sentence === '' && $problem_lead === '') {
+            if (!$run_ok && $missing_sentence === '' && $problem_lead === '' && $description['mismatch'] === '') {
                 $parts[] = self::text('The migration did not report a clean finish.');
             }
 
             $parts[] = $missing_sentence;
+            $parts[] = $description['mismatch'];
             $parts[] = $problem_lead;
             $parts[] = $next;
             $parts[] = $closing;
@@ -583,11 +585,125 @@ class Migration_Report
         }
 
         $parts[] = $missing_sentence;
+        $parts[] = $description['mismatch'];
         $parts[] = $problem_lead;
         $parts[] = $next;
         $parts[] = $closing;
 
         return self::join_sentences($parts);
+    }
+
+    /**
+     * Say so when the writer saved a different number than the run found.
+     *
+     * @param array      $run       Runner result.
+     * @param array|null $write     Writer result.
+     * @param array      $collected Counts shown in the report.
+     * @param string     $package   Package state.
+     * @return string
+     */
+    private static function mismatch_sentence(array $run, $write, array $collected, $package)
+    {
+        if ($package !== 'saved' || !is_array($write)) {
+            return '';
+        }
+
+        $run_counts = (isset($run['counts']) && is_array($run['counts'])) ? $run['counts'] : array();
+        if (!self::read_counts($run_counts)['present']) {
+            return '';
+        }
+
+        $source = (isset($write['counts']) && is_array($write['counts'])) ? $write['counts'] : $write;
+        $short = array();
+        $extra = array();
+
+        foreach (self::section_catalog() as $key => $meta) {
+            $saved = self::count_if_set($source, $key);
+            if ($saved === null) {
+                continue;
+            }
+
+            $found = isset($collected[$key]) ? (int) $collected[$key] : 0;
+            if ($saved === $found) {
+                continue;
+            }
+
+            if ($saved < $found) {
+                if ($saved === 0 && $found === 1) {
+                    $short[] = sprintf(
+                        self::text('the %s was not saved'),
+                        self::noun($meta, 1)
+                    );
+                } elseif ($saved === 0) {
+                    $short[] = sprintf(
+                        self::text('none of the %1$s %2$s were saved'),
+                        self::number($found),
+                        self::noun($meta, $found)
+                    );
+                } else {
+                    $short[] = sprintf(
+                        self::text('%1$s of %2$s %3$s'),
+                        self::number($saved),
+                        self::number($found),
+                        self::noun($meta, $found)
+                    );
+                }
+                continue;
+            }
+
+            $extra[] = sprintf(
+                self::text('%1$s %2$s saved from %3$s found'),
+                self::number($saved),
+                self::noun($meta, $saved),
+                self::number($found)
+            );
+        }
+
+        $parts = array();
+        if (!empty($short)) {
+            $parts[] = sprintf(
+                self::text('Not everything that was found was saved: %s.'),
+                self::join_and($short)
+            );
+        }
+        if (!empty($extra)) {
+            $parts[] = sprintf(
+                self::text('The saved package includes more than was found: %s.'),
+                self::join_and($extra)
+            );
+        }
+
+        return self::join_sentences($parts);
+    }
+
+    /**
+     * @param array  $counts Count map.
+     * @param string $key    Section key.
+     * @return int|null Null when that section was not reported.
+     */
+    private static function count_if_set(array $counts, $key)
+    {
+        if (!isset($counts[$key]) || is_bool($counts[$key]) || !is_numeric($counts[$key])) {
+            return null;
+        }
+
+        $count = (int) $counts[$key];
+
+        return ($count > 0) ? $count : 0;
+    }
+
+    /**
+     * @param array $meta  Section copy.
+     * @param int   $count Count the noun should agree with.
+     * @return string
+     */
+    private static function noun(array $meta, $count)
+    {
+        if ((int) $count === 1) {
+            return self::text($meta['singular']);
+        }
+
+        return self::text($meta['group']);
     }
 
     /**
@@ -728,9 +844,10 @@ class Migration_Report
      * @param string                $next         Next step.
      * @param string[]              $missing_lines Per-step sentences.
      * @param string[]              $errors       Error sentences.
+     * @param string                $mismatch     Saved-count warning, or empty.
      * @return array<int, array{label: string, value: string}>
      */
-    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors)
+    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors, $mismatch)
     {
         $lines = array(
             self::line(self::text('Outcome'), $title),
@@ -748,6 +865,9 @@ class Migration_Report
         }
 
         $lines[] = self::line(self::text('Tolka package'), self::package_value($package, $total));
+        if ($mismatch !== '') {
+            $lines[] = self::line(self::text('Saved counts'), $mismatch);
+        }
         $lines[] = self::line(self::text('Polylang data'), self::text('Left in place'));
 
         if ($next !== '') {
@@ -1021,6 +1141,7 @@ class Migration_Report
             'languages' => array(
                 'label' => 'Languages',
                 'group' => 'languages',
+                'singular' => 'language',
                 'none_line' => 'No languages',
                 'one' => '%s language',
                 'many' => '%s languages',
@@ -1028,6 +1149,7 @@ class Migration_Report
             'posts' => array(
                 'label' => 'Posts',
                 'group' => 'posts',
+                'singular' => 'post',
                 'none_line' => 'No posts',
                 'one' => '%s post',
                 'many' => '%s posts',
@@ -1035,6 +1157,7 @@ class Migration_Report
             'terms' => array(
                 'label' => 'Terms',
                 'group' => 'terms',
+                'singular' => 'term',
                 'none_line' => 'No terms',
                 'one' => '%s term',
                 'many' => '%s terms',
@@ -1042,6 +1165,7 @@ class Migration_Report
             'strings' => array(
                 'label' => 'Strings',
                 'group' => 'strings',
+                'singular' => 'string',
                 'none_line' => 'No strings',
                 'one' => '%s string',
                 'many' => '%s strings',
@@ -1049,6 +1173,7 @@ class Migration_Report
             'menus' => array(
                 'label' => 'Menus',
                 'group' => 'menus',
+                'singular' => 'menu',
                 'none_line' => 'No menus',
                 'one' => '%s menu',
                 'many' => '%s menus',
@@ -1056,6 +1181,7 @@ class Migration_Report
             'media' => array(
                 'label' => 'Media',
                 'group' => 'media items',
+                'singular' => 'media item',
                 'none_line' => 'No media',
                 'one' => '%s media item',
                 'many' => '%s media items',

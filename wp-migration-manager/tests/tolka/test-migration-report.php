@@ -401,6 +401,54 @@ class Test_Migration_Report extends TestCase
         }
     }
 
+    public function test_saved_counts_that_differ_are_explained()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 2,
+                'posts' => 10,
+                'menus' => 1,
+            ),
+            'write' => array(
+                'ok' => true,
+                'counts' => array(
+                    'languages' => 2,
+                    'posts' => 8,
+                    'menus' => 0,
+                ),
+            ),
+        ));
+
+        $this->assertFalse($report['ok']);
+        $this->assertSame('Migration finished with problems', $report['title']);
+        $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
+        $this->assertStringContainsString(
+            'Not everything that was found was saved: 8 of 10 posts and the menu was not saved.',
+            $report['summary']
+        );
+        $this->assertSame(
+            'Not everything that was found was saved: 8 of 10 posts and the menu was not saved.',
+            $this->line($report, 'Saved counts')
+        );
+    }
+
+    public function test_matching_saved_counts_stay_a_clean_success()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('languages' => 2, 'posts' => 4),
+            'write' => array(
+                'ok' => true,
+                'counts' => array('languages' => 2, 'posts' => 4),
+            ),
+        ));
+
+        $this->assertTrue($report['ok']);
+        $this->assertSame('Migration complete', $report['title']);
+        $this->assertArrayNotHasKey('Saved counts', $this->line_map($report));
+    }
+
     public function test_large_counts_are_grouped()
     {
         $report = $this->format_run(array(
