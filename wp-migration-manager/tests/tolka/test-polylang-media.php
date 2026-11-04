@@ -104,6 +104,50 @@ class Test_Polylang_Media extends TestCase
         $this->assertArrayHasKey('de', $result['items'][0]['title']);
     }
 
+    public function test_description_language_case_follows_the_known_slug()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('EN' => 5, 'zh_cn' => 2),
+                'members' => array(5 => '', 2 => ''),
+            ),
+        ), array(), array(5, 2), array('en', 'zh_CN'), 'de', array(
+            5 => array('file' => 'en.jpg', 'alt' => 'Alt', 'title' => 'English'),
+            2 => array('file' => 'zh.jpg', 'alt' => 'Alt', 'title' => 'Chinese'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(2, $result['items'][0]['attachment_id']);
+        $this->assertSame(array(
+            'en' => 'English',
+            'zh_CN' => 'Chinese',
+        ), $result['items'][0]['title']);
+    }
+
+    public function test_member_language_outside_the_known_list_is_kept()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => '',
+                'members' => array(5 => 'xx'),
+            ),
+            array(
+                'description' => '',
+                'members' => array(6 => 'EN'),
+            ),
+        ), array(), array(5, 6), array('en'), 'de', array(
+            5 => array('file' => 'x.jpg', 'alt' => 'A', 'title' => 'Extra'),
+            6 => array('file' => 'e.jpg', 'alt' => 'B', 'title' => 'English'),
+        ));
+
+        $by_id = array();
+        foreach ($result['items'] as $item) {
+            $by_id[$item['attachment_id']] = $item;
+        }
+        $this->assertSame(array('xx' => 'Extra'), $by_id[5]['title']);
+        $this->assertSame(array('en' => 'English'), $by_id[6]['title']);
+    }
+
     public function test_default_language_match_ignores_case()
     {
         $result = $this->itemsFrom(array(

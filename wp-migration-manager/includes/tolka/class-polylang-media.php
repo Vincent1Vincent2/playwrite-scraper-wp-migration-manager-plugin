@@ -712,7 +712,10 @@ class Polylang_Media
                     continue;
                 }
                 $id = isset($language_row['id']) ? (int) $language_row['id'] : 0;
-                $lang = $this->language_slug(isset($language_row['lang']) ? $language_row['lang'] : '');
+                $lang = $this->preferred_language_slug(
+                    isset($language_row['lang']) ? $language_row['lang'] : '',
+                    $known
+                );
                 if ($id <= 0 || isset($seen[$id])) {
                     continue;
                 }
@@ -749,7 +752,7 @@ class Polylang_Media
                 if ($member_id <= 0) {
                     continue;
                 }
-                $slug = $this->language_slug($member_lang);
+                $slug = $this->preferred_language_slug($member_lang, $known);
                 if (!isset($members[$member_id]) || ($members[$member_id] === '' && $slug !== '')) {
                     $members[$member_id] = $slug;
                 }
@@ -761,10 +764,13 @@ class Polylang_Media
         foreach ($decoded as $lang => $raw_id) {
             $slug = $this->language_slug($lang);
             $attachment_id = (int) $raw_id;
-            if ($slug === '' || $attachment_id <= 0 || isset($map[$slug])) {
+            if ($slug === '' || $attachment_id <= 0) {
                 continue;
             }
-            if ($known !== array() && !isset($known[$slug])) {
+            if ($known !== array()) {
+                $slug = $this->match_known_slug($slug, $known);
+            }
+            if ($slug === '' || isset($map[$slug])) {
                 continue;
             }
             if (!isset($members[$attachment_id]) && !isset($lookup[$attachment_id])) {
@@ -1306,6 +1312,52 @@ class Polylang_Media
             return '';
         }
         return $slug;
+    }
+
+    /**
+     * Use the site's slug when it differs only by case.
+     *
+     * A valid slug that is not one of the known languages is kept. Description
+     * keys use match_known_slug() instead, so extra Polylang metadata is ignored.
+     *
+     * @param mixed $value
+     * @param array $known
+     * @return string
+     */
+    private function preferred_language_slug($value, $known)
+    {
+        $slug = $this->language_slug($value);
+        if ($slug === '') {
+            return '';
+        }
+        $matched = $this->match_known_slug($slug, $known);
+        if ($matched !== '') {
+            return $matched;
+        }
+        return $slug;
+    }
+
+    /**
+     * @param string $slug
+     * @param array $known
+     * @return string
+     */
+    private function match_known_slug($slug, $known)
+    {
+        $slug = $this->language_slug($slug);
+        if ($slug === '' || !is_array($known) || $known === array()) {
+            return '';
+        }
+        if (isset($known[$slug])) {
+            return $slug;
+        }
+        $lower = strtolower($slug);
+        foreach (array_keys($known) as $candidate) {
+            if (is_string($candidate) && strtolower($candidate) === $lower) {
+                return $candidate;
+            }
+        }
+        return '';
     }
 
     /**
