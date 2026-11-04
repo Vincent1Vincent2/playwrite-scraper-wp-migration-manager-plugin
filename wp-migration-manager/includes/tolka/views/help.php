@@ -38,7 +38,7 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('The plugin checks whether Polylang is active on this WordPress site. When the version can be read from Polylang, the check includes that version.', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__note">
-                <?php esc_html_e('If Polylang is inactive or missing, you see an error and empty content. The screen does not crash, and nothing is deleted.', 'migration-manager'); ?>
+                <?php esc_html_e('If Polylang is inactive or missing, you see an error and empty content. You can keep using the screen, and nothing is deleted.', 'migration-manager'); ?>
             </p>
         </li>
         <li class="wmm-tolka-help__step">
@@ -66,17 +66,17 @@ if (!defined('ABSPATH')) {
             </p>
             <ul class="wmm-tolka-help__details">
                 <li><?php esc_html_e('Languages are the languages configured in Polylang, including which one is the default.', 'migration-manager'); ?></li>
-                <li><?php esc_html_e('Posts are grouped by translation, so one row covers the same post in each language rather than a separate row per language.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Posts are grouped by translation, so one row covers the same post in each language, including the title and the body.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Terms are categories, tags, and similar labels, grouped by translation.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Strings are the interface phrases Polylang stores, with a translation for each language.', 'migration-manager'); ?></li>
-                <li><?php esc_html_e('Menus are the theme locations and the translated menu assigned to each language.', 'migration-manager'); ?></li>
-                <li><?php esc_html_e('Media is the alternative text and titles on attachments, per language.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Menus are the theme locations, the translated menu for each language, and the links in those menus.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Media lists each attachment file with the alternative text and title in each language. The files stay in the media library.', 'migration-manager'); ?></li>
             </ul>
             <p>
                 <?php esc_html_e('Each part shows a count of everything found and a sample of at most twenty rows. The sample is only a look at the data. The migration includes every item that was found, not just the rows in the sample.', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__note">
-                <?php esc_html_e('If a part has no items, that part stays empty and the preview can include a short error explaining why. If a part cannot be read at all, the preview names that part and still shows the parts that could be read.', 'migration-manager'); ?>
+                <?php esc_html_e('If a part has no items, that part stays empty and the preview can include a short error explaining why. If every part is empty, Polylang may be inactive, or this site may not have translations yet. Read that error before you run the migration. If a part cannot be read at all, the preview names that part and still shows the parts that could be read.', 'migration-manager'); ?>
             </p>
         </li>
         <li class="wmm-tolka-help__step">
