@@ -427,6 +427,17 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(240, $at_full['tolka_ms']);
         $this->assertSame(76.0, $at_full['faster_percent']);
         $this->assertSame('76.0% faster', $at_full['faster_label']);
+
+        $spaced = self::contractBenchmarks();
+        $spaced['max_overhead_ratio'] = ' 1 ';
+        $at_spaced = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            $heavy,
+            $spaced
+        );
+        $this->assertSame($at_full['overhead_ms'], $at_spaced['overhead_ms']);
+        $this->assertSame($at_full['faster_percent'], $at_spaced['faster_percent']);
+        $this->assertTrue($at_spaced['ok']);
     }
 
     public function test_switcher_false_does_not_add_switcher_milliseconds()
@@ -499,6 +510,22 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0.0, $estimate['faster_percent']);
         $this->assertSame('', $estimate['faster_label']);
         $this->assertNotSame(8000, $estimate['current_ms']);
+
+        $benchmarks = self::contractBenchmarks();
+        unset($benchmarks['polylang_switcher_ms']);
+        $benchmarks['max_overhead_ratio'] = -0.4;
+        $both = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 1),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $both,
+            'A Tolka speed estimate is not available. The benchmark file is missing a number for language switcher milliseconds (polylang_switcher_ms). The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'
+        );
+        $this->assertSame('', $both['faster_label']);
+        $this->assertSame(0.0, $both['faster_percent']);
+        $this->assertSame(0, $both['tolka_ms']);
     }
 
     public function test_unused_metrics_do_not_change_the_percent()
