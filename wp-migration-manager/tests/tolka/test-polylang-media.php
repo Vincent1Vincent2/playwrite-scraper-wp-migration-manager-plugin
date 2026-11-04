@@ -2010,7 +2010,7 @@ class Test_Polylang_Media extends TestCase
             $this->markTestSkipped('WordPress or Polylang is already loaded.');
         }
 
-        $stored_file = "2024/05/br\xF6d-\xE5\xE4.jpg";
+        $stored_file = "2024/05/caf\xE9\0-\xC5\xC4\xD6-\xE5\xE4\xF6-\xFC.jpg";
         $GLOBALS['wpdb'] = new class($stored_file) {
             public $posts = 'wp_posts';
             public $terms = 'wp_terms';
@@ -2065,7 +2065,7 @@ class Test_Polylang_Media extends TestCase
                     return array(
                         array('post_id' => 40, 'meta_key' => '_wp_attached_file', 'meta_value' => $this->stored_file),
                         array('post_id' => 40, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Bröd'),
-                        array('post_id' => 41, 'meta_key' => '_wp_attached_file', 'meta_value' => '   '),
+                        array('post_id' => 41, 'meta_key' => '_wp_attached_file', 'meta_value' => "\xA0 \t"),
                         array('post_id' => 41, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Saknas'),
                     );
                 }
@@ -2093,16 +2093,61 @@ class Test_Polylang_Media extends TestCase
             unset($GLOBALS['wpdb']);
         }
 
+        $expected_file = '2024/05/café-ÅÄÖ-åäö-ü.jpg';
         $this->assertSame($first, $second);
-        $this->assertSame('2024/05/bröd-åä.jpg', $second['items'][0]['file']);
-        $this->assertStringNotContainsString("\xF6", $second['items'][0]['file']);
+        $this->assertSame($expected_file, $first['items'][0]['file']);
+        $this->assertSame($expected_file, $second['items'][0]['file']);
+        $this->assertSame(1, preg_match('//u', $first['items'][0]['file']));
+        $this->assertSame(1, preg_match('//u', $second['items'][0]['file']));
+        $this->assertStringNotContainsString("\0", $first['items'][0]['file']);
+        $this->assertStringNotContainsString("\0", $second['items'][0]['file']);
+        $this->assertStringNotContainsString("\xE9", $second['items'][0]['file']);
+        $this->assertStringNotContainsString("\xFC", $second['items'][0]['file']);
+        $encoded = json_encode($second['items'][0]['file']);
+        $this->assertIsString($encoded);
+        $this->assertSame($expected_file, json_decode($encoded, true));
+        $this->assertSame('', $first['items'][1]['file']);
         $this->assertSame('', $second['items'][1]['file']);
+        $this->assertCount(1, $first['errors']);
         $this->assertCount(1, $second['errors']);
+        $this->assertSame($first['errors'], $second['errors']);
         $this->assertCustomerSentence($second['errors'][0]);
         $this->assertSame(
             'One media item has no file path and was exported with an empty file. Nothing was changed.',
             $second['errors'][0]
         );
+    }
+
+    public function test_latin1_file_name_matches_the_same_utf8_file()
+    {
+        $latin1 = "2024/05/caf\xE9.jpg";
+        $utf8 = '2024/05/café.jpg';
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'sv'),
+            array('id' => 11, 'lang' => 'en'),
+        ), array(10, 11), array('en', 'sv'), 'sv', array(
+            10 => array(
+                'file' => $latin1,
+                'alt' => 'Kaffe',
+                'title' => 'Kaffe',
+            ),
+            11 => array(
+                'file' => $utf8,
+                'alt' => 'Coffee',
+                'title' => 'Coffee',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame($utf8, $result['items'][0]['file']);
+        $this->assertSame(1, preg_match('//u', $result['items'][0]['file']));
+        $base = '/var/www/html/wp-content/uploads';
+        $this->assertSame($utf8, $this->call('portable_file', array($base . '/' . $latin1, $base)));
+        $this->assertSame('Doorÿway.jpg', $this->call('portable_file', array("Door\xFFway.jpg", $base)));
+        $this->assertSame('', $this->call('portable_file', array("\xA0 \t", $base)));
+        $this->assertSame('https://cdn.example/café.jpg', $this->call('portable_file', array("https://cdn.example/caf\xE9.jpg", $base)));
+        $this->assertSame('C:/uploads/café.jpg', $this->call('portable_file', array("C:\\uploads\\caf\xE9.jpg", '')));
+        $this->assertSame('Doorway', $this->call('string_value', array("Door\xFFway")));
     }
 
     public function test_swedish_letters_are_kept_in_alt_text_titles_and_file_names()

@@ -1551,8 +1551,8 @@ class Polylang_Media
      */
     private function same_media_file($left, $right)
     {
-        $left = str_replace('\\', '/', $this->string_value($left));
-        $right = str_replace('\\', '/', $this->string_value($right));
+        $left = str_replace('\\', '/', $this->file_text($left));
+        $right = str_replace('\\', '/', $this->file_text($right));
         if ($left === '' || $right === '') {
             return false;
         }
@@ -1628,7 +1628,7 @@ class Polylang_Media
      */
     private function portable_file($file, $uploads_basedir = null)
     {
-        $file = $this->blank_if_only_whitespace(str_replace('\\', '/', $this->string_value($file)));
+        $file = $this->blank_if_only_whitespace(str_replace('\\', '/', $this->file_text($file)));
         if ($file === '') {
             return '';
         }
@@ -1686,6 +1686,9 @@ class Polylang_Media
         $id = (int) $id;
         if (!isset($records[$id]) || !is_array($records[$id]) || !array_key_exists($field, $records[$id])) {
             return '';
+        }
+        if ($field === 'file') {
+            return $this->file_text($records[$id][$field]);
         }
         return $this->string_value($records[$id][$field]);
     }
@@ -2363,7 +2366,8 @@ class Polylang_Media
                 if ($field === '' || $records[$id][$field] !== '') {
                     continue;
                 }
-                $records[$id][$field] = $this->string_value($this->unserialize_meta($this->row_value($row, 'meta_value')));
+                $stored = $this->unserialize_meta($this->row_value($row, 'meta_value'));
+                $records[$id][$field] = ($field === 'file') ? $this->file_text($stored) : $this->string_value($stored);
             }
         }
     }
@@ -2389,10 +2393,15 @@ class Polylang_Media
     private function meta_string($id, $key)
     {
         if (function_exists('get_post_meta')) {
-            return $this->string_value(get_post_meta($id, $key, true));
+            $stored = get_post_meta($id, $key, true);
+        } else {
+            $stored = $this->unserialize_meta($this->meta_from_db($id, $key));
+        }
+        if ($key === '_wp_attached_file') {
+            return $this->file_text($stored);
         }
 
-        return $this->string_value($this->unserialize_meta($this->meta_from_db($id, $key)));
+        return $this->string_value($stored);
     }
 
     /**
@@ -2499,6 +2508,73 @@ class Polylang_Media
             return '';
         }
         return $this->utf8_string($value);
+    }
+
+    /**
+     * A file name stored as Latin-1 comes back as UTF-8.
+     *
+     * Bytes that already form UTF-8 stay as they are. A lone Latin-1 byte,
+     * including å, ä, ö, é, and ü, is encoded as UTF-8. A null byte is removed.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function file_text($value)
+    {
+        if (is_array($value)) {
+            $value = reset($value);
+        }
+        if (is_bool($value) || $value === null || is_object($value)) {
+            return '';
+        }
+        if (is_int($value) || is_float($value)) {
+            $value = (string) $value;
+        }
+        if (!is_string($value)) {
+            return '';
+        }
+        $value = str_replace("\0", '', $value);
+        if ($value === '') {
+            return '';
+        }
+        if ($this->is_utf8($value)) {
+            return $value;
+        }
+        $value = $this->promote_latin1_bytes($value);
+        if ($this->is_utf8($value)) {
+            return $value;
+        }
+        return str_replace("\0", '', $this->drop_invalid_utf8($value));
+    }
+
+    /**
+     * Turn bytes that are not already UTF-8 into the UTF-8 form of Latin-1.
+     *
+     * @param string $value
+     * @return string
+     */
+    private function promote_latin1_bytes($value)
+    {
+        $out = '';
+        $length = strlen($value);
+        for ($i = 0; $i < $length; $i++) {
+            $byte = ord($value[$i]);
+            $width = $this->utf8_sequence_width($byte);
+            if ($width > 1 && ($i + $width) <= $length) {
+                $sequence = substr($value, $i, $width);
+                if ($this->is_utf8_sequence($sequence)) {
+                    $out .= $sequence;
+                    $i += $width - 1;
+                    continue;
+                }
+            }
+            if ($byte >= 0x80) {
+                $out .= chr(0xC0 | ($byte >> 6)) . chr(0x80 | ($byte & 0x3F));
+                continue;
+            }
+            $out .= $value[$i];
+        }
+        return $out;
     }
 
     /**
