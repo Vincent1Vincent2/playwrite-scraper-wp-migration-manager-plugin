@@ -1768,13 +1768,19 @@ class Harness_Test extends Tolka_Test_Case
      */
     public function test_bootstrap_can_be_loaded_twice()
     {
+        $cwd = getcwd();
+        $before = get_defined_functions();
         require_once WMM_TOLKA_TEST_DIR . '/bootstrap.php';
         require WMM_TOLKA_TEST_DIR . '/bootstrap.php';
         require WMM_TOLKA_TEST_DIR . '/bootstrap.php';
+        $after = get_defined_functions();
 
+        $this->assertSame($before['user'], $after['user']);
+        $this->assertSame($cwd, getcwd());
         $this->assertTrue(function_exists('wmm_tolka_skip_without_class'));
         $this->assertTrue(function_exists('wmm_tolka_load_classes'));
         $this->assertTrue(defined('WMM_TOLKA_TEST_BOOTSTRAP'));
+        $this->assert_overhead_cap_is_465_70_78();
     }
 
     /**
@@ -1795,7 +1801,15 @@ class Harness_Test extends Tolka_Test_Case
             . "require $bootstrap;\n"
             . "require $resolved;\n"
             . "include $bootstrap;\n"
-            . "echo function_exists('wmm_tolka_load_classes') ? \"OK\\n\" : \"MISSING\\n\";\n";
+            . "\$raw = (8 * 35) + 25 + (20 * 8);\n"
+            . "\$cap = (int) floor(100 * 0.7);\n"
+            . "\$overhead = (int) min(\$raw, \$cap);\n"
+            . "\$tolka = (int) max(1, 100 - \$overhead + min(8 * 6, \$overhead));\n"
+            . "echo function_exists('wmm_tolka_load_classes') ? \"OK\\n\" : \"MISSING\\n\";\n"
+            . "echo 'RAW=' . \$raw . \"\\n\";\n"
+            . "echo 'CAP=' . \$cap . \"\\n\";\n"
+            . "echo 'TOLKA=' . \$tolka . \"\\n\";\n"
+            . "echo (is_int(\$raw) && is_int(\$cap) && is_int(\$tolka)) ? \"TYPES=int\\n\" : \"TYPES=other\\n\";\n";
         file_put_contents($runner, $script);
 
         $output = array();
@@ -1805,8 +1819,32 @@ class Harness_Test extends Tolka_Test_Case
 
         $this->assertSame(0, $status, $text);
         $this->assertStringContainsString('OK', $text);
+        $this->assertStringContainsString('RAW=465', $text);
+        $this->assertStringContainsString('CAP=70', $text);
+        $this->assertStringContainsString('TOLKA=78', $text);
+        $this->assertStringContainsString('TYPES=int', $text);
         $this->assertStringNotContainsString('WARN', $text);
         $this->assertStringNotContainsString('Cannot redeclare', $text);
+    }
+
+    /**
+     * Integer overhead cap used by the worked example: 465 raw, 70 capped, 78 for Tolka.
+     */
+    private function assert_overhead_cap_is_465_70_78()
+    {
+        $raw = (8 * 35) + 25 + (20 * 8);
+        $cap = (int) floor(100 * 0.7);
+        $overhead = (int) min($raw, $cap);
+        $tolka = (int) max(1, 100 - $overhead + min(8 * 6, $overhead));
+
+        $this->assertTrue(is_int($raw));
+        $this->assertTrue(is_int($cap));
+        $this->assertTrue(is_int($overhead));
+        $this->assertTrue(is_int($tolka));
+        $this->assertSame(465, $raw);
+        $this->assertSame(70, $cap);
+        $this->assertSame(70, $overhead);
+        $this->assertSame(78, $tolka);
     }
 
     /**
