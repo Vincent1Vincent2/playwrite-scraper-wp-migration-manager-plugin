@@ -188,8 +188,18 @@ class Polylang_Languages
         }
 
         $items = array();
+        $carried_default = '';
         foreach ($raw as $language) {
+            $carried = $this->internal_default_target($language);
+            if ($carried !== '') {
+                $carried_default = $carried;
+            }
             $this->add_item($items, $this->item_from_record($language, $default));
+        }
+        if ($default === '' && $carried_default !== '' && isset($items[$carried_default])) {
+            foreach ($items as $slug => $row) {
+                $items[$slug]['is_default'] = ($slug === $carried_default);
+            }
         }
 
         return array_values($items);
@@ -850,6 +860,26 @@ class Polylang_Languages
         }
 
         return '';
+    }
+
+    /**
+     * Real language marked default by an internal pll_ row.
+     *
+     * @param mixed $language API language record.
+     * @return string
+     */
+    private function internal_default_target($language)
+    {
+        if (!is_object($language) && !is_array($language)) {
+            return '';
+        }
+
+        $slug = $this->normalized_slug($this->read_field($language, 'slug'));
+        if (!$this->is_internal_language_slug($slug) || !$this->is_truthy_flag($this->read_field($language, 'is_default'))) {
+            return '';
+        }
+
+        return $this->public_language_slug($slug);
     }
 
     /**

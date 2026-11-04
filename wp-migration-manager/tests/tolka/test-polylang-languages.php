@@ -1090,6 +1090,50 @@ PHP
         );
     }
 
+    public function test_an_internal_row_marked_default_selects_the_real_language()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'en',
+            'name' => 'English',
+            'locale' => 'en_US',
+            'term_id' => 4,
+            'flag_code' => 'us',
+            'is_default' => false,
+        ),
+        (object) array(
+            'slug' => 'pll_sv',
+            'name' => 'pll_sv',
+            'locale' => 'sv_SE',
+            'term_id' => 41,
+            'flag_code' => 'se',
+            'is_default' => true,
+        ),
+        (object) array(
+            'slug' => 'sv',
+            'name' => 'Svenska',
+            'locale' => 'sv_SE',
+            'term_id' => 8,
+            'flag_code' => 'se',
+            'is_default' => false,
+        ),
+    );
+}
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertSame(8, $by_slug['sv']['term_id']);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+    }
+
     public function test_the_api_default_pll_sv_marks_sv()
     {
         $result = $this->export_isolated(<<<'PHP'
