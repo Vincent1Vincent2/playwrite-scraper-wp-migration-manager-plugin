@@ -665,10 +665,9 @@ class Polylang_Languages
      */
     private function fill_item($preferred, $fallback)
     {
-        if (($preferred['name'] === '' || $preferred['name'] === $preferred['slug'])
-            && $fallback['name'] !== ''
-            && $fallback['name'] !== $preferred['slug']
-        ) {
+        $name_is_slug = ($preferred['name'] === '' || strcasecmp($preferred['name'], $preferred['slug']) === 0);
+        $fallback_is_slug = ($fallback['name'] === '' || strcasecmp($fallback['name'], $preferred['slug']) === 0);
+        if ($name_is_slug && !$fallback_is_slug) {
             $preferred['name'] = $fallback['name'];
         }
 
