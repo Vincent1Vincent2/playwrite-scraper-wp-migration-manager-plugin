@@ -515,7 +515,7 @@ class Test_Migration_Report extends TestCase
             ),
         ));
 
-        $this->assertSame('Summer hours start Monday. (en)', $this->line($report, 'Example post'));
+        $this->assertSame('Summer hours start Monday (en)', $this->line($report, 'Example post'));
         $this->assertStringNotContainsString('longer page body', $this->line($report, 'Example post'));
     }
 

@@ -1134,7 +1134,7 @@ class Migration_Report
             }
             $slug = is_string($lang) ? trim($lang) : '';
             if ($slug !== '' && preg_match('/^[A-Za-z0-9_-]{2,12}$/', $slug)) {
-                $bits[] = $name . ' (' . $slug . ')';
+                $bits[] = self::without_trailing_period($name) . ' (' . $slug . ')';
             } else {
                 $bits[] = $name;
             }
@@ -1183,7 +1183,7 @@ class Migration_Report
 
             $slug = is_string($lang) ? trim($lang) : '';
             if ($slug !== '' && preg_match('/^[A-Za-z0-9_-]{2,12}$/', $slug)) {
-                $bits[] = $name . ' (' . $slug . ')';
+                $bits[] = self::without_trailing_period($name) . ' (' . $slug . ')';
             } else {
                 $bits[] = $name;
             }
@@ -1237,6 +1237,21 @@ class Migration_Report
         }
 
         return self::excerpt($name, 80);
+    }
+
+    /**
+     * Drop one sentence period so a language tag does not sit after it.
+     *
+     * @param string $name Display name.
+     * @return string
+     */
+    private static function without_trailing_period($name)
+    {
+        if (substr($name, -1) === '.') {
+            return substr($name, 0, -1);
+        }
+
+        return $name;
     }
 
     /**
