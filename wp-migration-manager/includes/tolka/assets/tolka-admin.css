@@ -1663,11 +1663,60 @@ dl.wmm-tolka-lines dd,
 
 .wmm-tolka-status.notice,
 .wmm-tolka-errors.notice,
-.wmm-tolka-notice.notice {
+.wmm-tolka-notice.notice,
+#wmm-tolka-polylang-status {
     display: block;
-    max-width: 72ch;
-    margin: 12px 0;
+    clear: both;
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 16px;
+    padding: 12px 14px;
     border-radius: 6px;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+#wmm-tolka-polylang-status.notice-success {
+    background: #edfaef;
+    border-inline-start: 4px solid #0b6e4f;
+    color: #1d2327;
+}
+
+#wmm-tolka-polylang-status.notice-warning {
+    background: #fcf9e8;
+    border-inline-start: 4px solid #9a6700;
+    color: #1d2327;
+}
+
+#wmm-tolka-polylang-status.notice-error {
+    background: #fcf0f1;
+    border-inline-start: 4px solid #b32d2e;
+    color: #1d2327;
+}
+
+#wmm-tolka-polylang-status p,
+#wmm-tolka-polylang .wmm-tolka-status p {
+    margin: 0;
+    max-width: 100%;
+    color: #1d2327;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+.wmm-tolka-wrap {
+    display: flex;
+    flex-direction: column;
+}
+
+#wmm-tolka-polylang-status {
+    order: -1;
 }
 
 .wmm-tolka-status.notice::before,
@@ -1849,6 +1898,20 @@ dl.wmm-tolka-lines dd,
         width: 100%;
         max-width: 100%;
         text-align: center;
+    }
+
+    #wmm-tolka-polylang-status,
+    #wmm-tolka-polylang .wmm-tolka-status {
+        width: 100%;
+        max-width: 100%;
+        margin: 0 0 12px;
+        padding: 12px;
+    }
+
+    #wmm-tolka-polylang-status p,
+    #wmm-tolka-polylang .wmm-tolka-status p {
+        font-size: 15px;
+        line-height: 1.5;
     }
 
     #wmm-tolka-wizard button.wmm-tolka-is-busy,
@@ -2051,6 +2114,22 @@ dl.wmm-tolka-lines dd,
         transition: none !important;
         transform: none !important;
     }
+}
+
+button.wmm-tolka-is-busy::after,
+#wmm-tolka-wizard button.wmm-tolka-is-busy::after,
+#wmm-tolka-run.wmm-tolka-is-busy::after,
+#wmm-tolka-preview.wmm-tolka-is-busy::after {
+    position: static !important;
+    float: none !important;
+    z-index: auto !important;
+}
+
+#wmm-tolka-report,
+#wmm-tolka-preview-result {
+    position: relative;
+    z-index: 2;
+    clear: both;
 }
 
 #wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-faster,
