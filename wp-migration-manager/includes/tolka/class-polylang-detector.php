@@ -119,6 +119,7 @@ class Polylang_Detector
                         'header_found' => true,
                         'version_missing' => $version === '',
                         'listed_active' => false,
+                        'unreadable' => $version === '' && !empty($parsed['unreadable']),
                         'label' => (isset($parsed['label']) && $parsed['label'] === 'Polylang Pro') ? 'Polylang Pro' : 'Polylang',
                     );
                 }
@@ -345,6 +346,8 @@ class Polylang_Detector
         $listed = array();
         $others = array();
         $header_found = false;
+        $saw_readable_header = false;
+        $saw_unreadable = false;
 
         foreach (self::unique_files($files) as $file) {
             $parsed = static::inspect_plugin_file($file);
@@ -353,6 +356,11 @@ class Polylang_Detector
             }
 
             $header_found = true;
+            if (!empty($parsed['unreadable'])) {
+                $saw_unreadable = true;
+                continue;
+            }
+            $saw_readable_header = true;
             $version = '';
             if (isset($parsed['version']) && is_string($parsed['version'])) {
                 $version = $parsed['version'];
@@ -448,6 +456,7 @@ class Polylang_Detector
             'other_label' => $other_label,
             'other_version' => $other_version,
             'other_missing_label' => $other_version === '' ? $other_missing_label : '',
+            'unreadable' => $saw_unreadable && !$saw_readable_header,
         );
     }
 
@@ -489,15 +498,28 @@ class Polylang_Detector
             'version' => '',
         );
 
-        if ($path === '' || !is_file($path) || !is_readable($path)) {
+        if ($path === '' || !is_file($path)) {
             return $rejected;
+        }
+
+        $basename = strtolower(basename(str_replace('\\', '/', $path)));
+        $official_file = ($basename === 'polylang.php' || $basename === 'polylang-pro.php');
+        if (!static::can_read_plugin_file($path)) {
+            if (!$official_file) {
+                return $rejected;
+            }
+
+            return array(
+                'is_polylang' => true,
+                'version' => '',
+                'label' => $basename === 'polylang-pro.php' ? 'Polylang Pro' : 'Polylang',
+                'unreadable' => true,
+            );
         }
 
         $contents = self::read_header_contents($path);
         $name = self::header_field($contents, 'Plugin Name');
         $version = self::sanitize_version(self::header_field($contents, 'Version'));
-        $basename = strtolower(basename(str_replace('\\', '/', $path)));
-        $official_file = ($basename === 'polylang.php' || $basename === 'polylang-pro.php');
         $name_matches = self::name_is_polylang($name);
 
         // A different Plugin Name means this file is not Polylang, even when
@@ -554,8 +576,15 @@ class Polylang_Detector
         $errors = array();
         $situation = '';
         $action = '';
+        $unreadable = $version === '' && !empty($inspection['unreadable']);
 
-        if (!$active && $version !== '' && $listed_active) {
+        if ($unreadable) {
+            $errors[] = self::translate(
+                $active
+                    ? 'Polylang is active, but its plugin file could not be read.'
+                    : 'A Polylang plugin file was found, but it could not be read.'
+            );
+        } elseif (!$active && $version !== '' && $listed_active) {
             $situation = self::fill_version(
                 self::translate(
                     $pro
@@ -925,6 +954,14 @@ class Polylang_Detector
         }
 
         return $bases;
+    }
+
+    /**
+     * Whether the plugin file can be opened. Tests can override this.
+     */
+    protected static function can_read_plugin_file(string $path): bool
+    {
+        return $path !== '' && is_file($path) && is_readable($path);
     }
 
     private static function read_header_contents(string $path): string

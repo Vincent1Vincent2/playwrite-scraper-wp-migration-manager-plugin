@@ -16,8 +16,31 @@ if (is_readable($wmm_tolka_detector_file)) {
 use PHPUnit\Framework\TestCase;
 
 if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
+    trait Polylang_Detector_Blocks_Reads
+    {
+        public static $unreadable = array();
+
+        protected static function can_read_plugin_file(string $path): bool
+        {
+            $blocked = is_array(static::$unreadable) ? static::$unreadable : array();
+            $resolved = realpath($path);
+            foreach ($blocked as $blocked_path) {
+                if (!is_string($blocked_path) || $blocked_path === '') {
+                    continue;
+                }
+                if ($blocked_path === $path || (is_string($resolved) && $blocked_path === $resolved)) {
+                    return false;
+                }
+            }
+
+            return parent::can_read_plugin_file($path);
+        }
+    }
+
     class Polylang_Detector_Fixture extends WMM\Tolka\Polylang_Detector
     {
+        use Polylang_Detector_Blocks_Reads;
+
         public static $directories = array();
 
         public static $active = false;
@@ -114,6 +137,8 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
 
     class Polylang_Detector_Api_Fixture extends WMM\Tolka\Polylang_Detector
     {
+        use Polylang_Detector_Blocks_Reads;
+
         public static $directories = array();
 
         protected static function use_loaded_plugin(): bool
@@ -380,6 +405,94 @@ class Polylang_Detector_Test extends TestCase
             ),
             Polylang_Detector_Fixture::status()
         );
+    }
+
+    public function test_unreadable_plugin_file_leaves_version_empty(): void
+    {
+        if (function_exists('pll_languages_list') || class_exists('PLL', false) || class_exists('Polylang', false)) {
+            $this->markTestSkipped('Polylang is loaded in this process.');
+        }
+
+        $root = $this->temp_dir();
+        $file = $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '9.9.9'));
+        Polylang_Detector_Fixture::$directories = array($root);
+        Polylang_Detector_Fixture::$unreadable = array($file);
+
+        $status = Polylang_Detector_Fixture::status();
+        $again = Polylang_Detector_Fixture::status();
+
+        $this->assertFalse($status['active']);
+        $this->assertSame('', $status['version']);
+        $this->assertSame(
+            array('A Polylang plugin file was found, but it could not be read.'),
+            $status['errors']
+        );
+        $this->assertSame($status, $again);
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_unreadable_plugin_file_does_not_change_active_when_pll_languages_list_exists(): void
+    {
+        require_once $this->polylang_api_stub();
+
+        $root = $this->temp_dir();
+        $file = $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '3.6.4'));
+        Polylang_Detector_Api_Fixture::$directories = array($root);
+        Polylang_Detector_Api_Fixture::$unreadable = array($file);
+
+        $status = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertTrue(function_exists('pll_languages_list'));
+        $this->assertTrue($status['active']);
+        $this->assertSame('', $status['version']);
+        $this->assertCount(1, $status['errors']);
+        $this->assertSame(
+            'Polylang is active, but its plugin file could not be read.',
+            $status['errors'][0]
+        );
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+        $this->assertSame($status, Polylang_Detector_Api_Fixture::status());
+    }
+
+    public function test_unreadable_copy_does_not_erase_a_readable_version_zero(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '0'));
+        $pro = $this->write_plugin($root, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '4.0.0'));
+        Polylang_Detector_Fixture::$directories = array($root);
+        Polylang_Detector_Fixture::$unreadable = array($pro);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('0', $status['version']);
+        $this->assertStringNotContainsString('could not be read', $status['errors'][0]);
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
+    public function test_status_does_not_leave_an_error_handler_installed(): void
+    {
+        $probe = static function () {
+            return true;
+        };
+        $before = set_error_handler($probe);
+        restore_error_handler();
+
+        $root = $this->temp_dir();
+        $file = $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '1.0.0'));
+        Polylang_Detector_Fixture::$directories = array($root);
+        Polylang_Detector_Fixture::$unreadable = array($file);
+        Polylang_Detector_Fixture::status();
+        Polylang_Detector_Fixture::status();
+        Polylang_Detector_Read_Throws_Fixture::status();
+
+        $after = set_error_handler($probe);
+        restore_error_handler();
+
+        $this->assertSame($before, $after);
     }
 
     public function test_version_zero_is_kept(): void
@@ -1430,6 +1543,10 @@ class Polylang_Detector_Test extends TestCase
         Polylang_Detector_Fixture::$origin = '';
         if (class_exists('Polylang_Detector_Api_Fixture')) {
             Polylang_Detector_Api_Fixture::$directories = array();
+            Polylang_Detector_Api_Fixture::$unreadable = array();
+        }
+        if (class_exists('Polylang_Detector_Fixture')) {
+            Polylang_Detector_Fixture::$unreadable = array();
         }
     }
 
