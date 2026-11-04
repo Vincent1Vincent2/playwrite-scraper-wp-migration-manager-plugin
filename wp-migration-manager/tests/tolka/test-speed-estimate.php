@@ -663,6 +663,45 @@ class Test_Speed_Estimate extends TestCase
         }
     }
 
+    public function test_zero_load_and_zero_languages_still_return_a_percent()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $benchmarks['provenance'] = 'placeholder';
+        $benchmarks['provenance_note'] = 'Kept on a zero millisecond estimate.';
+
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 0),
+            array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+        $one_language = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 0),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame(1, $estimate['current_ms']);
+        $this->assertSame($one_language['tolka_ms'], $estimate['tolka_ms']);
+        $this->assertSame($one_language['overhead_ms'], $estimate['overhead_ms']);
+        $this->assertSame(0.0, $estimate['faster_percent']);
+        $this->assertSame('0.0% faster', $estimate['faster_label']);
+        $this->assertSame('', $estimate['error']);
+        $this->assertSame('placeholder', $estimate['provenance']);
+        $this->assertSame('Kept on a zero millisecond estimate.', $estimate['provenance_note']);
+        $this->assertSame(35, Speed_Estimate::benchmarks()['polylang_extra_ms_per_language']);
+
+        $fraction = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 0.4),
+            array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+        $this->assertTrue($fraction['ok']);
+        $this->assertSame(1, $fraction['current_ms']);
+        $this->assertSame($estimate['faster_percent'], $fraction['faster_percent']);
+        $this->assertSame('0.0% faster', $fraction['faster_label']);
+    }
+
     public function test_negative_measured_time_uses_one_millisecond()
     {
         $estimate = Speed_Estimate::project(
