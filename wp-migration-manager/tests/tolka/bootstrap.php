@@ -195,8 +195,8 @@ if (!function_exists('wmm_tolka_skip_sentence')) {
     /**
      * A skip reason that names the class and stays inside the plugin.
      *
-     * Absolute paths outside the plugin are removed. Paths inside the plugin
-     * are rewritten so they start at the plugin root.
+     * Absolute paths outside the plugin are removed, including /etc and file://.
+     * Paths inside the plugin are rewritten so they start at the plugin root.
      *
      * @param string $message Reason the test cannot run yet.
      * @return string
@@ -214,11 +214,11 @@ if (!function_exists('wmm_tolka_skip_sentence')) {
         $message = preg_replace('# in /[^\\s]+ on line \\d+#', '', $message);
         $message = preg_replace('# in /[^\\s]+:\\d+#', '', $message);
         $message = preg_replace('#phar://\\S+#', '', $message);
-        $message = preg_replace('#file://\\S+#i', '', $message);
+        $message = preg_replace('#file://\\S*#i', '', $message);
         $message = preg_replace('#[A-Za-z]:\\\\[^\\s]+#', '', $message);
         $message = preg_replace('#(?<![\\w\\\\])\\\\{2}\\S+#', '', $message);
         $message = preg_replace('#\\S*\\.\\./\\S*#', '', $message);
-        $message = preg_replace('#(?<![\\w./-])/(?:[^/\\s]+/)*[^/\\s]+#', '', $message);
+        $message = preg_replace('#(?<![\\w./-])/(?:[^/\\s]+/)*[^/\\s]*/?#', '', $message);
         $message = preg_replace('#/(?:[^\\s/:]+/)+[^\\s/:]+#', '', $message);
         $message = preg_replace('#\\S*wmm-tolka-\\S*#', '', $message);
         $message = preg_replace('/[ \\t]{2,}/', ' ', $message);

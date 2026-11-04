@@ -1277,7 +1277,7 @@ class Harness_Test extends Tolka_Test_Case
 
     /**
      * Two bootstrap loads leave the cap at 465, 70, and 78.
-     * The skip recorded after those loads names the missing class and drops paths from outside the plugin.
+     * The skip recorded after those loads names the missing class and drops /etc and file://.
      */
     public function test_overhead_stays_465_70_78_after_two_loads_and_skip_hides_outside_paths()
     {
@@ -1290,7 +1290,9 @@ class Harness_Test extends Tolka_Test_Case
         $resolved = var_export(realpath(WMM_TOLKA_TEST_DIR . '/bootstrap.php'), true);
         $planted = var_export(
             'Could not read ' . $outside
-            . ' or /etc or ../../outside/secret.php or file:///tmp/leak.php or \\\\server\\share\\secret.php.'
+            . ' or /etc or /etc/ or /etc/passwd or file:// or FILE:///etc/passwd'
+            . ' or file://localhost/etc/passwd or ../../outside/secret.php'
+            . ' or \\\\server\\share\\secret.php.'
             . ' The includes/tolka directory is still named.',
             true
         );
