@@ -930,6 +930,29 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_polish_is_kept_and_its_internal_row_is_not()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(3, 'Polski', 'pl', 'pl_PL', 'pl', 0, 0),
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 1, 2),
+        ), 'pl');
+        $db->term_language_rows = array(
+            $this->language_term(30, 'Polski', 'pll_pl', 'pl_PL', 'pl', 0, 0),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('pl', 'en'), array_keys($by_slug));
+        $this->assertSame('Polski', $by_slug['pl']['name']);
+        $this->assertSame('pl_PL', $by_slug['pl']['locale']);
+        $this->assertSame('pl', $by_slug['pl']['flag']);
+        $this->assertTrue($by_slug['pl']['is_default']);
+        $this->assertSame(3, $by_slug['pl']['term_id']);
+        $this->assertArrayNotHasKey('pll_pl', $by_slug);
+    }
+
     public function test_a_default_saved_as_pll_sv_marks_sv()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
