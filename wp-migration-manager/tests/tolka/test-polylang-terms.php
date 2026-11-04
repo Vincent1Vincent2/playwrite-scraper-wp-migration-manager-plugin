@@ -554,10 +554,102 @@ class Polylang_Terms_Test extends TestCase
         $item = $this->itemByGroup($second['items'], 'term:50');
 
         $this->assertSame('ÅÄÖ', $item['translations']['sv']['name']);
-        $this->assertSame('Å-ä-ö', $item['translations']['sv']['slug']);
+        $this->assertSame('å-ä-ö', $item['translations']['sv']['slug']);
         $this->assertNotSame('åäö', $item['translations']['sv']['name']);
         $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
         $this->assertCount(1, $second['items']);
+    }
+
+    public function test_slug_case_keeps_an_integer_parent_and_an_empty_description(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = '<p>Meny åäö</p> &amp; <em>News</em>';
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('SV' => 60, 'FR' => 70)));
+        $database->catalog = array(
+            array(
+                'id' => 60,
+                'name' => 'Höst',
+                'slug' => 'HÖST-ÅÄÖ',
+                'taxonomy' => 'category',
+                'lang' => 'SV',
+                'parent' => '  8  ',
+            ),
+            array(
+                'id' => 61,
+                'name' => '',
+                'slug' => '  TOMT  ',
+                'taxonomy' => 'category',
+                'lang' => 'sv',
+                'parent' => null,
+                'description' => null,
+            ),
+            array(
+                'id' => 62,
+                'name' => 'Falskt',
+                'slug' => 'FALSKT',
+                'taxonomy' => 'category',
+                'lang' => 'sv',
+                'parent' => false,
+                'description' => false,
+            ),
+            array(
+                'id' => 63,
+                'name' => 'Lista',
+                'slug' => 'LISTA',
+                'taxonomy' => 'post_tag',
+                'lang' => 'sv',
+                'parent' => array(1),
+                'description' => array('html' => '<p>å</p>'),
+            ),
+            $this->term(70, 'Main', 'MAIN', 'nav_menu', 'FR', 0, $html),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $host = $this->itemByGroup($second['items'], 'term:60');
+        $empty = $this->itemByGroup($second['items'], 'term:61');
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame('Höst', $host['translations']['sv']['name']);
+        $this->assertSame('höst-åäö', $host['translations']['sv']['slug']);
+        $this->assertSame('', $host['translations']['sv']['description']);
+        $this->assertIsString($host['translations']['sv']['description']);
+        $this->assertNotNull($host['translations']['sv']['description']);
+        $this->assertSame(8, $host['translations']['sv']['parent']);
+        $this->assertIsInt($host['translations']['sv']['parent']);
+
+        $this->assertSame('', $empty['translations']['sv']['name']);
+        $this->assertSame('  tomt  ', $empty['translations']['sv']['slug']);
+        $this->assertSame('', $empty['translations']['sv']['description']);
+        $this->assertIsString($empty['translations']['sv']['description']);
+        $this->assertSame(0, $empty['translations']['sv']['parent']);
+        $this->assertIsInt($empty['translations']['sv']['parent']);
+
+        $falseDescription = $this->itemByGroup($second['items'], 'term:62');
+        $this->assertSame('', $falseDescription['translations']['sv']['description']);
+        $this->assertSame('falskt', $falseDescription['translations']['sv']['slug']);
+        $this->assertSame(0, $falseDescription['translations']['sv']['parent']);
+        $this->assertIsInt($falseDescription['translations']['sv']['parent']);
+
+        $arrayDescription = $this->itemByGroup($second['items'], 'term:63');
+        $this->assertSame('', $arrayDescription['translations']['sv']['description']);
+        $this->assertSame('lista', $arrayDescription['translations']['sv']['slug']);
+        $this->assertSame(0, $arrayDescription['translations']['sv']['parent']);
+        $this->assertIsInt($arrayDescription['translations']['sv']['parent']);
+
+        $this->assertNotContains('term:70', $this->groupIds($second['items']));
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertCount(4, $second['items']);
     }
 
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
@@ -1952,7 +2044,7 @@ class Polylang_Terms_Database
             'slug' => $term['slug'],
             'taxonomy' => $term['taxonomy'],
             'parent' => array_key_exists('parent', $term) ? $term['parent'] : null,
-            'description' => isset($term['description']) ? $term['description'] : '',
+            'description' => array_key_exists('description', $term) ? $term['description'] : null,
         );
     }
 }

@@ -48,7 +48,8 @@ class Polylang_Terms
      * Each item has taxonomy, group (`term:{id}`), and translations.
      * A translation is keyed by language slug and has id, name, slug, description, and parent.
      * HTML in a name is kept. Letters such as å, ä, and ö are kept in names and slugs.
-     * Null bytes are removed from names and slugs. A slug of only whitespace becomes empty.
+     * Null bytes are removed from names and slugs. Slug case is normalized, and å, ä, and ö stay letters.
+     * A slug of only whitespace becomes empty. A missing description is an empty string, not null.
      * An empty name is still exported. The term is not dropped when its slug is empty.
      * HTML in a description is kept. A null byte in a description is removed.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
@@ -203,7 +204,8 @@ class Polylang_Terms
                 }
                 $row['name'] = $this->stringValue(isset($row['name']) ? $row['name'] : '');
                 $row['slug'] = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
-                $row['description'] = $this->stringValue(isset($row['description']) ? $row['description'] : '');
+                $description = array_key_exists('description', $row) ? $row['description'] : '';
+                $row['description'] = $this->descriptionValue($description);
                 $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
                 $items[$index]['translations'][$lang] = $row;
             }
@@ -347,7 +349,7 @@ class Polylang_Terms
                     'id' => $id,
                     'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
                     'slug' => $this->slugValue(isset($term['slug']) ? $term['slug'] : ''),
-                    'description' => $this->stringValue(isset($term['description']) ? $term['description'] : ''),
+                    'description' => $this->descriptionValue(isset($term['description']) ? $term['description'] : ''),
                     'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
                 ),
             ),
@@ -518,7 +520,7 @@ class Polylang_Terms
                 'id' => $translatedId,
                 'name' => $this->stringValue(isset($details['name']) ? $details['name'] : ''),
                 'slug' => $this->slugValue(isset($details['slug']) ? $details['slug'] : ''),
-                'description' => $this->stringValue(isset($details['description']) ? $details['description'] : ''),
+                'description' => $this->descriptionValue(isset($details['description']) ? $details['description'] : ''),
                 'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
             );
         }
@@ -1483,7 +1485,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term->name) ? $term->name : '');
             $slug = $this->stringValue(isset($term->slug) ? $term->slug : '');
             $taxonomy = $this->stringValue(isset($term->taxonomy) ? $term->taxonomy : '');
-            $description = $this->stringValue(isset($term->description) ? $term->description : '');
+            $description = $this->descriptionValue(isset($term->description) ? $term->description : '');
             $parent = $this->parentId(isset($term->parent) ? $term->parent : 0);
         } elseif (is_array($term)) {
             if (isset($term['term_id'])) {
@@ -1496,7 +1498,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term['name']) ? $term['name'] : '');
             $slug = $this->stringValue(isset($term['slug']) ? $term['slug'] : '');
             $taxonomy = $this->stringValue(isset($term['taxonomy']) ? $term['taxonomy'] : '');
-            $description = $this->stringValue(isset($term['description']) ? $term['description'] : '');
+            $description = $this->descriptionValue(array_key_exists('description', $term) ? $term['description'] : '');
             $parent = $this->parentId(isset($term['parent']) ? $term['parent'] : 0);
         } else {
             return null;
@@ -1529,7 +1531,7 @@ class Polylang_Terms
             $id = isset($row['id']) ? (int) $row['id'] : 0;
             $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
             $slug = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
-            $description = $this->stringValue(isset($row['description']) ? $row['description'] : '');
+            $description = $this->descriptionValue(isset($row['description']) ? $row['description'] : '');
             $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
         } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
             $id = (int) $row;
@@ -2177,7 +2179,7 @@ class Polylang_Terms
      */
     private function slugValue($value)
     {
-        $slug = $this->stringValue($value);
+        $slug = $this->lowercaseSlug($this->stringValue($value));
         if ($slug === '') {
             return '';
         }
@@ -2186,6 +2188,42 @@ class Polylang_Terms
             return '';
         }
         return $slug;
+    }
+
+    /**
+     * A missing or non-text description is an empty string. HTML is kept.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function descriptionValue($value)
+    {
+        if ($value === null || is_bool($value) || is_array($value) || is_object($value)) {
+            return '';
+        }
+        $text = $this->stringValue($value);
+        if (!is_string($text)) {
+            return '';
+        }
+        return $text;
+    }
+
+    /**
+     * Lowercase a slug without breaking å, ä, or ö.
+     *
+     * @param string $slug
+     * @return string
+     */
+    private function lowercaseSlug($slug)
+    {
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($slug, 'UTF-8');
+        }
+        return strtr(strtolower($slug), array(
+            'Å' => 'å',
+            'Ä' => 'ä',
+            'Ö' => 'ö',
+        ));
     }
 
     /**
