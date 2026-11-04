@@ -1654,6 +1654,75 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_saved_package_keeps_html_and_drops_null_bytes()
+    {
+        $polylang = $GLOBALS['wmm_tolka_schema_driver']['polylang_option'];
+        $content = "<!-- note -->\0<p class=\"x\">A &amp; B</p>\0<script>keep()</script>";
+        $title = "Ti\0tle <em>Keep</em>";
+        $string = "Line\0 <strong>One</strong>";
+        $translated = "Hej\0 <em>två</em>";
+        $media_title = "Pho\0to <b>x</b>";
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:14',
+                    'type' => 'post',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 14,
+                            'title' => $title,
+                            'excerpt' => "Lead\0 <br/>",
+                            'content' => $content,
+                        ),
+                    ),
+                ),
+            ),
+            'strings' => array(
+                array(
+                    'name' => "greet\0ing",
+                    'string' => $string,
+                    'context' => 'theme',
+                    'translations' => array(
+                        'sv' => $translated,
+                    ),
+                ),
+            ),
+            'media' => array(
+                array(
+                    'attachment_id' => 80,
+                    'file' => "photo\0.jpg",
+                    'alt' => array('en' => "alt\0 <i>text</i>"),
+                    'title' => array('en' => $media_title),
+                ),
+            ),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $post = $stored['posts'][0]['translations']['en'];
+        $saved_string = $stored['strings'][0];
+        $media = $stored['media'][0];
+
+        $this->assertSame('<!-- note --><p class="x">A &amp; B</p><script>keep()</script>', $post['content']);
+        $this->assertSame('Title <em>Keep</em>', $post['title']);
+        $this->assertSame('Lead <br/>', $post['excerpt']);
+        $this->assertSame('greeting', $saved_string['name']);
+        $this->assertSame('Line <strong>One</strong>', $saved_string['string']);
+        $this->assertSame('Hej <em>två</em>', $saved_string['translations']['sv']);
+        $this->assertSame('photo.jpg', $media['file']);
+        $this->assertSame('alt <i>text</i>', $media['alt']['en']);
+        $this->assertSame('Photo <b>x</b>', $media['title']['en']);
+        $this->assertSame(false, strpos(serialize($stored), "\0"));
+        $this->assertStringContainsString('<script>keep()</script>', $post['content']);
+        $this->assertStringContainsString('<em>Keep</em>', $post['title']);
+        $this->assertStringContainsString('<strong>One</strong>', $saved_string['string']);
+        $this->assertSame($polylang, $GLOBALS['wmm_tolka_schema_driver']['polylang_option']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][14]['_wmm_tolka_lang']);
+        $this->assertSame('post:14', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][14]['_wmm_tolka_group']);
+        $this->assertArrayNotHasKey('_pll_lang', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][14]);
+    }
+
     public function test_database_unsafe_text_is_removed_before_save()
     {
         $package = Tolka_Schema::package(array(
