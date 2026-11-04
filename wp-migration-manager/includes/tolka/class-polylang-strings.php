@@ -204,6 +204,9 @@ class Polylang_Strings
         }
 
         $active = !empty($snapshot['active']);
+        if (!empty($snapshot['language_list_failed']) && !$items && !$active) {
+            $errors[] = $this->text('The language list could not be read. String translations that could still be matched are included.');
+        }
         if (!$items && !$active) {
             array_unshift(
                 $errors,
@@ -269,9 +272,6 @@ class Polylang_Strings
         $errors = array();
         $active = $this->polylang_is_active();
         $languages = $this->read_languages();
-        if ($this->language_list_failed) {
-            $errors[] = $this->text('The language list could not be read. String translations that could still be matched are included.');
-        }
         $this->note_translation_taxonomies();
 
         $registered = $this->read_api_strings();
@@ -290,6 +290,7 @@ class Polylang_Strings
             'orphan_groups' => $stored['orphans'],
             'wpml_rows' => $this->read_wpml_tables($errors),
             'errors' => $errors,
+            'language_list_failed' => $this->language_list_failed,
         );
     }
 
@@ -325,62 +326,95 @@ class Polylang_Strings
     protected function read_languages()
     {
         $from_database = $this->read_language_terms();
+        $api = $this->read_api_languages();
+        if (!is_array($api) || !$api) {
+            return $from_database;
+        }
+
+        // pll_languages_list() succeeded, so the site did expose its languages.
+        $this->language_list_failed = false;
         $by_slug = array();
         foreach ($from_database as $language) {
             $by_slug[$language['slug']] = $language;
         }
 
         $ordered = array();
-        $api = $this->read_api_language_slugs();
-        if (is_array($api)) {
-            foreach ($api as $slug) {
-                if (isset($by_slug[$slug])) {
-                    $ordered[] = $by_slug[$slug];
-                    unset($by_slug[$slug]);
-                    continue;
-                }
-                $ordered[] = array(
-                    'slug' => $slug,
-                    'term_id' => 0,
-                );
+        foreach ($api as $language) {
+            $slug = $language['slug'];
+            if (isset($by_slug[$slug]) && empty($language['term_id'])) {
+                $language['term_id'] = $by_slug[$slug]['term_id'];
+            }
+            if ($slug === '' || isset($ordered[$slug])) {
+                continue;
+            }
+            $ordered[$slug] = $language;
+            unset($by_slug[$slug]);
+        }
+        foreach ($by_slug as $slug => $language) {
+            if (!isset($ordered[$slug])) {
+                $ordered[$slug] = $language;
             }
         }
-        foreach ($by_slug as $language) {
-            $ordered[] = $language;
-        }
 
-        return $ordered;
+        return array_values($ordered);
     }
 
     /**
-     * Language slugs from pll_languages_list() when that call is safe.
+     * Languages from pll_languages_list(), the same list Polylang shows.
      *
-     * @return string[]|null
+     * Slugs and term ids are requested as separate fields and kept in that order.
+     *
+     * @return array<int, array{slug: string, term_id: int}>|null
      */
-    protected function read_api_language_slugs()
+    protected function read_api_languages()
+    {
+        $slugs = $this->pll_language_field('slug');
+        if (!is_array($slugs)) {
+            return null;
+        }
+        $ids = $this->pll_language_field('term_id');
+        if (!is_array($ids)) {
+            $ids = array();
+        }
+
+        $languages = array();
+        foreach ($slugs as $index => $slug) {
+            $slug = $this->clean_slug($slug);
+            if ($slug === '' || isset($languages[$slug])) {
+                continue;
+            }
+            $term_id = 0;
+            if (isset($ids[$index]) && is_numeric($ids[$index])) {
+                $term_id = (int) $ids[$index];
+            }
+            $languages[$slug] = array(
+                'slug' => $slug,
+                'term_id' => $term_id,
+            );
+        }
+
+        return array_values($languages);
+    }
+
+    /**
+     * One field from pll_languages_list(), or null when Polylang is not booted.
+     *
+     * @param string $field Language field, such as slug or term_id.
+     * @return array|null
+     */
+    protected function pll_language_field($field)
     {
         if (!$this->pll_booted() || !function_exists('pll_languages_list')) {
             return null;
         }
 
         try {
-            $list = pll_languages_list(array('fields' => 'slug'));
+            $list = pll_languages_list(array('fields' => $field));
         } catch (\Throwable $e) {
             return null;
         }
-        if (!is_array($list)) {
-            return null;
-        }
 
-        $slugs = array();
-        foreach ($list as $slug) {
-            $slug = $this->clean_slug($slug);
-            if ($slug !== '') {
-                $slugs[] = $slug;
-            }
-        }
-
-        return $slugs;
+        return is_array($list) ? $list : null;
     }
 
     /**
@@ -402,7 +436,7 @@ class Polylang_Strings
 
         $sql = $this->safe_prepare(
             $db,
-            "SELECT t.term_id, t.slug FROM {$terms} t INNER JOIN {$taxonomy} tt ON t.term_id = tt.term_id WHERE tt.taxonomy = %s ORDER BY tt.term_group ASC, t.term_id ASC",
+            "SELECT t.term_id, t.slug FROM {$terms} t INNER JOIN {$taxonomy} tt ON t.term_id = tt.term_id WHERE tt.taxonomy = %s ORDER BY t.term_group ASC, t.term_id ASC",
             array('language')
         );
         $rows = $this->query_rows($sql);
