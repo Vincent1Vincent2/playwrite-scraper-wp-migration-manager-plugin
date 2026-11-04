@@ -171,6 +171,38 @@ PHP
         $this->assertSame(array('slug', 'name', 'locale', 'is_default', 'term_id', 'flag'), array_keys($by_slug['en']));
     }
 
+    public function test_mysql_string_columns_stay_typed_and_keep_empty_languages()
+    {
+        $empty = $this->language_term(9, 'Norsk', 'no', 'nb_NO', 'no', 2, 0);
+        $empty->term_id = '9';
+        $empty->term_group = '2';
+        $empty->count = '0';
+        $english = $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 3);
+        $english->term_id = '4';
+        $english->term_group = '0';
+        $english->count = '3';
+        $later = $this->language_term(11, 'Deutsch', 'de', 'de_DE', 'de', 10, 0);
+        $later->term_id = '11';
+        $later->term_group = '10';
+        $later->count = '0';
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($later, $empty, $english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertIsBool($result['items'][0]['is_default']);
+        $this->assertSame(4, $result['items'][0]['term_id']);
+        $this->assertIsInt($result['items'][0]['term_id']);
+        $this->assertSame('no', $result['items'][1]['slug']);
+        $this->assertSame(9, $result['items'][1]['term_id']);
+        $this->assertIsInt($result['items'][1]['term_id']);
+        $this->assertFalse($result['items'][1]['is_default']);
+        $this->assertSame('de', $result['items'][2]['slug']);
+        $this->assertSame(11, $result['items'][2]['term_id']);
+    }
+
     public function test_includes_languages_that_have_no_posts()
     {
         $db = $this->database_with_languages(array(
