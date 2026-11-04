@@ -398,6 +398,32 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame("Children's books", $result['items'][0]['translations']['en']['name']);
     }
 
+    public function test_encoded_names_and_descriptions_are_shown_as_text(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('en' => 10)));
+        $database->catalog = array(
+            $this->term(10, 'Fish &amp; Chips', 'fish-chips', 'category', 'en', 0, 'Tom &amp; Jerry'),
+            $this->term(20, 'Salt &amp; pepper', 'salt-pepper', 'post_tag', 'en'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $group = $this->itemByGroup($result['items'], 'term:10');
+        $loose = $this->itemByGroup($result['items'], 'term:20');
+
+        $this->assertSame('Fish & Chips', $group['translations']['en']['name']);
+        $this->assertSame('Tom & Jerry', $group['translations']['en']['description']);
+        $this->assertSame('fish-chips', $group['translations']['en']['slug']);
+        $this->assertSame('Salt & pepper', $loose['translations']['en']['name']);
+        $this->assertSame('salt-pepper', $loose['translations']['en']['slug']);
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(
@@ -626,6 +652,57 @@ class Polylang_Terms_Test extends TestCase
         $news = $this->itemByGroup($result['items'], 'term:8');
         $this->assertSame(array('en'), array_keys($news['translations']));
         $this->assertArrayNotHasKey('fr', $news['translations']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    public function test_leftover_groups_are_exported_when_polylang_is_deactivated(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = false;
+        $database->descriptions = array(serialize(array('en' => 10, 'sv' => 11)));
+        $database->catalog = array(
+            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(11, 'Nyheter', 'nyheter', 'category', 'sv'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $item = $this->itemByGroup($result['items'], 'term:10');
+
+        $this->assertSame('category', $item['taxonomy']);
+        $this->assertSame(10, $item['translations']['en']['id']);
+        $this->assertSame('Nyheter', $item['translations']['sv']['name']);
+        $this->assertNotContains('Polylang is not active. Term translations were not exported.', $result['errors']);
+    }
+
+    public function test_a_serialized_object_in_a_group_is_skipped_without_a_fatal(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(
+            serialize((object) array('en' => 10)),
+            serialize(array('en' => 12)),
+        );
+        $database->catalog = array(
+            $this->term(12, 'Kept', 'kept', 'category', 'en'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+
+        $this->assertSame(array('term:12'), $this->groupIds($result['items']));
+        $this->assertContains(
+            'A term translation group could not be read because its stored description is invalid. That group was skipped.',
+            $result['errors']
+        );
     }
 
     public function test_language_rows_count_as_polylang_when_no_groups_exist_yet(): void
