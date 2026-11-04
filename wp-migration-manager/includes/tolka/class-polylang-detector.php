@@ -119,11 +119,8 @@ class Polylang_Detector
             return '';
         }
 
-        $origin_normalized = strtolower(str_replace('\\', '/', $origin));
-        $prefer_pro = strpos($origin_normalized, '/polylang-pro/') !== false;
-        $names = $prefer_pro
-            ? array('polylang-pro.php', 'polylang.php')
-            : array('polylang.php', 'polylang-pro.php');
+        // Polylang and Polylang Pro both keep the plugin header in polylang.php.
+        $names = array('polylang.php', 'polylang-pro.php');
 
         $directory = dirname($origin);
         for ($depth = 0; $depth < 6; $depth++) {
@@ -352,8 +349,9 @@ class Polylang_Detector
     /**
      * Read one PHP file's plugin header.
      *
-     * Official Polylang filenames count even when the Version field is missing.
-     * Any other file counts only when its Plugin Name is Polylang or Polylang Pro.
+     * Official filenames count when the Plugin Name is missing or is Polylang.
+     * A different Plugin Name is ignored. Any other file counts only when its
+     * Plugin Name is Polylang or Polylang Pro.
      *
      * @return array{is_polylang: bool, version: string}
      */
@@ -373,8 +371,15 @@ class Polylang_Detector
         $version = self::sanitize_version(self::header_field($contents, 'Version'));
         $basename = strtolower(basename(str_replace('\\', '/', $path)));
         $official_file = ($basename === 'polylang.php' || $basename === 'polylang-pro.php');
+        $name_matches = self::name_is_polylang($name);
 
-        if (!$official_file && !self::name_is_polylang($name)) {
+        // A different Plugin Name means this file is not Polylang, even when
+        // it uses Polylang's filename. An official filename with no name is
+        // still reported so a missing Version header can be explained.
+        if ($name !== '' && !$name_matches) {
+            return $rejected;
+        }
+        if (!$official_file && !$name_matches) {
             return $rejected;
         }
 
@@ -640,7 +645,7 @@ class Polylang_Detector
                 $file = substr($file, 2);
             }
             $file = ltrim($file, '/');
-            if ($file === '' || strpos($file, '..') !== false) {
+            if ($file === '' || in_array('..', explode('/', $file), true)) {
                 continue;
             }
             $files[] = $file;
@@ -766,7 +771,11 @@ class Polylang_Detector
 
     private static function name_is_polylang(string $name): bool
     {
-        $normalized = strtolower(trim($name));
+        $collapsed = preg_replace('/\s+/', ' ', trim($name));
+        if (!is_string($collapsed)) {
+            return false;
+        }
+        $normalized = strtolower($collapsed);
 
         return $normalized === 'polylang' || $normalized === 'polylang pro';
     }
