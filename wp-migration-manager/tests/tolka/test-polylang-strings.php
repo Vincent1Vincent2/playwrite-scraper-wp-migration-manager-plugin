@@ -274,6 +274,11 @@ class WMM_Tolka_Strings_Db
     public $throw_on_translation_taxonomy = false;
 
     /**
+     * @var bool
+     */
+    public $throw_on_languages = false;
+
+    /**
      * @var string[]
      */
     public $queries = array();
@@ -341,6 +346,9 @@ class WMM_Tolka_Strings_Db
             throw new RuntimeException('missing taxonomy');
         }
         if (strpos($plain, "taxonomy = 'language'") !== false) {
+            if ($this->throw_on_languages) {
+                throw new RuntimeException('language taxonomy threw');
+            }
             if ($this->fail_languages) {
                 $this->last_error = 'language taxonomy is unreadable';
                 return null;
@@ -1267,6 +1275,86 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertSame('Second', $by_string['Hello']);
         $this->assertSame('Plus', $by_string['Extra']);
         $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_throwing_language_query_does_not_discard_stored_strings()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->throw_on_languages = true;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Bonjour'))),
+            ),
+        );
+        $db->term_slug_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
+        $this->assertContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $result['errors']
+        );
+        $this->assertNotContains(
+            'String translations could not be read. Existing Polylang data was left unchanged.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_translation_of_zero_is_not_treated_as_empty()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array('name' => 'count', 'string' => 'None', 'context' => 'plugin'),
+            ),
+            'mo' => array(
+                'fr' => array(array('None', '0')),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame('0', $result['items'][0]['translations']['fr']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_duplicate_wpml_rows_stay_one_string()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr', 'de'),
+            'wpml_rows' => array(
+                array(
+                    'name' => 'banner',
+                    'string' => 'Welcome',
+                    'context' => 'plugin',
+                    'translations' => array('fr' => 'Bienvenue'),
+                ),
+                array(
+                    'name' => 'banner',
+                    'string' => 'Welcome',
+                    'context' => 'plugin',
+                    'translations' => array('fr' => 'Ignored', 'de' => 'Willkommen'),
+                ),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Bienvenue', $result['items'][0]['translations']['fr']);
+        $this->assertSame('Willkommen', $result['items'][0]['translations']['de']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
     }
 
     /**

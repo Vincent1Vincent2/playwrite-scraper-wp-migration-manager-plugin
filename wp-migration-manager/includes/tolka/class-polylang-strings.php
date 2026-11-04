@@ -1569,9 +1569,13 @@ class Polylang_Strings
         if (!$db || !is_string($sql) || $sql === '') {
             return null;
         }
-        $db->last_error = '';
-        $output = defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A';
-        $rows = $db->get_results($sql, $output);
+        try {
+            $db->last_error = '';
+            $output = defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A';
+            $rows = $db->get_results($sql, $output);
+        } catch (\Throwable $e) {
+            return null;
+        }
         if (!empty($db->last_error)) {
             return null;
         }
@@ -1592,8 +1596,12 @@ class Polylang_Strings
         if (!$db || $table === '') {
             return false;
         }
-        $sql = $db->prepare('SHOW TABLES LIKE %s', $db->esc_like($table));
-        $found = $db->get_var($sql);
+        try {
+            $sql = $db->prepare('SHOW TABLES LIKE %s', $db->esc_like($table));
+            $found = $db->get_var($sql);
+        } catch (\Throwable $e) {
+            return false;
+        }
         if (!is_string($found) || $found === '') {
             return false;
         }
