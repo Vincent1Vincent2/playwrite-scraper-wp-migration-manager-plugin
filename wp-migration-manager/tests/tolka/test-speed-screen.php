@@ -284,6 +284,108 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertFalse($document->getElementById('wmm-tolka-provenance-note')->parentNode->hasAttribute('hidden'));
     }
 
+    public function test_non_placeholder_provenance_does_not_show_the_placeholder_note()
+    {
+        $contract_note = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
+        $provenances = array('', 'lab', 'Placeholder', 'placeholders', 'tolka-lab');
+
+        foreach ($provenances as $provenance) {
+            foreach (array(true, false) as $ok) {
+                $estimate = $this->ready_estimate();
+                $estimate['ok'] = $ok;
+                $estimate['provenance'] = $provenance;
+                $estimate['provenance_note'] = $contract_note;
+                $name = ($ok ? 'ready ' : 'failed ') . ($provenance === '' ? 'empty provenance' : $provenance);
+
+                if (!$ok) {
+                    $estimate['current_ms'] = 0;
+                    $estimate['tolka_ms'] = 0;
+                    $estimate['faster_percent'] = 44.4;
+                    $estimate['faster_label'] = '44.4% faster';
+                    $estimate['error'] = 'The page could not be loaded.';
+                }
+
+                $html = $this->render(true, $estimate);
+                $note = $this->document($html)->getElementById('wmm-tolka-provenance-note');
+
+                $this->assertNotNull($note, $name);
+                $this->assertTrue($note->parentNode->hasAttribute('hidden'), $name);
+                $this->assertSame('', $this->text($html, 'wmm-tolka-provenance-note'), $name);
+                $this->assertStringNotContainsString('Placeholder coefficients', $html, $name);
+                $this->assertStringNotContainsString('wmm-tolka-is-placeholder', $html, $name);
+                $this->assertStringNotContainsString('notice-warning', $html, $name);
+            }
+        }
+    }
+
+    public function test_failed_estimate_keeps_the_speed_ids_and_shows_no_percent()
+    {
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+        $cases = array(
+            'lab result that includes a percent' => array(
+                'ok' => false,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 44.4,
+                'faster_label' => '44.4% faster',
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'lab',
+                'provenance_note' => 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.',
+                'error' => 'The page could not be loaded.',
+            ),
+            'boolean success flag is required' => array(
+                'ok' => 1,
+                'current_ms' => 1200,
+                'tolka_ms' => 900,
+                'faster_percent' => 25,
+                'faster_label' => '25.0% faster',
+                'provenance' => 'lab',
+                'provenance_note' => 'Lab note that must stay hidden.',
+                'error' => 'The success flag was not boolean true.',
+            ),
+            'no provenance and no reason' => array(
+                'ok' => false,
+                'faster_percent' => 9.5,
+                'faster_label' => '9.5% faster',
+            ),
+        );
+
+        foreach ($cases as $name => $estimate) {
+            $html = $this->render(true, $estimate);
+            $document = $this->document($html);
+
+            foreach ($ids as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' keeps #' . $id);
+            }
+
+            $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-current-load'), $name);
+            $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-tolka-load'), $name);
+            $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertSame('', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'), $name);
+            $this->assertStringNotContainsString('% faster', $html, $name);
+            if (isset($estimate['faster_label'])) {
+                $this->assertStringNotContainsString($estimate['faster_label'], $html, $name);
+            }
+            if (isset($estimate['faster_percent'])) {
+                $this->assertStringNotContainsString((string) $estimate['faster_percent'], $html, $name);
+            }
+            $provenance = isset($estimate['provenance']) ? trim((string) $estimate['provenance']) : '';
+            if ('placeholder' !== $provenance && !empty($estimate['provenance_note'])) {
+                $this->assertStringNotContainsString($estimate['provenance_note'], $html, $name);
+                $this->assertTrue(
+                    $document->getElementById('wmm-tolka-provenance-note')->parentNode->hasAttribute('hidden'),
+                    $name
+                );
+            }
+        }
+    }
+
     public function test_lab_provenance_hides_the_placeholder_note()
     {
         $estimate = $this->ready_estimate();
