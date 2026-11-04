@@ -240,6 +240,14 @@ class Polylang_Posts_Api_Fixture extends Polylang_Posts
     }
 }
 
+class Polylang_Posts_Group_Probe extends Polylang_Posts
+{
+    public function dedupe(array $items)
+    {
+        return $this->unique_groups($items);
+    }
+}
+
 class Polylang_Posts_Page_Probe extends Polylang_Posts
 {
     protected function page_size()
@@ -1120,6 +1128,102 @@ class Polylang_Posts_Test extends TestCase
         $this->assertStringContainsString('<em>this</em>', $content);
         $this->assertStringNotContainsString("\0", $content);
         $this->assertStringNotContainsString("\0", $second['items'][0]['translations']['en']['title']);
+    }
+
+    public function test_title_of_only_null_bytes_is_empty_and_html_content_remains()
+    {
+        $exporter = new Polylang_Posts_Fixture();
+        $html = '<figure><img src="photo.jpg" alt="Pier"></figure>';
+        $exporter->maps = array(array('en' => 4));
+        $exporter->posts = array(
+            4 => $this->record(4, 'post', "\0\0", 'photo', 'draft', '', "\0" . $html),
+        );
+        $result = $exporter->export();
+        $again = $exporter->export();
+        $this->assertSame($result, $again);
+        $this->assertCount(1, $again['items']);
+        $this->assertSame('', $again['items'][0]['translations']['en']['title']);
+        $this->assertSame($html, $again['items'][0]['translations']['en']['content']);
+        $this->assertSame('draft', $again['items'][0]['translations']['en']['status']);
+    }
+
+    public function test_repeated_group_key_keeps_one_item_and_both_languages()
+    {
+        $html = '<p>Kept <strong>markup</strong></p>';
+        $items = (new Polylang_Posts_Group_Probe())->dedupe(array(
+            array(
+                'group' => 'post:7',
+                'type' => 'post',
+                'translations' => array(
+                    'en' => array(
+                        'id' => 7,
+                        'title' => 'Hello',
+                        'slug' => 'hello',
+                        'status' => 'draft',
+                        'excerpt' => '',
+                        'content' => $html,
+                    ),
+                ),
+            ),
+            array(
+                'group' => 'post:7',
+                'type' => 'post',
+                'translations' => array(
+                    'en' => array(
+                        'id' => 7,
+                        'title' => 'Hello again',
+                        'slug' => 'hello',
+                        'status' => 'draft',
+                        'excerpt' => '',
+                        'content' => '<p>duplicate</p>',
+                    ),
+                    'de' => array(
+                        'id' => 8,
+                        'title' => 'Hallo',
+                        'slug' => 'hallo',
+                        'status' => 'publish',
+                        'excerpt' => '',
+                        'content' => '<p>Hallo</p>',
+                    ),
+                ),
+            ),
+        ));
+        $this->assertCount(1, $items);
+        $this->assertSame('post:7', $items[0]['group']);
+        $this->assertSame(array('en', 'de'), array_keys($items[0]['translations']));
+        $this->assertSame($html, $items[0]['translations']['en']['content']);
+        $this->assertSame('<p>Hallo</p>', $items[0]['translations']['de']['content']);
+    }
+
+    public function test_same_post_from_the_group_and_the_language_is_not_duplicated()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 30,
+                'description' => serialize(array('en' => 12, 'de' => 13)),
+            ),
+        );
+        $fake->languages = array(12 => 'en', 13 => 'de');
+        $html = '<p>Published <a href="https://example.com">link</a></p>';
+        $fake->posts_rows = array(
+            12 => $this->db_post(12, 'publish', '<em>English</em>', 'english', 'post', '', $html),
+            13 => $this->db_post(13, 'draft', "Entwurf\0", 'entwurf', 'post', '', '<p>Entwurf</p>'),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame('post:12', $second['items'][0]['group']);
+        $this->assertSame(array('en', 'de'), array_keys($second['items'][0]['translations']));
+        $this->assertSame($html, $second['items'][0]['translations']['en']['content']);
+        $this->assertSame('<em>English</em>', $second['items'][0]['translations']['en']['title']);
+        $this->assertSame('Entwurf', $second['items'][0]['translations']['de']['title']);
+        $this->assertSame('draft', $second['items'][0]['translations']['de']['status']);
+        $this->assertSame('<p>Entwurf</p>', $second['items'][0]['translations']['de']['content']);
     }
 
     public function test_instance_export_keeps_html_strips_null_bytes_and_does_not_duplicate_groups()
