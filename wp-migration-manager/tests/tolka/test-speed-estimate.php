@@ -1151,28 +1151,113 @@ class Test_Speed_Estimate extends TestCase
         );
     }
 
-    public function test_negative_counts_follow_the_formula_without_a_boost()
+    public function test_negative_counts_do_not_invent_a_percent()
     {
-        // language_count -4 uses L = max(1, -4) = 1. Same as a count of 0.
-        $languages = Speed_Estimate::project(
-            array('ok' => true, 'total_ms' => 200),
-            array('language_count' => -4, 'has_polylang_switcher' => false, 'script_count' => 0),
-            self::contractBenchmarks()
-        );
-        $this->assertSame(171, $languages['tolka_ms']);
-        $this->assertSame(14.5, $languages['faster_percent']);
+        $benchmarks = self::contractBenchmarks();
+        $measurement = array('ok' => true, 'total_ms' => 1000, 'html' => '<p>SECRET_PAGE_MARKUP</p>');
 
-        // script_count -1 changes raw from 35 to 27. tolka = 1000 - 27 + 6 = 979.
-        // That is a smaller percent than scripts = 0 (2.9), not a larger one.
+        $languages = Speed_Estimate::project(
+            $measurement,
+            array('language_count' => -4, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $languages,
+            'A Tolka speed estimate is not available. The language count cannot be negative.'
+        );
+        $this->assertSame('', $languages['faster_label']);
+        $this->assertSame(0.0, $languages['faster_percent']);
+        $this->assertNotSame(14.5, $languages['faster_percent']);
+        $this->assertNotSame('14.5% faster', $languages['faster_label']);
+
         $scripts = Speed_Estimate::project(
-            array('ok' => true, 'total_ms' => 1000),
+            $measurement,
             array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => -1),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $scripts,
+            'A Tolka speed estimate is not available. The script count cannot be negative.'
+        );
+        $this->assertSame('', $scripts['faster_label']);
+        $this->assertSame(0.0, $scripts['faster_percent']);
+        $this->assertNotSame(2.1, $scripts['faster_percent']);
+        $this->assertNotSame('2.1% faster', $scripts['faster_label']);
+        $this->assertStringNotContainsString('SECRET_PAGE_MARKUP', (string) json_encode($scripts));
+
+        foreach (array('-4', ' -2 ', -0.2, -1.0) as $count) {
+            $again = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => 200),
+                array('language_count' => $count, 'has_polylang_switcher' => false, 'script_count' => 0),
+                $benchmarks
+            );
+            $this->assertFalse($again['ok'], 'language_count ' . var_export($count, true));
+            $this->assertSame(0, $again['current_ms']);
+            $this->assertSame(0.0, $again['faster_percent']);
+            $this->assertSame('', $again['faster_label']);
+        }
+
+        $both = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => -2, 'script_count' => '-3'),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $both,
+            'A Tolka speed estimate is not available. The language count cannot be negative. The script count cannot be negative.'
+        );
+        $this->assertSame('', $both['faster_label']);
+    }
+
+    public function test_successful_faster_label_is_one_decimal_percent_faster()
+    {
+        $cases = array(
+            array(
+                array('ok' => true, 'total_ms' => 1000),
+                array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+                14.4,
+                '14.4% faster',
+            ),
+            array(
+                array('ok' => true, 'total_ms' => 400),
+                array('language_count' => 20, 'has_polylang_switcher' => true, 'script_count' => 50),
+                40.0,
+                '40.0% faster',
+            ),
+            array(
+                array('ok' => true, 'total_ms' => 0),
+                array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+                0.0,
+                '0.0% faster',
+            ),
+            array(
+                array('ok' => true, 'total_ms' => 300),
+                array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+                9.7,
+                '9.7% faster',
+            ),
+        );
+
+        foreach ($cases as $case) {
+            $estimate = Speed_Estimate::project($case[0], $case[1], self::contractBenchmarks());
+            $this->assertTrue($estimate['ok']);
+            $this->assertSame($case[2], $estimate['faster_percent']);
+            $this->assertSame($case[3], $estimate['faster_label']);
+            $this->assertSame(
+                number_format($estimate['faster_percent'], 1, '.', '') . '% faster',
+                $estimate['faster_label']
+            );
+            $this->assertStringNotContainsString(',', $estimate['faster_label']);
+        }
+
+        $failed = Speed_Estimate::project(
+            array('ok' => false, 'total_ms' => 1000),
+            array('language_count' => 3, 'script_count' => 4),
             self::contractBenchmarks()
         );
-        $this->assertSame(979, $scripts['tolka_ms']);
-        $this->assertSame(27, $scripts['overhead_ms']);
-        $this->assertSame(2.1, $scripts['faster_percent']);
-        $this->assertLessThan(2.9, $scripts['faster_percent']);
+        $this->assertSame('', $failed['faster_label']);
+        $this->assertNotSame('0.0% faster', $failed['faster_label']);
+        $this->assertSame(0.0, $failed['faster_percent']);
     }
 
     public function test_estimate_stays_json_encodable_when_coefficients_are_not()
@@ -1696,6 +1781,10 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('', $estimate['error']);
         $this->assertSame($benchmarks, $estimate['coefficients']);
         $this->assertSame(self::BASIS, $estimate['basis']);
+        $this->assertSame(
+            number_format($estimate['faster_percent'], 1, '.', '') . '% faster',
+            $estimate['faster_label']
+        );
         $this->assertMatchesRegularExpression('/^-?\d+\.\d% faster$/', $estimate['faster_label']);
         $this->assertLessThanOrEqual($estimate['current_ms'], $estimate['tolka_ms']);
     }
