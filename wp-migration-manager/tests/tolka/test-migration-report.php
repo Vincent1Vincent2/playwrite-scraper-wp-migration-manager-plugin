@@ -1165,8 +1165,7 @@ echo json_encode($report);
         ));
 
         $this->assert_not_a_clean_finish($report);
-        $this->assertSame('The migration finished with problems.', $report['title']);
-        $this->assert_section_order($report);
+        $this->assert_partial_title($report);
         $this->assertSame('2', $this->line($report, 'Media'));
         $this->assertSame('1 of 2', $this->line($report, 'Media stored'));
         $this->assertStringContainsString(
@@ -1261,9 +1260,7 @@ echo json_encode($report);
         ));
 
         $this->assert_not_a_clean_finish($partial);
-        $this->assertSame('The migration finished with problems.', $partial['title']);
-        $this->assertNotSame('The migration is complete.', $partial['title']);
-        $this->assert_section_order($partial);
+        $this->assert_partial_title($partial);
         $this->assertStringContainsString(
             'Saving did not finish. The package contained more than was stored. 4 of 6 posts were saved.',
             $partial['summary']
@@ -1316,9 +1313,7 @@ echo json_encode($report);
         ));
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('The migration finished with problems.', $report['title']);
-        $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
-        $this->assertStringNotContainsString('complete', strtolower($report['title']));
+        $this->assert_partial_title($report);
         $this->assertNotSame('The migration is complete.', $report['title']);
         $this->assertStringNotContainsString('The migration is complete', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
@@ -1652,6 +1647,17 @@ echo json_encode(array(
             }
         }
         $this->assertSame(array('The report could not be saved.'), $values);
+    }
+
+    /**
+     * @param array $report Formatted report.
+     */
+    private function assert_partial_title(array $report)
+    {
+        $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
+        $this->assertStringNotContainsString('complete', strtolower($report['title']));
+        $this->assert_section_order($report);
     }
 
     /**
