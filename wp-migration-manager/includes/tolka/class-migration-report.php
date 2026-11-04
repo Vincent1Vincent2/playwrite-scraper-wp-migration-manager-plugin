@@ -1029,6 +1029,9 @@ class Migration_Report
         }
 
         $lines[] = self::line(self::text('Tolka package'), self::package_value($package, $total, $shortfall));
+        if (array_key_exists('write', $run) && $run['write'] === null) {
+            $lines[] = self::line(self::text('Writer'), self::text('No result was returned.'));
+        }
         if ($mismatch !== '') {
             $lines[] = self::line(self::text('Saved counts'), $mismatch);
         }

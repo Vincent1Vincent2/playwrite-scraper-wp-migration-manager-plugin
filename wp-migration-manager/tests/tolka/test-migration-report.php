@@ -469,6 +469,16 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('0 menus', $this->line($report, 'Menus'));
         $this->assertSame('4 media items', $this->line($report, 'Media'));
         $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
+        $this->assertSame('No result was returned.', $this->line($report, 'Writer'));
+        $names = array();
+        foreach ($report['lines'] as $line) {
+            $names[] = $line['label'];
+        }
+        $start = array_search('Languages', $names, true);
+        $this->assertSame(
+            array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'),
+            array_slice($names, $start, 6)
+        );
 
         $marked_ok = Migration_Report::format(array(
             'ok' => true,
