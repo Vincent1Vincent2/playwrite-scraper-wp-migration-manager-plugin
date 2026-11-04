@@ -724,7 +724,8 @@ class Polylang_Posts
     }
 
     /**
-     * Keep markup. Remove null bytes so a title or body cannot break storage.
+     * Keep markup and letters such as å, ä, and ö.
+     * Remove null bytes. An empty string stays empty so a post with no body is still exported.
      *
      * @param mixed $value
      * @return string
