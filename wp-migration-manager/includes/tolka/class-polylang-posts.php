@@ -227,7 +227,8 @@ class Polylang_Posts
      */
     private function lowercase_slug($slug)
     {
-        $slug = trim((string) $slug);
+        $slug = str_replace("\0", '', (string) $slug);
+        $slug = trim($slug);
         if ($slug === '') {
             return '';
         }
@@ -732,25 +733,52 @@ class Polylang_Posts
             if ($group === '') {
                 continue;
             }
+            $translations = $this->folded_translations(isset($item['translations']) ? $item['translations'] : array());
             if (isset($seen[$group])) {
                 $index = $seen[$group];
-                if (!isset($item['translations']) || !is_array($item['translations'])) {
-                    continue;
-                }
                 if (!isset($unique[$index]['translations']) || !is_array($unique[$index]['translations'])) {
                     $unique[$index]['translations'] = array();
                 }
-                foreach ($item['translations'] as $lang => $translation) {
+                foreach ($translations as $lang => $translation) {
                     if (!isset($unique[$index]['translations'][$lang])) {
                         $unique[$index]['translations'][$lang] = $translation;
                     }
                 }
                 continue;
             }
+            $item['translations'] = $translations;
             $seen[$group] = count($unique);
             $unique[] = $item;
         }
         return $unique;
+    }
+
+    /**
+     * SV and sv are one language key. The first record for that key stays.
+     *
+     * @param mixed $translations
+     * @return array<string, mixed>
+     */
+    private function folded_translations($translations)
+    {
+        if (!is_array($translations)) {
+            return array();
+        }
+        $folded = array();
+        foreach ($translations as $lang => $translation) {
+            if (is_int($lang) || is_float($lang)) {
+                $lang = (string) $lang;
+            }
+            if (!is_string($lang)) {
+                continue;
+            }
+            $lang = $this->slug_for_language_key($lang);
+            if ($lang === '' || isset($folded[$lang])) {
+                continue;
+            }
+            $folded[$lang] = $translation;
+        }
+        return $folded;
     }
 
     /**
