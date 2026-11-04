@@ -460,6 +460,47 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(2, $second['items']);
     }
 
+    public function test_swedish_letters_are_kept_and_an_empty_name_is_exported(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(
+            serialize(array('sv' => 21, 'en' => 22)),
+        );
+        $database->catalog = array(
+            $this->term(21, "Höstmöte å\0äö", "höstmöte-å\0äö", 'category', 'sv', 0, 'Höstens första möte'),
+            $this->term(22, '', 'unnamed-en', 'category', 'en'),
+            $this->term(23, '', '', 'post_tag', 'sv'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $meeting = $this->itemByGroup($second['items'], 'term:21');
+        $blank = $this->itemByGroup($second['items'], 'term:23');
+
+        $this->assertSame('Höstmöte åäö', $meeting['translations']['sv']['name']);
+        $this->assertSame('höstmöte-åäö', $meeting['translations']['sv']['slug']);
+        $this->assertStringNotContainsString("\0", $meeting['translations']['sv']['name']);
+        $this->assertStringNotContainsString("\0", $meeting['translations']['sv']['slug']);
+        $this->assertSame('Höstens första möte', $meeting['translations']['sv']['description']);
+        $this->assertSame('', $meeting['translations']['en']['name']);
+        $this->assertSame('unnamed-en', $meeting['translations']['en']['slug']);
+        $this->assertArrayHasKey('en', $meeting['translations']);
+        $this->assertSame('', $blank['translations']['sv']['name']);
+        $this->assertSame('', $blank['translations']['sv']['slug']);
+        $this->assertSame('post_tag', $blank['taxonomy']);
+        $this->assertContains('term:21', $this->groupIds($second['items']));
+        $this->assertContains('term:23', $this->groupIds($second['items']));
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertCount(2, $second['items']);
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(

@@ -2050,6 +2050,7 @@ class Polylang_Terms
      */
     private function stringValue($value)
     {
+        // Keep letters such as å, ä, and ö. Remove only null bytes.
         if (is_string($value)) {
             return str_replace("\0", '', $value);
         }
