@@ -1381,7 +1381,7 @@ function wmm_tolka_render_status()
     echo '<ul class="wmm-tolka-problems">';
 
     foreach ($lines as $line) {
-        echo '<li>' . esc_html($line) . '</li>';
+        echo '<li>' . wmm_tolka_escape_status_text($line) . '</li>';
     }
 
     echo '</ul>';
@@ -1402,8 +1402,29 @@ function wmm_tolka_render_polylang_sentence($type, $sentence)
     }
 
     echo '<div id="wmm-tolka-polylang-status" class="notice notice-' . esc_attr($type) . ' wmm-tolka-notice" role="status">';
-    echo '<p>' . esc_html($sentence) . '</p>';
+    echo '<p>' . wmm_tolka_escape_status_text($sentence) . '</p>';
     echo '</div>';
+}
+
+/**
+ * Escape Polylang status text so a version cannot start a tag.
+ *
+ * @param mixed $text Status sentence or version fragment.
+ * @return string
+ */
+function wmm_tolka_escape_status_text($text)
+{
+    if (is_int($text) || is_float($text)) {
+        $text = (string) $text;
+    }
+
+    if (!is_string($text)) {
+        $text = '';
+    }
+
+    $text = str_replace("\0", '', $text);
+
+    return esc_html(wmm_tolka_plain_value($text));
 }
 
 /**

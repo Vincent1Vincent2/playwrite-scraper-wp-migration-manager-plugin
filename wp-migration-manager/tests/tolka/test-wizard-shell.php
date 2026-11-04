@@ -1360,6 +1360,19 @@ PHP
             );
             $this->assertStringNotContainsString('secret-html', $html);
 
+            $GLOBALS['wmm_tolka_detector_active'] = true;
+            $GLOBALS['wmm_tolka_detector_version'] = '3.6 & "<script>alert(1)</script>';
+            $GLOBALS['wmm_tolka_detector_errors'] = array('bad & <img src=x onerror=alert(1)>');
+            $html = $this->render();
+            $this->assertSame(1, preg_match('/<div id="wmm-tolka-polylang-status".*?<\/div>/s', $html, $status_match));
+            $status_html = $status_match[0];
+            $this->assertStringContainsString('Polylang 3.6 &amp; &quot; is active on this site.', $status_html);
+            $this->assertStringNotContainsString('<script', strtolower($status_html));
+            $this->assertStringNotContainsString('onerror', strtolower($status_html));
+            $this->assertStringNotContainsString('alert(1)', $status_html);
+            $this->assertStringContainsString('bad &amp;', $html);
+            $this->assertStringNotContainsString('<img', strtolower($html));
+
             $GLOBALS['wmm_tolka_detector_active'] = '0';
             $GLOBALS['wmm_tolka_detector_version'] = '9.9';
             $html = $this->render();
