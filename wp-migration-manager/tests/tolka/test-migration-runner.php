@@ -2545,5 +2545,42 @@ namespace {
             $this->assertSame(450, strlen($written[24]['content']));
             $this->assertNotSame($preview['sample']['posts'][0]['content'], $written[0]['content']);
         }
+
+        public function test_missing_section_count_stays_zero_while_writer_gets_full_text()
+        {
+            $this->reset_doubles();
+            $original = str_repeat('c', 460);
+            $posts = array();
+            for ($i = 0; $i < 21; $i++) {
+                $posts[] = array(
+                    'title' => 'Post ' . $i,
+                    'content' => ($i === 20) ? $original : 'short',
+                );
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array('items' => $posts, 'errors' => array()),
+            );
+            Migration_Runner_Test_Double::$map['languages'] = 'WMM\\Tolka\\RunnerTest\\MissingLanguages';
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertIsInt($preview['counts']['languages']);
+            $this->assertSame(0, $preview['counts']['languages']);
+            $this->assertCount(0, $preview['sample']['languages']);
+            $this->assertSame(array(), $preview['languages']['items']);
+            $this->assertIsInt($preview['counts']['posts']);
+            $this->assertSame(21, $preview['counts']['posts']);
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertFalse($run['ok']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertIsInt($run['counts']['languages']);
+            $this->assertSame(0, $run['counts']['languages']);
+            $this->assertCount(20, $run['sample']['posts']);
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][20]['content']);
+            $this->assertSame(460, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][20]['content']));
+        }
     }
 }
