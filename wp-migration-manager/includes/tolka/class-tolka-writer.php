@@ -542,7 +542,8 @@ class Tolka_Writer
             $label = $translation['name'];
         }
 
-        $label = trim(self::stored_text($label));
+        $label = self::stored_text($label);
+        $label = trim(strip_tags($label));
         if ($label === '') {
             return '';
         }

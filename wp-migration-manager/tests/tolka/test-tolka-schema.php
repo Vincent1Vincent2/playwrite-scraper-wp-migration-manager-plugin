@@ -437,7 +437,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                 array(
                     'group' => 'post:10',
                     'translations' => array(
-                        'en' => array('id' => 0, 'title' => 'Empty'),
+                        'en' => array('id' => 0, 'title' => '<em>Empty</em>'),
                         'sv' => array('id' => '0', 'title' => 'Noll'),
                         'de' => array('ID' => 0.0, 'title' => 'Null'),
                         'fr' => 0,
@@ -470,6 +470,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertArrayNotHasKey(0, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
         $this->assertArrayNotHasKey(0, $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
         $this->assertSame(0, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['posts'][0]['translations']['en']['id']);
+        $this->assertSame('<em>Empty</em>', $GLOBALS['wmm_tolka_schema_driver']['stored_package']['posts'][0]['translations']['en']['title']);
         $this->assertSame('es', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12]['_wmm_tolka_lang']);
         $this->assertSame('post:10', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12]['_wmm_tolka_group']);
         $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_lang']);
