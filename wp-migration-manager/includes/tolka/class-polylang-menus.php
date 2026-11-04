@@ -554,7 +554,36 @@ class Polylang_Menus
             $items[] = $navigation;
         }
 
-        return $items;
+        return $this->unique_locations($items);
+    }
+
+    /**
+     * Keep the first item for each theme location.
+     *
+     * Menus that are not assigned all use an empty location, so those rows
+     * stay. A second export rebuilds this list from scratch.
+     *
+     * @param array<int, array> $items Exported items.
+     * @return array<int, array>
+     */
+    private function unique_locations(array $items)
+    {
+        $seen = array();
+        $unique = array();
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $location = isset($item['location']) ? (string) $item['location'] : '';
+            if ($location !== '') {
+                if (isset($seen[$location])) {
+                    continue;
+                }
+                $seen[$location] = true;
+            }
+            $unique[] = $item;
+        }
+        return $unique;
     }
 
     /**
@@ -1038,7 +1067,7 @@ class Polylang_Menus
     private function navigation_link_from_attrs($name, array $attrs, $position)
     {
         $title = $this->entity_text(isset($attrs['label']) ? $attrs['label'] : (isset($attrs['title']) ? $attrs['title'] : ''));
-        $url = trim($this->text(isset($attrs['url']) ? $attrs['url'] : ''));
+        $url = trim($this->without_null_bytes(isset($attrs['url']) ? $attrs['url'] : ''));
         $object = $this->text(isset($attrs['type']) ? $attrs['type'] : '');
         if ($object === '' && isset($attrs['kind'])) {
             $object = $this->text($attrs['kind']);
@@ -1709,7 +1738,7 @@ class Polylang_Menus
         $normalized['title'] = $this->entity_text($normalized['title']);
         $normalized['attr_title'] = $this->entity_text($normalized['attr_title']);
         $normalized['description'] = $this->entity_text($normalized['description']);
-        $normalized['url'] = trim($this->text($normalized['url']));
+        $normalized['url'] = trim($this->without_null_bytes($normalized['url']));
         $normalized['object'] = $this->text($normalized['object']);
         $normalized['type'] = $this->text($normalized['type']);
         $normalized['target'] = $this->text($normalized['target']);
@@ -1726,7 +1755,7 @@ class Polylang_Menus
             $normalized['title'] = $this->entity_text($this->lookup_term_name($normalized['object_id']));
         }
         if ($normalized['url'] === '') {
-            $normalized['url'] = $this->resolve_url($normalized);
+            $normalized['url'] = trim($this->without_null_bytes($this->resolve_url($normalized)));
         }
         $normalized['switcher'] = ($normalized['url'] === '#pll_switcher');
         if ($normalized['title'] === '' && $normalized['switcher']) {
@@ -2670,16 +2699,32 @@ class Polylang_Menus
     /**
      * Decode stored entities once so titles match what editors see.
      *
+     * Tags are left in place. A title of `<em>Home</em>` stays marked up.
+     * Null bytes are removed before the decode so they cannot hide an entity.
+     *
      * @param mixed $value Raw text.
      * @return string
      */
     private function entity_text($value)
     {
+        $text = $this->without_null_bytes($value);
+        if ($text !== '' && strpos($text, '&') !== false) {
+            $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+        }
+        return $this->without_null_bytes($text);
+    }
+
+    /**
+     * @param mixed $value Raw text.
+     * @return string
+     */
+    private function without_null_bytes($value)
+    {
         $text = $this->text($value);
-        if ($text === '' || strpos($text, '&') === false) {
+        if ($text === '' || strpos($text, "\0") === false) {
             return $text;
         }
-        return html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+        return str_replace("\0", '', $text);
     }
 
     /**

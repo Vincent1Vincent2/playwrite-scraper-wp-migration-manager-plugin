@@ -227,6 +227,118 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame('custom', $items[1]['children'][0]['object']);
     }
 
+    public function test_html_in_a_title_is_kept_and_null_bytes_are_removed(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(6 => 'Main'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 6),
+                    ),
+                ),
+            ),
+            'items' => array(
+                6 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => "<em>Fish &amp; Chips</em>\0",
+                        'url' => "https://example.com/a\0b",
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 1,
+                    ),
+                    array(
+                        'id' => 2,
+                        'parent' => 1,
+                        'title' => "Tea\0m",
+                        'url' => "https://example.com/team\0",
+                        'object' => 'page',
+                        'object_id' => 4,
+                        'position' => 2,
+                    ),
+                ),
+            ),
+        ));
+
+        $items = $this->location($fixture->export(), 'primary')['translations']['en']['items'];
+
+        $this->assertSame('<em>Fish & Chips</em>', $items[0]['title']);
+        $this->assertSame('https://example.com/ab', $items[0]['url']);
+        $this->assertStringContainsString('<em>', $items[0]['title']);
+        $this->assertStringContainsString('</em>', $items[0]['title']);
+        $this->assertSame('Team', $items[0]['children'][0]['title']);
+        $this->assertSame('https://example.com/team', $items[0]['children'][0]['url']);
+    }
+
+    public function test_second_export_does_not_duplicate_locations(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'en',
+            'languages' => array('en'),
+            'registered' => array(
+                'primary' => 'Primary',
+                'footer' => 'Footer',
+            ),
+            'menus' => array(
+                4 => 'Main',
+                7 => 'Loose',
+                8 => 'Other',
+            ),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 4),
+                    ),
+                ),
+            ),
+            'term_languages' => array(
+                7 => 'en',
+                8 => 'sv',
+            ),
+            'navigations' => array(
+                array(
+                    'id' => 20,
+                    'name' => 'Header',
+                    'slug' => 'header',
+                    'language' => 'en',
+                    'content' => '<!-- wp:navigation-link {"label":"Home","url":"https://example.com/"} /-->',
+                ),
+            ),
+            'items' => array(
+                4 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Home',
+                        'url' => '/',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                    ),
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame($first, $second);
+        $this->assertSame(array('primary', 'footer', '', '', 'navigation:header'), $this->locations($second));
+
+        $counts = array_count_values($this->locations($second));
+        $this->assertSame(1, $counts['primary']);
+        $this->assertSame(1, $counts['footer']);
+        $this->assertSame(1, $counts['navigation:header']);
+        $this->assertSame(2, $counts['']);
+    }
+
     public function test_polylang_inactive(): void
     {
         $inactive = $this->fixture(array(
