@@ -1227,7 +1227,7 @@ PHP
         $result = $this->export_isolated(<<<'PHP'
 function pll_languages_list($args = array())
 {
-    return array('en', 'pll_en', 'pll_sv', 'sv');
+    return array('pll_en', 'en', 'pll_sv', 'sv');
 }
 
 function pll_default_language($field = 'slug')
