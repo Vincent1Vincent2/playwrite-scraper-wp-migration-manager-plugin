@@ -846,6 +846,24 @@ PHP
         $this->assertTrue($by_slug['de']['is_default']);
     }
 
+    public function test_the_export_survives_a_json_round_trip()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+            $this->language_term(9, 'Norsk', 'no', 'nb_NO', 'no', 1, 0),
+        ), 'no');
+
+        $result = Polylang_Languages::export();
+        $encoded = json_encode($result);
+        $decoded = json_decode($encoded, true);
+
+        $this->assertIsString($encoded);
+        $this->assertSame($result, $decoded);
+        $this->assertTrue($decoded['items'][0]['is_default']);
+        $this->assertIsInt($decoded['items'][0]['term_id']);
+        $this->assertSame('no', $decoded['items'][0]['slug']);
+    }
+
     public function test_instance_call_matches_the_static_export()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
