@@ -24,6 +24,9 @@ if (!defined('ABSPATH')) {
     <p class="wmm-tolka-help__intro">
         <?php esc_html_e('Until you measure a URL, there is no speed estimate. Until you preview, there is no content list. Until you run the migration, nothing from this screen has been stored.', 'migration-manager'); ?>
     </p>
+    <p class="wmm-tolka-help__intro">
+        <?php esc_html_e('The screen shows that a step is working while its request runs. If the request fails, the screen shows the error text.', 'migration-manager'); ?>
+    </p>
 
     <ol class="wmm-tolka-help__steps">
         <li class="wmm-tolka-help__step">
@@ -76,13 +79,19 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('Each part shows a count of everything found and a sample of at most twenty rows. The sample is only a look at the data. The migration includes every item that was found, not just the rows in the sample.', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__note">
-                <?php esc_html_e('If a part has no items, that part stays empty and the preview can include a short error explaining why. If every part is empty, Polylang may be inactive, or this site may not have translations yet. Read that error before you run the migration. If a part cannot be read at all, the preview names that part and still shows the parts that could be read.', 'migration-manager'); ?>
+                <?php esc_html_e('If a part has no items, that part stays empty and the preview can include a short error explaining why. If every part is empty, Polylang may be inactive, or this site may not have translations yet. Read that error before you run the migration.', 'migration-manager'); ?>
+            </p>
+            <p class="wmm-tolka-help__note">
+                <?php esc_html_e('If a part cannot be read at all, the preview names that part and still shows the parts that could be read.', 'migration-manager'); ?>
             </p>
         </li>
         <li class="wmm-tolka-help__step">
             <h3 class="wmm-tolka-help__step-title"><?php esc_html_e('Run the migration', 'migration-manager'); ?></h3>
             <p>
-                <?php esc_html_e('Run the migration after you have read the preview. The plugin stores a Tolka package on this site. That package is a snapshot of the languages, posts, terms, strings, menus, and media. It also records a language field and a group field on each translated post and term.', 'migration-manager'); ?>
+                <?php esc_html_e('Run the migration after you have read the preview. The plugin stores a Tolka package on this site. That package is a snapshot of the languages, posts, terms, strings, menus, and media.', 'migration-manager'); ?>
+            </p>
+            <p>
+                <?php esc_html_e('The plugin also records a language field and a group field on each translated post and term.', 'migration-manager'); ?>
             </p>
             <p>
                 <?php esc_html_e('Polylang data stays in place. The plugin does not delete other custom fields, and it does not delete Polylang content, options, or terms.', 'migration-manager'); ?>
