@@ -348,6 +348,7 @@ class Polylang_Detector
         $header_found = false;
         $saw_readable_header = false;
         $saw_unreadable = false;
+        $unreadable_label = '';
 
         foreach (self::unique_files($files) as $file) {
             $parsed = static::inspect_plugin_file($file);
@@ -358,6 +359,10 @@ class Polylang_Detector
             $header_found = true;
             if (!empty($parsed['unreadable'])) {
                 $saw_unreadable = true;
+                $parsed_label = (isset($parsed['label']) && $parsed['label'] === 'Polylang Pro') ? 'Polylang Pro' : 'Polylang';
+                if ($unreadable_label === '' || $parsed_label === 'Polylang') {
+                    $unreadable_label = $parsed_label;
+                }
                 continue;
             }
             $saw_readable_header = true;
@@ -452,7 +457,7 @@ class Polylang_Detector
             'header_found' => $header_found,
             'version_missing' => $header_found && $best_version === '',
             'listed_active' => !empty($listed),
-            'label' => $label,
+            'label' => ($saw_unreadable && !$saw_readable_header && $unreadable_label !== '') ? $unreadable_label : $label,
             'other_label' => $other_label,
             'other_version' => $other_version,
             'other_missing_label' => $other_version === '' ? $other_missing_label : '',
@@ -509,10 +514,14 @@ class Polylang_Detector
                 return $rejected;
             }
 
+            $normalized = strtolower(str_replace('\\', '/', $path));
+            $pro_file = $basename === 'polylang-pro.php'
+                || self::ends_with($normalized, '/polylang-pro/polylang.php');
+
             return array(
                 'is_polylang' => true,
                 'version' => '',
-                'label' => $basename === 'polylang-pro.php' ? 'Polylang Pro' : 'Polylang',
+                'label' => $pro_file ? 'Polylang Pro' : 'Polylang',
                 'unreadable' => true,
             );
         }
@@ -581,8 +590,12 @@ class Polylang_Detector
         if ($unreadable) {
             $errors[] = self::translate(
                 $active
-                    ? 'Polylang is active, but its plugin file could not be read.'
-                    : 'A Polylang plugin file was found, but it could not be read.'
+                    ? ($pro
+                        ? 'Polylang Pro is active, but its plugin file could not be read.'
+                        : 'Polylang is active, but its plugin file could not be read.')
+                    : ($pro
+                        ? 'A Polylang Pro plugin file was found, but it could not be read.'
+                        : 'A Polylang plugin file was found, but it could not be read.')
             );
         } elseif (!$active && $version !== '' && $listed_active) {
             $situation = self::fill_version(
