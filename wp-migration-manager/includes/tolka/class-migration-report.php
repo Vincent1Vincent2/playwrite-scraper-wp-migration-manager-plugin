@@ -44,6 +44,27 @@ class Migration_Report
         }
 
         $report['lines'] = self::string_lines(isset($report['lines']) ? $report['lines'] : array());
+        $report = self::keep_clean_title($report);
+
+        return $report;
+    }
+
+    /**
+     * A clean run keeps its title. The save error is never written there.
+     *
+     * @param array $report Formatted report.
+     * @return array
+     */
+    private static function keep_clean_title(array $report)
+    {
+        if (empty($report['ok']) || !isset($report['title']) || !is_string($report['title'])) {
+            return $report;
+        }
+
+        $clean = self::text('The migration is complete.');
+        if (stripos($report['title'], 'could not be saved') !== false) {
+            $report['title'] = $clean;
+        }
 
         return $report;
     }

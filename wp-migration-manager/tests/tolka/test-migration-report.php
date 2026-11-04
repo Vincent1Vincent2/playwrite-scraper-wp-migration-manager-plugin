@@ -1687,7 +1687,16 @@ echo json_encode(array(
         $this->assertSame('The migration is complete.', $decoded['second_title']);
         $this->assertSame('The migration is complete.', $decoded['third_title']);
         $this->assertNotSame('The migration finished with problems.', $decoded['second_title']);
+        $this->assertStringNotContainsString('could not be saved', $decoded['first_title']);
+        $this->assertStringNotContainsString('could not be saved', $decoded['second_title']);
+        $this->assertStringNotContainsString('could not be saved', $decoded['third_title']);
+        foreach ($decoded['second_lines'] as $line) {
+            $this->assertStringNotContainsString('could not be saved', $line['label']);
+            $this->assertStringNotContainsString('could not be saved', $line['value']);
+        }
         $second = array('lines' => $decoded['second_lines']);
+        $this->assertSame('The migration is complete.', $this->line($second, 'Outcome'));
+        $this->assertStringNotContainsString('could not be saved', $this->line($second, 'Outcome'));
         $this->assertSame('2', $this->line($second, 'Languages'));
         $this->assertSame('1', $this->line($second, 'Posts'));
         $this->assertSame('0', $this->line($second, 'Terms'));
