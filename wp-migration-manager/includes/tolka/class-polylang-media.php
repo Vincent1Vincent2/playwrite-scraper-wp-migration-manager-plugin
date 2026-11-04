@@ -1218,11 +1218,27 @@ class Polylang_Media
      */
     private function file_bucket($file)
     {
-        $base = basename(str_replace('\\', '/', $file));
+        $base = $this->file_basename($file);
         if ($base === '' || $base === '.' || $base === '..') {
             return $this->ascii_lower($file);
         }
         return $this->ascii_lower($base);
+    }
+
+    /**
+     * Basename without using the process locale, so å, ä, and ö stay intact.
+     *
+     * @param string $file
+     * @return string
+     */
+    private function file_basename($file)
+    {
+        $file = str_replace('\\', '/', $file);
+        $pos = strrpos($file, '/');
+        if ($pos === false) {
+            return $file;
+        }
+        return substr($file, $pos + 1);
     }
 
     /**
@@ -1548,7 +1564,7 @@ class Polylang_Media
         if ($left_server === $right_server) {
             return false;
         }
-        if (basename($left) === '' || basename($left) !== basename($right)) {
+        if ($this->file_basename($left) === '' || $this->file_basename($left) !== $this->file_basename($right)) {
             return false;
         }
         if ($left_server) {
