@@ -2663,7 +2663,7 @@ namespace {
             $posts = array();
             for ($i = 0; $i < 25; $i++) {
                 $posts[] = array(
-                    'title' => ($i === 24) ? 'AAA sorts first' : 'Post ' . $i,
+                    'title' => ($i === 24) ? 'AAA sorts first' : (($i === 21) ? '000 sorts before Post 0' : 'Post ' . $i),
                     'content' => ($i === 24) ? $last_text : 'body ' . $i,
                 );
             }
@@ -2680,8 +2680,10 @@ namespace {
             for ($i = 0; $i < 20; $i++) {
                 $this->assertSame('Post ' . $i, $preview['sample']['posts'][$i]['title']);
                 $this->assertSame('body ' . $i, $preview['sample']['posts'][$i]['content']);
+                $this->assertSame('Post ' . $i, $preview['sections']['posts']['labels'][$i]);
             }
             $this->assertStringNotContainsString('AAA sorts first', json_encode($preview['sample']['posts']));
+            $this->assertStringNotContainsString('000 sorts before Post 0', json_encode($preview['sample']['posts']));
             $this->assertStringNotContainsString('LAST-POST-', json_encode($preview['sample']['posts']));
             $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
 
@@ -2694,13 +2696,22 @@ namespace {
             $this->assertCount(20, $run['sample']['posts']);
             $written = \WMM\Tolka\RunnerTest\Writer::$package['posts'];
             $this->assertCount(25, $written);
-            for ($i = 0; $i < 24; $i++) {
+            for ($i = 0; $i < 20; $i++) {
+                $this->assertSame('Post ' . $i, $run['sample']['posts'][$i]['title']);
+                $this->assertSame('body ' . $i, $run['sample']['posts'][$i]['content']);
+                $this->assertSame('Post ' . $i, $run['sections']['posts']['labels'][$i]);
                 $this->assertSame('Post ' . $i, $written[$i]['title']);
+                $this->assertSame('body ' . $i, $written[$i]['content']);
             }
+            $this->assertStringNotContainsString('AAA sorts first', json_encode($run['sample']['posts']));
+            $this->assertStringNotContainsString('000 sorts before Post 0', json_encode($run['sample']['posts']));
+            $this->assertSame('Post 20', $written[20]['title']);
+            $this->assertSame('000 sorts before Post 0', $written[21]['title']);
+            $this->assertSame('Post 22', $written[22]['title']);
+            $this->assertSame('Post 23', $written[23]['title']);
             $this->assertSame('AAA sorts first', $written[24]['title']);
             $this->assertSame($last_text, $written[24]['content']);
             $this->assertSame(490, strlen($written[24]['content']));
-            $this->assertSame('Post 19', $run['sample']['posts'][19]['title']);
         }
     }
 }
