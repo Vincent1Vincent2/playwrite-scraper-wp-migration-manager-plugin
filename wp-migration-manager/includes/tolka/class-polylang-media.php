@@ -4,8 +4,10 @@
  * Export Polylang media for the Tolka migration.
  *
  * Translated media is a group of attachment posts that share one file.
- * Alt text and titles are stored on each attachment. This class only reads
- * that data. It does not delete Polylang rows, options, files, or meta.
+ * Alt text and titles are stored on each attachment. Attachments that were
+ * never given a translation are included too, so the media library is not
+ * dropped when Polylang's media module is off. This class only reads that
+ * data. It does not delete Polylang rows, options, files, or meta.
  *
  * @package MigrationManager
  */
@@ -33,8 +35,7 @@ class Polylang_Media
      *
      * Each item is one group: the default-language attachment when that
      * translation exists, the shared file, and alt and title maps keyed by
-     * language slug. An attachment that has a language but no translated
-     * copies is its own item.
+     * language slug. An attachment with no translations is its own item.
      *
      * @return array
      */
@@ -62,7 +63,8 @@ class Polylang_Media
                 isset($read['attachment_ids']) ? $read['attachment_ids'] : array(),
                 isset($read['known_languages']) ? $read['known_languages'] : array(),
                 isset($read['default_lang']) ? $read['default_lang'] : '',
-                isset($read['records']) ? $read['records'] : null
+                isset($read['records']) ? $read['records'] : null,
+                isset($read['excluded_ids']) ? $read['excluded_ids'] : array()
             );
         } catch (\Throwable $e) {
             return $this->envelope(array(), array(
@@ -100,17 +102,27 @@ class Polylang_Media
      * @param array $known_languages
      * @param string $default_lang
      * @param array|null $records
+     * @param array $excluded_ids
      * @return array
      */
-    private function items_from_parts($translation_rows, $language_rows, $attachment_ids, $known_languages, $default_lang, $records)
+    private function items_from_parts($translation_rows, $language_rows, $attachment_ids, $known_languages, $default_lang, $records, $excluded_ids = array())
     {
         $built = $this->groups_from_rows($translation_rows, $language_rows, $attachment_ids, $known_languages);
+        $bare_ids = $this->unassigned_ids(
+            $attachment_ids,
+            isset($built['seen']) ? $built['seen'] : array(),
+            $excluded_ids
+        );
         if (!is_array($records)) {
-            $records = $this->records_for($this->ids_in_groups($built['groups']));
+            $record_ids = $this->ids_in_groups($built['groups']);
+            foreach ($bare_ids as $bare_id) {
+                $record_ids[] = $bare_id;
+            }
+            $records = $this->records_for($record_ids);
         }
 
         return array(
-            'items' => $this->assemble_items($built['groups'], $default_lang, $records),
+            'items' => $this->assemble_items($built['groups'], $bare_ids, $default_lang, $known_languages, $records),
             'skipped' => (int) $built['skipped'],
             'seen' => $built['seen'],
         );
@@ -262,6 +274,7 @@ class Polylang_Media
         $language_rows = array();
         $seen_groups = array();
         $claimed = array();
+        $excluded = array();
         $skipped = 0;
 
         foreach ($ids as $id) {
@@ -280,6 +293,8 @@ class Polylang_Media
                 }
             } catch (\Throwable $e) {
                 $skipped++;
+                $excluded[] = $id;
+                $claimed[$id] = true;
                 continue;
             }
 
@@ -320,6 +335,7 @@ class Polylang_Media
             'translation_rows' => $rows,
             'language_rows' => $language_rows,
             'attachment_ids' => $ids,
+            'excluded_ids' => $excluded,
             'skipped' => $skipped,
         );
     }
@@ -696,7 +712,10 @@ class Polylang_Media
                     continue;
                 }
                 $id = isset($language_row['id']) ? (int) $language_row['id'] : 0;
-                $lang = $this->language_slug(isset($language_row['lang']) ? $language_row['lang'] : '');
+                $lang = $this->preferred_language_slug(
+                    isset($language_row['lang']) ? $language_row['lang'] : '',
+                    $known
+                );
                 if ($id <= 0 || isset($seen[$id])) {
                     continue;
                 }
@@ -704,10 +723,6 @@ class Polylang_Media
                     continue;
                 }
                 if ($lang === '') {
-                    continue;
-                }
-                if ($known !== array() && !isset($known[$lang])) {
-                    $skipped++;
                     continue;
                 }
                 $seen[$id] = true;
@@ -737,7 +752,7 @@ class Polylang_Media
                 if ($member_id <= 0) {
                     continue;
                 }
-                $slug = $this->language_slug($member_lang);
+                $slug = $this->preferred_language_slug($member_lang, $known);
                 if (!isset($members[$member_id]) || ($members[$member_id] === '' && $slug !== '')) {
                     $members[$member_id] = $slug;
                 }
@@ -749,10 +764,13 @@ class Polylang_Media
         foreach ($decoded as $lang => $raw_id) {
             $slug = $this->language_slug($lang);
             $attachment_id = (int) $raw_id;
-            if ($slug === '' || $attachment_id <= 0 || isset($map[$slug])) {
+            if ($slug === '' || $attachment_id <= 0) {
                 continue;
             }
-            if ($known !== array() && !isset($known[$slug])) {
+            if ($known !== array()) {
+                $slug = $this->match_known_slug($slug, $known);
+            }
+            if ($slug === '' || isset($map[$slug])) {
                 continue;
             }
             if (!isset($members[$attachment_id]) && !isset($lookup[$attachment_id])) {
@@ -772,8 +790,7 @@ class Polylang_Media
             if (isset($placed[$member_id])) {
                 continue;
             }
-            if ($slug === '' || ($known !== array() && !isset($known[$slug]))) {
-                $skipped++;
+            if ($slug === '') {
                 continue;
             }
             if (isset($map[$slug])) {
@@ -835,15 +852,17 @@ class Polylang_Media
 
     /**
      * @param array $groups
+     * @param array $bare_ids
      * @param string $default_lang
+     * @param array $known_languages
      * @param array $records
      * @return array
      */
-    private function assemble_items($groups, $default_lang, $records)
+    private function assemble_items($groups, $bare_ids, $default_lang, $known_languages, $records)
     {
         $items = array();
         if (!is_array($groups)) {
-            return $items;
+            $groups = array();
         }
         if (!is_array($records)) {
             $records = array();
@@ -875,6 +894,13 @@ class Polylang_Media
             );
         }
 
+        $bare_lang = $this->unassigned_language($default_lang, $known_languages);
+        if (is_array($bare_ids)) {
+            foreach ($bare_ids as $bare_id) {
+                $items[] = $this->item_for_unassigned($bare_id, $bare_lang, $records);
+            }
+        }
+
         usort($items, function ($left, $right) {
             $left_id = isset($left['attachment_id']) ? (int) $left['attachment_id'] : 0;
             $right_id = isset($right['attachment_id']) ? (int) $right['attachment_id'] : 0;
@@ -887,6 +913,104 @@ class Polylang_Media
         });
 
         return $items;
+    }
+
+    /**
+     * Attachments that are not in a Polylang group and have no language.
+     *
+     * Ids that could not be read are excluded so a failure is not reported twice.
+     *
+     * @param array $attachment_ids
+     * @param array $seen
+     * @param array $excluded_ids
+     * @return array
+     */
+    private function unassigned_ids($attachment_ids, $seen, $excluded_ids)
+    {
+        $used = array();
+        if (is_array($seen)) {
+            foreach (array_keys($seen) as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $used[$id] = true;
+                }
+            }
+        }
+        if (is_array($excluded_ids)) {
+            foreach ($excluded_ids as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $used[$id] = true;
+                }
+            }
+        }
+
+        $bare = array();
+        if (!is_array($attachment_ids)) {
+            return $bare;
+        }
+        foreach ($attachment_ids as $id) {
+            $id = (int) $id;
+            if ($id <= 0 || isset($used[$id])) {
+                continue;
+            }
+            $used[$id] = true;
+            $bare[] = $id;
+        }
+        sort($bare, SORT_NUMERIC);
+        return $bare;
+    }
+
+    /**
+     * Language used for text on an attachment Polylang never translated.
+     *
+     * The stored title and alt text are kept under the default language.
+     * A site with one language uses that language when no default is set.
+     *
+     * @param string $default_lang
+     * @param array $known_languages
+     * @return string
+     */
+    private function unassigned_language($default_lang, $known_languages)
+    {
+        $lang = $this->language_slug($default_lang);
+        if ($lang !== '') {
+            return $lang;
+        }
+
+        $known = $this->clean_slugs(is_array($known_languages) ? $known_languages : array());
+        if (count($known) === 1) {
+            return $known[0];
+        }
+
+        return '';
+    }
+
+    /**
+     * One library file that has no Polylang translation group.
+     *
+     * @param int $id
+     * @param string $lang
+     * @param array $records
+     * @return array
+     */
+    private function item_for_unassigned($id, $lang, $records)
+    {
+        $id = (int) $id;
+        $alt = array();
+        $title = array();
+        $lang = $this->language_slug($lang);
+        if ($lang !== '') {
+            $alt[$lang] = $this->record_string($records, $id, 'alt');
+            $title[$lang] = $this->record_string($records, $id, 'title');
+        }
+
+        return array(
+            'attachment_id' => $id,
+            'file' => $this->record_string($records, $id, 'file'),
+            'alt' => $alt,
+            'title' => $title,
+        );
     }
 
     /**
@@ -1191,6 +1315,52 @@ class Polylang_Media
     }
 
     /**
+     * Use the site's slug when it differs only by case.
+     *
+     * A valid slug that is not one of the known languages is kept. Description
+     * keys use match_known_slug() instead, so extra Polylang metadata is ignored.
+     *
+     * @param mixed $value
+     * @param array $known
+     * @return string
+     */
+    private function preferred_language_slug($value, $known)
+    {
+        $slug = $this->language_slug($value);
+        if ($slug === '') {
+            return '';
+        }
+        $matched = $this->match_known_slug($slug, $known);
+        if ($matched !== '') {
+            return $matched;
+        }
+        return $slug;
+    }
+
+    /**
+     * @param string $slug
+     * @param array $known
+     * @return string
+     */
+    private function match_known_slug($slug, $known)
+    {
+        $slug = $this->language_slug($slug);
+        if ($slug === '' || !is_array($known) || $known === array()) {
+            return '';
+        }
+        if (isset($known[$slug])) {
+            return $slug;
+        }
+        $lower = strtolower($slug);
+        foreach (array_keys($known) as $candidate) {
+            if (is_string($candidate) && strtolower($candidate) === $lower) {
+                return $candidate;
+            }
+        }
+        return '';
+    }
+
+    /**
      * @param string $left
      * @param string $right
      * @return bool
@@ -1461,23 +1631,149 @@ class Polylang_Media
     private function records_for($ids)
     {
         $records = array();
-        if (!is_array($ids)) {
+        if (is_array($ids)) {
+            foreach ($ids as $id) {
+                $id = (int) $id;
+                if ($id <= 0 || isset($records[$id])) {
+                    continue;
+                }
+                $records[$id] = array(
+                    'file' => '',
+                    'alt' => '',
+                    'title' => '',
+                );
+            }
+        }
+        if ($records === array()) {
             return $records;
         }
 
-        foreach ($ids as $id) {
-            $id = (int) $id;
-            if ($id <= 0 || isset($records[$id])) {
-                continue;
+        $record_ids = array_keys($records);
+        if (function_exists('get_post_meta') || function_exists('get_post')) {
+            $this->prime_attachment_cache($record_ids);
+            foreach ($record_ids as $id) {
+                $records[$id] = array(
+                    'file' => $this->meta_string($id, '_wp_attached_file'),
+                    'alt' => $this->meta_string($id, '_wp_attachment_image_alt'),
+                    'title' => $this->attachment_title($id),
+                );
             }
-            $records[$id] = array(
-                'file' => $this->meta_string($id, '_wp_attached_file'),
-                'alt' => $this->meta_string($id, '_wp_attachment_image_alt'),
-                'title' => $this->attachment_title($id),
-            );
+            return $records;
         }
 
+        $this->fill_records_from_database($records);
         return $records;
+    }
+
+    /**
+     * Prime post and meta caches in chunks so a large library does not query once per file.
+     *
+     * @param array $ids
+     * @return void
+     */
+    private function prime_attachment_cache($ids)
+    {
+        try {
+            if (function_exists('update_meta_cache')) {
+                foreach (array_chunk($ids, 200) as $chunk) {
+                    update_meta_cache('post', $chunk);
+                }
+            }
+            if (function_exists('_prime_post_caches')) {
+                foreach (array_chunk($ids, 200) as $chunk) {
+                    _prime_post_caches($chunk, false, false);
+                }
+            }
+        } catch (\Throwable $e) {
+            return;
+        }
+    }
+
+    /**
+     * @param array $records
+     * @return void
+     */
+    private function fill_records_from_database(&$records)
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || $records === array()) {
+            return;
+        }
+
+        $ids = array_keys($records);
+        $posts = isset($wpdb->posts) ? $this->table_name($wpdb->posts) : '';
+        $postmeta = isset($wpdb->postmeta) ? $this->table_name($wpdb->postmeta) : '';
+
+        if ($posts !== '') {
+            foreach (array_chunk($ids, 200) as $chunk) {
+                $rows = $this->query_rows(
+                    $wpdb,
+                    "SELECT ID, post_title FROM {$posts} WHERE ID IN (" . $this->int_placeholders(count($chunk)) . ')',
+                    $chunk
+                );
+                if (!is_array($rows)) {
+                    continue;
+                }
+                foreach ($rows as $row) {
+                    $id = (int) $this->row_value($row, 'ID');
+                    if (!isset($records[$id])) {
+                        continue;
+                    }
+                    $records[$id]['title'] = $this->string_value($this->row_value($row, 'post_title'));
+                }
+            }
+        }
+
+        if ($postmeta === '') {
+            return;
+        }
+
+        foreach (array_chunk($ids, 200) as $chunk) {
+            $args = array_merge(
+                array('_wp_attached_file', '_wp_attachment_image_alt'),
+                $chunk
+            );
+            $rows = $this->query_rows(
+                $wpdb,
+                "SELECT post_id, meta_key, meta_value FROM {$postmeta}
+                WHERE meta_key IN (%s, %s)
+                    AND post_id IN (" . $this->int_placeholders(count($chunk)) . ')',
+                $args
+            );
+            if (!is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                $id = (int) $this->row_value($row, 'post_id');
+                if (!isset($records[$id])) {
+                    continue;
+                }
+                $key = $this->row_value($row, 'meta_key');
+                $field = '';
+                if ($key === '_wp_attached_file') {
+                    $field = 'file';
+                } elseif ($key === '_wp_attachment_image_alt') {
+                    $field = 'alt';
+                }
+                if ($field === '' || $records[$id][$field] !== '') {
+                    continue;
+                }
+                $records[$id][$field] = $this->string_value($this->unserialize_meta($this->row_value($row, 'meta_value')));
+            }
+        }
+    }
+
+    /**
+     * @param int $count
+     * @return string
+     */
+    private function int_placeholders($count)
+    {
+        $count = (int) $count;
+        if ($count < 1) {
+            return '0';
+        }
+        return implode(', ', array_fill(0, $count, '%d'));
     }
 
     /**
@@ -1491,11 +1787,7 @@ class Polylang_Media
             return $this->string_value(get_post_meta($id, $key, true));
         }
 
-        $value = $this->meta_from_db($id, $key);
-        if (is_string($value) && function_exists('maybe_unserialize')) {
-            $value = maybe_unserialize($value);
-        }
-        return $this->string_value($value);
+        return $this->string_value($this->unserialize_meta($this->meta_from_db($id, $key)));
     }
 
     /**
@@ -1563,6 +1855,25 @@ class Polylang_Media
 
     /**
      * @param mixed $value
+     * @return mixed
+     */
+    private function unserialize_meta($value)
+    {
+        if (!is_string($value)) {
+            return $value;
+        }
+        if (function_exists('maybe_unserialize')) {
+            return maybe_unserialize($value);
+        }
+        $decoded = $this->safe_unserialize($value);
+        if (is_string($decoded) || is_numeric($decoded) || is_array($decoded)) {
+            return $decoded;
+        }
+        return $value;
+    }
+
+    /**
+     * @param mixed $value
      * @return string
      */
     private function string_value($value)
@@ -1578,6 +1889,40 @@ class Polylang_Media
         }
         if (!is_string($value)) {
             return '';
+        }
+        return $this->utf8_string($value);
+    }
+
+    /**
+     * Keep text that can be stored in the Tolka package.
+     *
+     * Invalid bytes would make the package fail when it is encoded.
+     *
+     * @param string $value
+     * @return string
+     */
+    private function utf8_string($value)
+    {
+        if ($value === '') {
+            return '';
+        }
+        if (function_exists('wp_check_invalid_utf8')) {
+            $clean = wp_check_invalid_utf8($value, true);
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+        if (function_exists('iconv')) {
+            $clean = iconv('UTF-8', 'UTF-8//IGNORE', $value);
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+        if (function_exists('mb_convert_encoding')) {
+            $clean = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+            if (is_string($clean)) {
+                return $clean;
+            }
         }
         return $value;
     }
