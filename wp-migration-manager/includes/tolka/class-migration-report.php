@@ -64,13 +64,17 @@ class Migration_Report
         $inactive = self::polylang_is_inactive($errors);
         $next = self::next_step($status, $inactive, count($missing['labels']), $has_problems);
         $title = self::title_for($status);
-        $summary = self::summary_for($status, $package, $description, $total, $missing['labels'], $errors, $next, $run_ok);
+        $default_language = '';
+        if ($status === 'complete' || $status === 'unconfirmed' || ($status === 'problems' && $total > 0)) {
+            $default_language = self::default_language_sentence($run);
+        }
+        $summary = self::summary_for($status, $package, $description, $total, $missing['labels'], $errors, $next, $run_ok, $default_language);
 
         return array(
             'ok' => ($status === 'complete' || $status === 'empty'),
             'title' => $title,
             'summary' => $summary,
-            'lines' => self::lines_for($title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors),
+            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors),
         );
     }
 
@@ -491,10 +495,11 @@ class Migration_Report
      * @param string[]             $labels      Missing step labels.
      * @param string[]             $errors      Error sentences.
      * @param string               $next        Next step sentence.
-     * @param bool                 $run_ok      Runner ok flag.
+     * @param bool                 $run_ok            Runner ok flag.
+     * @param string               $default_language  Sentence naming the default language, or empty.
      * @return string
      */
-    private static function summary_for($status, $package, array $description, $total, array $labels, array $errors, $next, $run_ok)
+    private static function summary_for($status, $package, array $description, $total, array $labels, array $errors, $next, $run_ok, $default_language)
     {
         $closing = self::text('Your existing Polylang data was left in place.');
         $missing_sentence = self::missing_sentence($labels);
@@ -504,6 +509,7 @@ class Migration_Report
             return self::join_sentences(array(
                 self::packaged_lead($description),
                 $description['absent'],
+                $default_language,
                 self::text('The package is saved on this site.'),
                 $closing,
             ));
@@ -529,6 +535,7 @@ class Migration_Report
             return self::join_sentences(array(
                 self::packaged_lead($description),
                 $description['absent'],
+                $default_language,
                 self::text('The plugin could not confirm that the Tolka package was saved.'),
                 $next,
                 $closing,
@@ -541,6 +548,7 @@ class Migration_Report
             if ($total > 0) {
                 $parts[] = self::packaged_lead($description);
                 $parts[] = $description['absent'];
+                $parts[] = $default_language;
             } else {
                 $parts[] = self::text('The migration reported a problem before any content was packaged.');
             }
@@ -580,6 +588,38 @@ class Migration_Report
         $parts[] = $closing;
 
         return self::join_sentences($parts);
+    }
+
+    /**
+     * @param array $run Runner result.
+     * @return string
+     */
+    private static function default_language_sentence(array $run)
+    {
+        if (!isset($run['sample']['languages']) || !is_array($run['sample']['languages'])) {
+            return '';
+        }
+
+        foreach ($run['sample']['languages'] as $language) {
+            if (!is_array($language) || empty($language['is_default'])) {
+                continue;
+            }
+
+            $name = '';
+            if (isset($language['name']) && is_string($language['name'])) {
+                $name = self::present_name('languages', $language['name']);
+            }
+            if ($name === '' && isset($language['slug']) && is_string($language['slug'])) {
+                $name = self::present_name('languages', $language['slug']);
+            }
+            if ($name === '') {
+                continue;
+            }
+
+            return sprintf(self::text('%s is the default language.'), $name);
+        }
+
+        return '';
     }
 
     /**
@@ -632,8 +672,10 @@ class Migration_Report
             return '';
         }
 
+        $first = self::excerpt($errors[0], 180);
+
         if ($count === 1) {
-            return $errors[0];
+            return $first;
         }
 
         $more = $count - 1;
@@ -643,10 +685,41 @@ class Migration_Report
             $rest = sprintf(self::text('%s more problems are listed below.'), self::number($more));
         }
 
-        return $errors[0] . ' ' . $rest;
+        return $first . ' ' . $rest;
     }
 
     /**
+     * Keep a summary sentence short. The full text stays in the lines.
+     *
+     * @param string $text  Sentence.
+     * @param int    $limit Maximum characters.
+     * @return string
+     */
+    private static function excerpt($text, $limit)
+    {
+        $text = trim((string) $text);
+        $limit = (int) $limit;
+        if ($limit < 8) {
+            $limit = 8;
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (mb_strlen($text, 'UTF-8') <= $limit) {
+                return $text;
+            }
+
+            return rtrim(mb_substr($text, 0, $limit - 3, 'UTF-8')) . '...';
+        }
+
+        if (strlen($text) <= $limit) {
+            return $text;
+        }
+
+        return rtrim(substr($text, 0, $limit - 3)) . '...';
+    }
+
+    /**
+     * @param array                 $run          Runner result.
      * @param string                $title        Report title.
      * @param array<string, int>    $counts       Section counts.
      * @param array<string, bool>   $unavailable  Unreadable sections.
@@ -657,15 +730,21 @@ class Migration_Report
      * @param string[]              $errors       Error sentences.
      * @return array<int, array{label: string, value: string}>
      */
-    private static function lines_for($title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors)
+    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors)
     {
         $lines = array(
             self::line(self::text('Outcome'), $title),
+            self::line(self::text('When'), self::finished_at()),
         );
 
         foreach (self::section_catalog() as $key => $meta) {
             $count = isset($counts[$key]) ? (int) $counts[$key] : 0;
             $lines[] = self::line(self::text($meta['label']), self::line_value($meta, $count, !empty($unavailable[$key])));
+        }
+
+        $sample = (isset($run['sample']) && is_array($run['sample'])) ? $run['sample'] : array();
+        foreach (self::example_lines($sample) as $example) {
+            $lines[] = $example;
         }
 
         $lines[] = self::line(self::text('Tolka package'), self::package_value($package, $total));
@@ -729,6 +808,193 @@ class Migration_Report
         }
 
         return self::text('Not confirmed');
+    }
+
+    /**
+     * UTC time of this report, so a saved result still says when it ran.
+     *
+     * @return string
+     */
+    private static function finished_at()
+    {
+        if (function_exists('wp_date')) {
+            return wp_date('j F Y, H:i T');
+        }
+
+        return gmdate('j F Y, H:i') . ' UTC';
+    }
+
+    /**
+     * A few real names from the run sample, so the owner can recognize the content.
+     *
+     * @param array $sample Sample items keyed by section.
+     * @return array<int, array{label: string, value: string}>
+     */
+    private static function example_lines(array $sample)
+    {
+        $labels = array(
+            'languages' => 'Example language',
+            'posts' => 'Example post',
+            'terms' => 'Example term',
+            'strings' => 'Example string',
+            'menus' => 'Example menu',
+            'media' => 'Example file',
+        );
+        $lines = array();
+        $shown = 0;
+
+        foreach ($labels as $section => $label) {
+            if ($shown >= 8 || !isset($sample[$section]) || !is_array($sample[$section])) {
+                continue;
+            }
+
+            $in_section = 0;
+            foreach ($sample[$section] as $item) {
+                if ($shown >= 8 || $in_section >= 2) {
+                    break;
+                }
+
+                $name = self::example_name($section, $item);
+                if ($name === '') {
+                    continue;
+                }
+
+                $lines[] = self::line(self::text($label), $name);
+                $in_section++;
+                $shown++;
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param string $section languages, posts, terms, strings, menus, or media.
+     * @param mixed  $item    One sample item.
+     * @return string
+     */
+    private static function example_name($section, $item)
+    {
+        if (!is_array($item)) {
+            return '';
+        }
+
+        if ($section === 'posts' || $section === 'terms' || $section === 'menus') {
+            $from_translations = self::translation_names($section, $item);
+            if ($from_translations !== '') {
+                return $from_translations;
+            }
+        }
+
+        $fields = array(
+            'languages' => array('name', 'slug'),
+            'posts' => array('title', 'slug'),
+            'terms' => array('name', 'slug'),
+            'strings' => array('string', 'name'),
+            'menus' => array('name', 'location'),
+            'media' => array('file', 'title'),
+        );
+        $keys = isset($fields[$section]) ? $fields[$section] : array('title', 'name');
+
+        foreach ($keys as $key) {
+            if (isset($item[$key]) && is_string($item[$key])) {
+                $name = self::present_name($section, $item[$key]);
+                if ($name !== '') {
+                    return self::with_default_language($section, $item, $name);
+                }
+            }
+        }
+
+        return self::translation_names($section, $item);
+    }
+
+    /**
+     * @param string $section Section key.
+     * @param array  $item    Sample item.
+     * @return string
+     */
+    private static function translation_names($section, array $item)
+    {
+        if (!isset($item['translations']) || !is_array($item['translations'])) {
+            return '';
+        }
+
+        $bits = array();
+        foreach ($item['translations'] as $lang => $translated) {
+            $name = '';
+            if (is_string($translated)) {
+                $name = self::present_name($section, $translated);
+            } elseif (is_array($translated)) {
+                foreach (array('title', 'name', 'string', 'slug') as $key) {
+                    if (isset($translated[$key]) && is_string($translated[$key])) {
+                        $name = self::present_name($section, $translated[$key]);
+                        if ($name !== '') {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if ($name === '') {
+                continue;
+            }
+
+            $slug = is_string($lang) ? trim($lang) : '';
+            if ($slug !== '' && preg_match('/^[A-Za-z0-9_-]{2,12}$/', $slug)) {
+                $bits[] = $name . ' (' . $slug . ')';
+            } else {
+                $bits[] = $name;
+            }
+
+            if (count($bits) >= 3) {
+                break;
+            }
+        }
+
+        if (empty($bits)) {
+            return '';
+        }
+
+        return self::excerpt(implode(', ', $bits), 120);
+    }
+
+    /**
+     * @param string $section Section key.
+     * @param array  $item    Sample item.
+     * @param string $name    Display name.
+     * @return string
+     */
+    private static function with_default_language($section, array $item, $name)
+    {
+        if ($section !== 'languages' || empty($item['is_default'])) {
+            return $name;
+        }
+
+        return sprintf(self::text('%s, the default language'), $name);
+    }
+
+    /**
+     * @param string $section Section key.
+     * @param string $name    Raw name.
+     * @return string
+     */
+    private static function present_name($section, $name)
+    {
+        $name = trim(self::plain($name));
+        $collapsed = preg_replace('/\s+/u', ' ', $name);
+        if (!is_string($collapsed)) {
+            $collapsed = preg_replace('/\s+/', ' ', $name);
+        }
+        $name = trim((string) $collapsed);
+        if ($name === '') {
+            return '';
+        }
+
+        if ($section === 'media') {
+            $name = basename(str_replace('\\', '/', $name));
+        }
+
+        return self::excerpt($name, 80);
     }
 
     /**
@@ -832,8 +1098,17 @@ class Migration_Report
         }
 
         $base = str_replace('%', '', $base);
+        $split = preg_replace('/(?<=[a-z0-9])(?=[A-Z])/', ' ', $base);
+        if (is_string($split)) {
+            $base = $split;
+        }
+        $base = str_replace(array('_', '-'), ' ', $base);
+        $base = strtolower(trim((string) preg_replace('/\s+/', ' ', $base)));
+        if ($base === '') {
+            return '';
+        }
         if (strlen($base) > 80) {
-            $base = substr($base, 0, 80);
+            $base = rtrim(substr($base, 0, 80));
         }
 
         return $base;
@@ -1050,7 +1325,7 @@ class Migration_Report
             return number_format_i18n($number);
         }
 
-        return (string) $number;
+        return number_format($number);
     }
 
     /**

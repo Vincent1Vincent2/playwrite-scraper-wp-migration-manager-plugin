@@ -401,6 +401,110 @@ class Test_Migration_Report extends TestCase
         }
     }
 
+    public function test_large_counts_are_grouped()
+    {
+        $report = $this->format_run(array(
+            'languages' => 2,
+            'posts' => 34000,
+            'strings' => 1200,
+        ));
+
+        $this->assertSame('34,000 posts', $this->line($report, 'Posts'));
+        $this->assertSame('1,200 strings', $this->line($report, 'Strings'));
+        $this->assertStringContainsString('2 languages, 34,000 posts, and 1,200 strings', $report['summary']);
+    }
+
+    public function test_unknown_step_names_are_plain_language()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => false,
+            'missing' => array('WMM\\Tolka\\Custom_Exporter'),
+        ));
+
+        $this->assertStringContainsString(
+            'The custom exporter step is missing from this plugin.',
+            $report['summary']
+        );
+        $this->assertSame(
+            array('The custom exporter step is missing from this plugin.'),
+            $this->lines_named($report, 'Missing step')
+        );
+    }
+
+    public function test_sample_names_are_shown_to_the_owner()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 2,
+                'posts' => 2,
+                'strings' => 1,
+                'media' => 1,
+            ),
+            'write' => array('ok' => true),
+            'sample' => array(
+                'languages' => array(
+                    array('slug' => 'en', 'name' => 'English', 'is_default' => true),
+                ),
+                'posts' => array(
+                    array(
+                        'translations' => array(
+                            'en' => array('id' => 10, 'title' => 'Welcome', 'slug' => 'welcome'),
+                            'sv' => array('id' => 11, 'title' => 'Valkommen', 'slug' => 'valkommen'),
+                        ),
+                    ),
+                    array('title' => '<em>About</em>'),
+                ),
+                'strings' => array(
+                    array('name' => 'Site title', 'string' => 'Hello'),
+                ),
+                'media' => array(
+                    array('file' => '2024/08/photo.jpg'),
+                ),
+                'terms' => array('not-an-item'),
+            ),
+        ));
+
+        $this->assertSame('English, the default language', $this->line($report, 'Example language'));
+        $this->assertStringContainsString('English is the default language.', $report['summary']);
+        $this->assertSame(
+            array('Welcome (en), Valkommen (sv)', 'About'),
+            $this->lines_named($report, 'Example post')
+        );
+        $this->assertSame('Hello', $this->line($report, 'Example string'));
+        $this->assertSame('photo.jpg', $this->line($report, 'Example file'));
+        $this->assertSame(array(), $this->lines_named($report, 'Example term'));
+        $this->assertStringNotContainsString('<', $this->line($report, 'Example post'));
+    }
+
+    public function test_a_long_problem_is_shortened_in_the_summary_only()
+    {
+        $long = str_repeat('Could not save this menu. ', 20);
+        $report = Migration_Report::format(array(
+            'ok' => false,
+            'errors' => array($long),
+        ));
+
+        $this->assertStringContainsString('...', $report['summary']);
+        $this->assertLessThan(strlen($long), strlen($report['summary']));
+        $problems = $this->lines_named($report, 'Problem');
+        $this->assertStringStartsWith('Could not save this menu.', $problems[0]);
+        $this->assertGreaterThan(180, strlen($problems[0]));
+    }
+
+    public function test_finished_time_is_shown_in_utc_without_wordpress()
+    {
+        if (function_exists('wp_date')) {
+            $this->markTestSkipped('WordPress date formatting is loaded.');
+        }
+
+        $report = $this->format_run(array('languages' => 1));
+        $this->assertMatchesRegularExpression(
+            '/^[0-9]{1,2} [A-Za-z]+ [0-9]{4}, [0-9]{2}:[0-9]{2} UTC$/',
+            $this->line($report, 'When')
+        );
+    }
+
     public function test_stores_the_report_when_wordpress_options_exist()
     {
         if (!function_exists('update_option') || !function_exists('get_option')) {
