@@ -666,6 +666,10 @@ PHP
 
     public function test_an_options_object_can_set_the_default_language()
     {
+        if (PHP_VERSION_ID < 80000) {
+            $this->markTestSkipped('The options object stub uses PHP 8 return types.');
+        }
+
         $result = $this->export_isolated(<<<'PHP'
 class Polylang_Options_Stub implements ArrayAccess
 {
