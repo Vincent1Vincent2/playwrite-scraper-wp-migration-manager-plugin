@@ -231,6 +231,53 @@ PHP
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_a_right_to_left_language_is_exported()
+    {
+        $arabic = $this->language_term(12, 'العربية', 'ar', '', '', 1, 0);
+        $arabic->description = serialize(array(
+            'fallbacks' => array('ar', 'en_US'),
+            'locale' => 'ar',
+            'rtl' => 1,
+            'flag_code' => 'sa',
+            'active' => true,
+        ));
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+            $arabic,
+        ), 'ar');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('ar', $result['items'][0]['slug']);
+        $this->assertTrue($by_slug['ar']['is_default']);
+        $this->assertSame('العربية', $by_slug['ar']['name']);
+        $this->assertSame('ar', $by_slug['ar']['locale']);
+        $this->assertSame('sa', $by_slug['ar']['flag']);
+        $this->assertSame(12, $by_slug['ar']['term_id']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertArrayNotHasKey('rtl', $by_slug['ar']);
+    }
+
+    public function test_a_real_polylang_description_keeps_locale_and_flag()
+    {
+        $english = $this->language_term(7, 'English', 'en', '', '', 0, 0);
+        $english->description = 'a:4:{s:9:"fallbacks";a:0:{}s:6:"locale";s:5:"en_US";s:3:"rtl";i:0;s:9:"flag_code";s:2:"us";}';
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertSame(7, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertArrayNotHasKey('fallbacks', $result['items'][0]);
+        $this->assertArrayNotHasKey('rtl', $result['items'][0]);
+    }
+
     public function test_includes_languages_that_have_no_posts()
     {
         $db = $this->database_with_languages(array(
