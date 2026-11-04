@@ -24,6 +24,12 @@ class Migration_Runner
     const SAMPLE_LIMIT = 20;
 
     /**
+     * Strings longer than this may be shortened in the preview sample.
+     * The package passed to the writer keeps the original string.
+     */
+    const SAMPLE_TEXT_LIMIT = 400;
+
+    /**
      * Maximum number of error sentences kept in one list.
      */
     const ERROR_LIMIT = 30;
@@ -1226,7 +1232,7 @@ class Migration_Runner
             return '';
         }
         if (is_string($value)) {
-            return self::plain_string($value, 400);
+            return self::plain_string($value, self::SAMPLE_TEXT_LIMIT);
         }
         if (is_int($value) || is_bool($value) || $value === null) {
             return $value;
