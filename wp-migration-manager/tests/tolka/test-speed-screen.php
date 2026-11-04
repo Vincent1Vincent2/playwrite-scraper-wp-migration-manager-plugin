@@ -181,8 +181,35 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-tolka-load'));
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-faster'));
         $this->assertStringNotContainsString('Placeholder coefficients', $html);
-        $this->assertTrue($this->document($html)->getElementById('wmm-tolka-basis')->hasAttribute('hidden'));
+        $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-basis'));
+        $this->assertFalse($this->document($html)->getElementById('wmm-tolka-basis')->hasAttribute('hidden'));
+        $this->assertStringContainsString('single page', $this->text($html, 'wmm-tolka-speed-scope'));
         $this->assertTrue($this->document($html)->getElementById('wmm-tolka-speed-error')->parentNode->hasAttribute('hidden'));
+        $this->assertTrue($this->document($html)->getElementById('wmm-tolka-provenance-note')->parentNode->hasAttribute('hidden'));
+    }
+
+    public function test_value_slots_can_be_updated_in_place()
+    {
+        $html = $this->render(false);
+        $document = $this->document($html);
+        $slots = array(
+            'wmm-tolka-current-load' => 'current_ms',
+            'wmm-tolka-tolka-load' => 'tolka_ms',
+            'wmm-tolka-faster' => 'faster',
+            'wmm-tolka-basis' => 'basis',
+        );
+
+        foreach ($slots as $id => $name) {
+            $node = $document->getElementById($id);
+            $this->assertNotNull($node, $id);
+            $this->assertSame($name, $node->getAttribute('data-wmm-tolka'));
+            $this->assertSame(0, $this->element_child_count($node), $id);
+        }
+
+        $note = $document->getElementById('wmm-tolka-provenance-note');
+        $this->assertSame('provenance_note', $note->parentNode->getAttribute('data-wmm-tolka'));
+        $this->assertStringContainsString('wmm-tolka-provenance', $note->parentNode->getAttribute('class'));
+        $this->assertStringContainsString('wmm-tolka-value', $note->getAttribute('class'));
     }
 
     public function test_empty_array_stays_unmeasured()
@@ -405,6 +432,24 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         foreach (array_keys(get_defined_vars()) as $name) {
             $this->assertStringStartsNotWith('wmm_tolka_speed_', $name);
         }
+    }
+
+    /**
+     * Element children, ignoring text nodes.
+     *
+     * @param DOMNode $node Node.
+     * @return int
+     */
+    private function element_child_count($node)
+    {
+        $count = 0;
+        foreach ($node->childNodes as $child) {
+            if (XML_ELEMENT_NODE === $child->nodeType) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**

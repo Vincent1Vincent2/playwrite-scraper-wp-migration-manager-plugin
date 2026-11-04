@@ -7,11 +7,10 @@
  * Optional $estimate is Speed_Estimate::project(), or a measure payload
  * with an estimate key.
  *
- * Slots: [data-field="summary"], [data-field="current_ms"],
- * [data-field="tolka_ms"], [data-field="faster_label"],
- * [data-field="savings"], [data-field="scope"], [data-field="basis"],
- * [data-field="provenance_note"], and [data-field="error"].
- * The provenance note is shown when provenance is placeholder.
+ * The behavior script fills these slots in place: data-wmm-tolka
+ * "current_ms", "tolka_ms", "faster", "basis", and "provenance_note".
+ * Each value node is also marked wmm-tolka-value. The provenance note
+ * is shown when provenance is placeholder.
  *
  * @package MigrationManager
  */
@@ -128,7 +127,7 @@ $wmm_tolka_speed_view = array(
     'state' => 'empty',
     'provenance' => '',
     'show_note' => false,
-    'summary' => __('No measurement yet. Choose Measure speed to load the public site URL. The result shows the current load, the estimated Tolka load, and how much faster Tolka is.', 'migration-manager'),
+    'summary' => __('Choose Measure speed to load the public site URL. These figures show the current load, the estimated Tolka load, and the percent faster.', 'migration-manager'),
     'current' => $wmm_tolka_speed_pending,
     'current_ms' => '',
     'tolka' => $wmm_tolka_speed_pending,
@@ -299,6 +298,13 @@ if ('error' === $wmm_tolka_speed_view['state']) {
     }
 }
 
+if ('empty' === $wmm_tolka_speed_view['state']) {
+    $wmm_tolka_speed_view['show_scope'] = true;
+    if ('' === $wmm_tolka_speed_view['basis']) {
+        $wmm_tolka_speed_view['basis'] = $wmm_tolka_speed_pending;
+    }
+}
+
 $wmm_tolka_speed_classes = array('wmm-tolka-speed-panel');
 if ('ready' === $wmm_tolka_speed_view['state']) {
     $wmm_tolka_speed_classes[] = 'wmm-tolka-is-ready';
@@ -334,28 +340,28 @@ if ('empty' === $wmm_tolka_speed_view['state']) {
     </p>
 
     <dl class="wmm-tolka-speed-figures">
-        <div class="wmm-tolka-speed-figure wmm-tolka-speed-faster">
+        <div class="wmm-tolka-speed-figure">
             <dt class="wmm-tolka-speed-label" id="wmm-tolka-faster-label"><?php esc_html_e('Percent faster', 'migration-manager'); ?></dt>
-            <dd class="wmm-tolka-speed-value" id="wmm-tolka-faster" data-field="faster_label" data-faster-percent="<?php echo esc_attr($wmm_tolka_speed_view['faster_percent']); ?>" aria-labelledby="wmm-tolka-faster-label"<?php echo $wmm_tolka_speed_view['show_scope'] ? ' aria-describedby="wmm-tolka-speed-scope"' : ''; ?>>
+            <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-faster" id="wmm-tolka-faster" data-wmm-tolka="faster" data-field="faster_label" data-faster-percent="<?php echo esc_attr($wmm_tolka_speed_view['faster_percent']); ?>" aria-labelledby="wmm-tolka-faster-label"<?php echo $wmm_tolka_speed_view['show_scope'] ? ' aria-describedby="wmm-tolka-speed-scope"' : ''; ?>>
                 <?php echo esc_html($wmm_tolka_speed_view['faster']); ?>
             </dd>
         </div>
-        <div class="wmm-tolka-speed-figure wmm-tolka-speed-current">
+        <div class="wmm-tolka-speed-figure">
             <dt class="wmm-tolka-speed-label" id="wmm-tolka-current-load-label"><?php esc_html_e('Current load', 'migration-manager'); ?></dt>
-            <dd class="wmm-tolka-speed-value" id="wmm-tolka-current-load" data-field="current_ms" data-ms="<?php echo esc_attr($wmm_tolka_speed_view['current_ms']); ?>" aria-labelledby="wmm-tolka-current-load-label">
+            <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-current" id="wmm-tolka-current-load" data-wmm-tolka="current_ms" data-field="current_ms" data-ms="<?php echo esc_attr($wmm_tolka_speed_view['current_ms']); ?>" aria-labelledby="wmm-tolka-current-load-label">
                 <?php echo esc_html($wmm_tolka_speed_view['current']); ?>
             </dd>
         </div>
-        <div class="wmm-tolka-speed-figure wmm-tolka-speed-tolka">
+        <div class="wmm-tolka-speed-figure">
             <dt class="wmm-tolka-speed-label" id="wmm-tolka-tolka-load-label"><?php esc_html_e('Estimated Tolka load', 'migration-manager'); ?></dt>
-            <dd class="wmm-tolka-speed-value" id="wmm-tolka-tolka-load" data-field="tolka_ms" data-ms="<?php echo esc_attr($wmm_tolka_speed_view['tolka_ms']); ?>" aria-labelledby="wmm-tolka-tolka-load-label">
+            <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-tolka" id="wmm-tolka-tolka-load" data-wmm-tolka="tolka_ms" data-field="tolka_ms" data-ms="<?php echo esc_attr($wmm_tolka_speed_view['tolka_ms']); ?>" aria-labelledby="wmm-tolka-tolka-load-label">
                 <?php echo esc_html($wmm_tolka_speed_view['tolka']); ?>
             </dd>
         </div>
     </dl>
 
-    <div class="wmm-tolka-provenance-note<?php echo $wmm_tolka_speed_view['show_note'] ? ' notice notice-warning' : ''; ?>"<?php echo $wmm_tolka_speed_view['show_note'] ? '' : ' hidden'; ?>>
-        <p id="wmm-tolka-provenance-note" data-field="provenance_note" role="note"><?php echo esc_html($wmm_tolka_speed_view['note']); ?></p>
+    <div class="wmm-tolka-provenance wmm-tolka-provenance-note notice notice-warning" data-wmm-tolka="provenance_note"<?php echo $wmm_tolka_speed_view['show_note'] ? '' : ' hidden'; ?>>
+        <p class="wmm-tolka-value" id="wmm-tolka-provenance-note" data-field="provenance_note" role="note"><?php echo esc_html($wmm_tolka_speed_view['note']); ?></p>
     </div>
 
     <p class="wmm-tolka-speed-savings" id="wmm-tolka-speed-savings" data-field="savings" data-saved-ms="<?php echo esc_attr($wmm_tolka_speed_view['saved_ms']); ?>"<?php echo ('' === $wmm_tolka_speed_view['savings']) ? ' hidden' : ''; ?>>
@@ -367,7 +373,7 @@ if ('empty' === $wmm_tolka_speed_view['state']) {
     </p>
 
     <p class="wmm-tolka-speed-basis-label"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>><?php esc_html_e('Basis', 'migration-manager'); ?></p>
-    <p class="wmm-tolka-speed-basis" id="wmm-tolka-basis" data-field="basis"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>>
+    <p class="wmm-tolka-speed-basis wmm-tolka-value" id="wmm-tolka-basis" data-wmm-tolka="basis" data-field="basis"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>>
         <?php echo esc_html($wmm_tolka_speed_view['basis']); ?>
     </p>
 </div>
