@@ -1692,6 +1692,101 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(0, $this->call_count('update_post_meta'));
     }
 
+    public function test_menu_envelope_is_stored_without_term_meta_or_exporter_errors()
+    {
+        $item = array(
+            'location' => 'primary',
+            'label' => 'Primary',
+            'translations' => array(
+                'en' => array(
+                    'menu_id' => 4,
+                    'name' => 'Main',
+                    'slug' => 'main',
+                    'kind' => 'menu',
+                    'items' => array(
+                        array(
+                            'title' => '<b>Home</b>',
+                            'url' => '/',
+                            'object' => 'custom',
+                            'object_id' => 0,
+                            'children' => array(),
+                        ),
+                    ),
+                    'link_count' => 1,
+                ),
+            ),
+        );
+
+        $result = Tolka_Writer::write(array(
+            'menus' => array(
+                'items' => array($item),
+                'errors' => array('A menu warning that must not be stored.'),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array($item), $stored['menus']);
+        $this->assertStringNotContainsString('must not be stored', json_encode($stored));
+        $this->assertSame('<b>Home</b>', $stored['menus'][0]['translations']['en']['items'][0]['title']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
+    public function test_empty_menu_slot_is_stored_without_term_meta()
+    {
+        $menu = array(
+            'location' => 'footer',
+            'label' => 'Footer',
+            'translations' => array(
+                'en' => array(
+                    'menu_id' => 0,
+                    'name' => '',
+                    'slug' => '',
+                    'kind' => 'menu',
+                    'items' => array(),
+                    'link_count' => 0,
+                ),
+                'sv' => array(
+                    'menu_id' => 0,
+                    'name' => '',
+                    'slug' => '',
+                    'kind' => 'menu',
+                    'items' => array(),
+                    'link_count' => 0,
+                ),
+            ),
+        );
+
+        $result = Tolka_Writer::write(array(
+            'menus' => array($menu),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(1, $result['counts']['menus']);
+        $this->assertSame($menu, $stored['menus'][0]);
+        $this->assertSame(0, $stored['menus'][0]['translations']['en']['menu_id']);
+        $this->assertSame(array(), $stored['menus'][0]['translations']['sv']['items']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+    }
+
     public function test_menu_ids_are_not_term_meta_when_a_post_is_tagged()
     {
         $GLOBALS['wmm_tolka_schema_driver']['term_meta'][20] = array(
@@ -1768,6 +1863,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $saved_menu = $stored['menus'][0];
 
         $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
         $this->assertSame('tolka-migration', $stored['format']);
         $this->assertSame(1, $stored['version']);
         $this->assertSame('Z', substr($stored['generated_at'], -1));
