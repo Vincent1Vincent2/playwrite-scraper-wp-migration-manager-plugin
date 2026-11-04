@@ -2280,13 +2280,22 @@
       : item.attachment_id != null && item.attachment_id !== ""
         ? "Attachment " + item.attachment_id
         : "Media";
-    var langs = [];
-    mapEntries(item.alt).concat(mapEntries(item.title)).forEach(function (entry) {
-      if (entry.lang && langs.indexOf(entry.lang) === -1) {
-        langs.push(entry.lang);
+    var bits = [];
+    mapEntries(item.alt).forEach(function (entry) {
+      var alt = text(entry.value);
+      if (!alt) {
+        return;
       }
+      bits.push((entry.lang ? entry.lang + " alt: " : "alt: ") + clip(alt, 60));
     });
-    return langs.length ? head + " · " + langs.join(", ") : head;
+    mapEntries(item.title).forEach(function (entry) {
+      var title = text(entry.value);
+      if (!title) {
+        return;
+      }
+      bits.push((entry.lang ? entry.lang + " title: " : "title: ") + clip(title, 60));
+    });
+    return bits.length ? head + " · " + bits.join(", ") : head;
   }
 
   function renderReport(container, data) {
