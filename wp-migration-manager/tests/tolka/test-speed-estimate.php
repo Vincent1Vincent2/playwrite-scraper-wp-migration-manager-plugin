@@ -604,6 +604,14 @@ class Test_Speed_Estimate extends TestCase
                 'A Tolka speed estimate is not available. The page could not be measured (404).',
             ),
             array(
+                array('ok' => false, 'error' => 404),
+                'A Tolka speed estimate is not available. The page could not be measured (404).',
+            ),
+            array(
+                array('ok' => false, 'error' => 404.0),
+                'A Tolka speed estimate is not available. The page could not be measured (404).',
+            ),
+            array(
                 array('ok' => false, 'error' => 'What happened?'),
                 'A Tolka speed estimate is not available. The page could not be measured. What happened?',
             ),

@@ -74,7 +74,14 @@ class Speed_Estimate
     /**
      * Project a Tolka load time.
      *
-     * @param array $measurement Loader measurement. `ok` must be true.
+     * The returned array always has ok, current_ms, tolka_ms, faster_percent,
+     * faster_label, overhead_ms, basis, provenance, provenance_note,
+     * coefficients, and error. On success, faster_label is "{percent}% faster"
+     * with one decimal, and error is empty. On failure, the three times are 0,
+     * faster_percent is 0, faster_label is empty, and error is the sentence
+     * to show the admin. basis is always the benchmarks.json sentence.
+     *
+     * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
      * @param array $benchmarks  Coefficients, normally from benchmarks().
      * @return array
@@ -734,6 +741,10 @@ class Speed_Estimate
      */
     private static function plain_detail($value)
     {
+        if (is_int($value) || (is_float($value) && is_finite($value))) {
+            $value = (string) $value;
+        }
+
         if (!is_string($value)) {
             return '';
         }
