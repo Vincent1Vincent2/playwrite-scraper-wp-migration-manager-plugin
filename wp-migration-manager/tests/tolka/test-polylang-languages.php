@@ -693,6 +693,98 @@ PHP
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_filtered_term_query_still_keeps_languages_with_no_posts()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function get_terms($args = array())
+{
+    if (!is_array($args) || !isset($args['hide_empty']) || $args['hide_empty'] !== false) {
+        fwrite(STDERR, "hide_empty must be false\n");
+        exit(1);
+    }
+    if ($args['taxonomy'] === 'language') {
+        return array((object) array(
+            'term_id' => 4,
+            'name' => 'English',
+            'slug' => 'en',
+            'term_group' => 0,
+            'description' => '',
+            'count' => 4,
+        ));
+    }
+    return array();
+}
+
+function get_option($name, $default = false)
+{
+    if ($name === 'polylang') {
+        return array('default_lang' => 'no');
+    }
+    return $default;
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return array(
+                (object) array(
+                    'term_id' => 4,
+                    'name' => 'English',
+                    'slug' => 'en',
+                    'term_group' => 0,
+                    'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                    'count' => 4,
+                ),
+                (object) array(
+                    'term_id' => 9,
+                    'name' => 'Norsk',
+                    'slug' => 'no',
+                    'term_group' => 1,
+                    'description' => 'a:2:{s:6:"locale";s:5:"nb_NO";s:9:"flag_code";s:2:"no";}',
+                    'count' => 0,
+                ),
+            );
+        }
+        if (strpos($query, "'post_translations'") !== false) {
+            return array((object) array(
+                'slug' => 'pll_group',
+                'description' => 'a:1:{s:2:"pt";i:12;}',
+            ));
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return '';
+    }
+};
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('en_US', $by_slug['en']['locale']);
+        $this->assertSame('us', $by_slug['en']['flag']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertSame('Norsk', $by_slug['no']['name']);
+        $this->assertSame('nb_NO', $by_slug['no']['locale']);
+        $this->assertSame(9, $by_slug['no']['term_id']);
+        $this->assertTrue($by_slug['no']['is_default']);
+        $this->assertSame('pt', $by_slug['pt']['slug']);
+    }
+
     public function test_term_meta_fills_locale_and_flag_when_the_description_is_empty()
     {
         $result = $this->export_isolated(<<<'PHP'

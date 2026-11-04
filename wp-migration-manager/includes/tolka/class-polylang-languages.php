@@ -440,9 +440,10 @@ class Polylang_Languages
     /**
      * Terms for a Polylang taxonomy.
      *
-     * get_terms is used when WordPress can answer. A direct read is the
-     * fallback when Polylang is inactive and the taxonomy is not registered.
-     * Rows that are missing produce an empty list, not an exception.
+     * get_terms is used when WordPress can answer. A direct read is used
+     * when Polylang is inactive, and also to add rows get_terms left out.
+     * A language with no posts can be filtered out of get_terms even when
+     * hide_empty is false. Missing rows produce an empty list, not an exception.
      *
      * @param string $taxonomy language, post_translations, or term_translations.
      * @return array
@@ -454,19 +455,66 @@ class Polylang_Languages
             return array();
         }
 
+        $terms = null;
         if (function_exists('get_terms')) {
-            $terms = get_terms(array(
+            $queried = get_terms(array(
                 'taxonomy' => $taxonomy,
                 'hide_empty' => false,
                 'orderby' => 'term_group',
                 'order' => 'ASC',
             ));
-            if (is_array($terms)) {
-                return $terms;
+            if (is_array($queried)) {
+                $terms = $queried;
             }
         }
 
-        return $this->terms_from_database($taxonomy);
+        $stored = $this->terms_from_database($taxonomy);
+        if ($terms === null) {
+            return $stored;
+        }
+
+        return $this->merge_term_rows($terms, $stored);
+    }
+
+    /**
+     * Add stored rows that get_terms did not return.
+     *
+     * A stored description replaces an empty one for the same slug.
+     *
+     * @param array $primary Rows from get_terms.
+     * @param array $stored Rows from the database.
+     * @return array
+     */
+    private function merge_term_rows($primary, $stored)
+    {
+        $known = array();
+        foreach ($primary as $index => $term) {
+            $slug = $this->string_value($this->read_field($term, 'slug'));
+            if ($slug !== '') {
+                $known[$slug] = $index;
+            }
+        }
+
+        foreach ($stored as $term) {
+            $slug = $this->string_value($this->read_field($term, 'slug'));
+            if ($slug === '') {
+                continue;
+            }
+            if (!isset($known[$slug])) {
+                $primary[] = $term;
+                $known[$slug] = count($primary) - 1;
+                continue;
+            }
+
+            $index = $known[$slug];
+            $current = $this->string_value($this->read_field($primary[$index], 'description'));
+            $incoming = $this->string_value($this->read_field($term, 'description'));
+            if ($current === '' && $incoming !== '') {
+                $primary[$index] = $term;
+            }
+        }
+
+        return $primary;
     }
 
     /**
