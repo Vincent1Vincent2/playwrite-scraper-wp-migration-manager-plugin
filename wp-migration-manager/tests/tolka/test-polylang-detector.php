@@ -542,6 +542,60 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($before, $after);
     }
 
+    public function test_version_3_9_1_is_not_shortened(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '3.9.1'));
+        $this->write_plugin($root, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '3.9.10'));
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $first = Polylang_Detector_Fixture::status();
+        $second = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertNotSame('3.9', $first['version']);
+        $this->assertNotSame('3', $first['version']);
+        $this->assertSame($first, $second);
+        $this->assertStringContainsString('3.9.1', $first['errors'][0]);
+        $this->assertStringContainsString('3.9.10', $first['errors'][0]);
+        $this->assertSame($first['errors'], array_values(array_unique($first['errors'])));
+        $this->assertSame($second['errors'], array_values(array_unique($second['errors'])));
+        $this->assertCount(count($first['errors']), $second['errors']);
+    }
+
+    public function test_version_3_9_1_with_a_comment_closer_is_unchanged(): void
+    {
+        $root = $this->temp_dir();
+        $contents = "<?php\n/**\n * Plugin Name: Polylang\n * Version: 3.9.1 */\n */\n";
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('3.9.1', $status['version']);
+        $this->assertStringContainsString(
+            'Polylang 3.9.1 is installed but not active.',
+            $status['errors'][0]
+        );
+    }
+
+    public function test_status_twice_does_not_duplicate_an_error_sentence(): void
+    {
+        $root = $this->temp_dir();
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $first = Polylang_Detector_Fixture::status();
+        $second = Polylang_Detector_Fixture::status();
+
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $first['errors']);
+        $this->assertCount(1, $second['errors']);
+        $this->assertSame($first['errors'][0], $second['errors'][0]);
+        $this->assertSame(array($first['errors'][0]), $second['errors']);
+        $this->assertSame(1, count(array_keys($second['errors'], $second['errors'][0], true)));
+        $this->assertErrorsAreFinishedSentences($second['errors']);
+    }
+
     public function test_version_zero_is_kept(): void
     {
         $root = $this->temp_dir();
