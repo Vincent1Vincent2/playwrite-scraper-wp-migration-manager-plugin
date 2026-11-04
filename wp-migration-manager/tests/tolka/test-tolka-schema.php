@@ -91,6 +91,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
 
         $this->assertSame('tolka-migration', $package['format']);
         $this->assertSame(1, $package['version']);
+        $this->assertSame('Z', substr($package['generated_at'], -1));
         $this->assertSame(
             array(
                 'format',
@@ -133,19 +134,65 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertLessThanOrEqual($after, $stamp);
     }
 
+    public function test_saved_header_is_tolka_migration_version_one_ending_in_z()
+    {
+        $cases = array(
+            array('version' => '1.0', 'generated_at' => '2024-05-06T07:08:09z'),
+            array('version' => 1.0, 'generated_at' => '2024-05-06T07:08:09Z'),
+            array('version' => ' 1 ', 'generated_at' => '2024-05-06T07:08:09+00:00'),
+        );
+
+        foreach ($cases as $case) {
+            $result = Tolka_Writer::write(array(
+                'format' => 'Migration',
+                'version' => $case['version'],
+                'generated_at' => $case['generated_at'],
+                'posts' => array(
+                    array(
+                        'group' => 'post:4',
+                        'translations' => array(
+                            'en' => array(
+                                'id' => 4,
+                                'title' => "A\0 <em>title</em>",
+                                'content' => "<p>Hello\0</p>",
+                            ),
+                        ),
+                    ),
+                ),
+            ));
+            $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+            $this->assertTrue($result['ok']);
+            $this->assertSame('tolka-migration', $stored['format']);
+            $this->assertSame(1, $stored['version']);
+            $this->assertSame('2024-05-06T07:08:09Z', $stored['generated_at']);
+            $this->assertSame('Z', substr($stored['generated_at'], -1));
+            $this->assertSame('A <em>title</em>', $stored['posts'][0]['translations']['en']['title']);
+            $this->assertSame('<p>Hello</p>', $stored['posts'][0]['translations']['en']['content']);
+            $this->assertSame(
+                $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+                $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+            );
+        }
+    }
+
     public function test_gmt_offset_zero_is_kept_and_a_blank_timestamp_is_replaced()
     {
         $kept = '2024-05-06T07:08:09+00:00';
         $result = Tolka_Writer::write(array(
-            'format' => 'tolka-migration',
-            'version' => 1,
+            'format' => 'other',
+            'version' => '1',
             'generated_at' => $kept,
             'posts' => array(),
         ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
 
         $this->assertTrue($result['ok']);
-        $this->assertSame($kept, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']);
-        $this->assertSame(0, (new DateTimeImmutable($kept))->getOffset());
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame(1, $stored['version']);
+        $this->assertSame('2024-05-06T07:08:09Z', $stored['generated_at']);
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+        $this->assertSame(0, (new DateTimeImmutable($stored['generated_at']))->getOffset());
 
         $before = time();
         $replaced = Tolka_Writer::write(array(
