@@ -321,10 +321,15 @@
       return;
     }
     requestInFlight = true;
-    setBusy(button, true, busyLabel);
-    if (container) {
-      container.setAttribute("aria-busy", "true");
-      showStatus(container, statusText);
+    holdBusyClass(button);
+    try {
+      setBusy(button, true, busyLabel);
+      if (container) {
+        container.setAttribute("aria-busy", "true");
+        showStatus(container, statusText);
+      }
+    } catch (ignore) {
+      /* The busy class stays until release, even if the panel cannot update. */
     }
 
     Promise.resolve()
@@ -347,15 +352,48 @@
     function release() {
       try {
         requestInFlight = false;
+        dropBusyClass(button);
         enableActions();
         if (container) {
           container.removeAttribute("aria-busy");
         }
       } catch (ignore) {
         requestInFlight = false;
+        dropBusyClass(button);
         enableActions();
       }
     }
+  }
+
+  function holdBusyClass(button) {
+    if (!button) {
+      return;
+    }
+    if (button.classList) {
+      button.classList.add("wmm-tolka-is-busy");
+    } else {
+      button.className = ((button.className || "") + " wmm-tolka-is-busy").replace(/\s+/g, " ").trim();
+    }
+  }
+
+  function dropBusyClass(button) {
+    removeBusyClass(button);
+    actionButtons().forEach(removeBusyClass);
+    if (typeof document !== "undefined" && document.querySelectorAll) {
+      Array.prototype.forEach.call(document.querySelectorAll(".wmm-tolka-is-busy"), removeBusyClass);
+    }
+  }
+
+  function removeBusyClass(node) {
+    if (!node) {
+      return;
+    }
+    if (node.classList) {
+      node.classList.remove("wmm-tolka-is-busy");
+      return;
+    }
+    var name = " " + (node.className || "") + " ";
+    node.className = name.replace(/ wmm-tolka-is-busy /g, " ").replace(/\s+/g, " ").trim();
   }
 
   function enableActions() {
@@ -1288,9 +1326,6 @@
       container.insertBefore(status, container.firstChild);
     } else {
       container.appendChild(status);
-    }
-    if (slots.panel) {
-      slots.panel.classList.add("wmm-tolka-is-busy");
     }
     return true;
   }
