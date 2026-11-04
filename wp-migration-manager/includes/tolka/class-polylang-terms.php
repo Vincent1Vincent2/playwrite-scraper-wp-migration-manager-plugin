@@ -187,6 +187,19 @@ class Polylang_Terms
             $errors[] = $this->failureSentence();
         }
 
+        foreach ($items as $index => $item) {
+            if (!isset($item['translations']) || !is_array($item['translations'])) {
+                continue;
+            }
+            foreach ($item['translations'] as $lang => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
+                $items[$index]['translations'][$lang] = $row;
+            }
+        }
+
         usort($items, function ($left, $right) {
             return $this->compareItems($left, $right);
         });
@@ -503,6 +516,13 @@ class Polylang_Terms
             $map = $this->decodeMap($row['description']);
             if ($map === null) {
                 $corrupt++;
+                $termTaxonomyId = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
+                if ($termTaxonomyId > 0) {
+                    $decodedGroups[] = array(
+                        'map' => array(),
+                        'term_taxonomy_id' => $termTaxonomyId,
+                    );
+                }
                 continue;
             }
 
@@ -516,19 +536,49 @@ class Polylang_Terms
                 $clean[$key] = $id;
                 $neededIds[$id] = $id;
             }
-            if ($clean !== array()) {
-                $decodedGroups[] = $clean;
+            $termTaxonomyId = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
+            if ($clean !== array() || $termTaxonomyId > 0) {
+                $decodedGroups[] = array(
+                    'map' => $clean,
+                    'term_taxonomy_id' => $termTaxonomyId,
+                );
             }
         }
 
         if ($corrupt === 1) {
-            $errors[] = $this->text('A term translation group could not be read because its stored description is invalid. That group was skipped.');
+            $errors[] = $this->text('A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.');
         } elseif ($corrupt > 1) {
             $errors[] = sprintf(
-                $this->text('%d term translation groups could not be read because their stored descriptions are invalid. Those groups were skipped.'),
+                $this->text('%d term translation groups had invalid stored descriptions. Those descriptions were ignored. Terms linked to those groups are still included.'),
                 $corrupt
             );
         }
+
+        $evidence = $this->polylangEvidence($groupRows);
+        $languageMap = array();
+        if ($decodedGroups !== array() || $evidence) {
+            $languageMap = $this->fetchLanguageMap();
+        }
+        $ttIds = array();
+        foreach ($decodedGroups as $group) {
+            if ($group['term_taxonomy_id'] > 0) {
+                $ttIds[] = $group['term_taxonomy_id'];
+            }
+        }
+        $linkNotes = array();
+        $links = $this->fetchGroupLinks($ttIds, $errors);
+        foreach ($decodedGroups as $index => $group) {
+            $linked = array();
+            if ($group['term_taxonomy_id'] > 0 && isset($links[$group['term_taxonomy_id']])) {
+                $linked = $links[$group['term_taxonomy_id']];
+            }
+            $map = $this->mergeLinkedTerms($group['map'], $linked, $languageMap, $linkNotes);
+            $decodedGroups[$index]['map'] = $map;
+            foreach ($map as $id) {
+                $neededIds[(int) $id] = (int) $id;
+            }
+        }
+        $this->appendCapped($errors, $linkNotes);
 
         $details = array();
         if ($neededIds !== array()) {
@@ -548,7 +598,6 @@ class Polylang_Terms
             }
         }
 
-        $evidence = $this->polylangEvidence($groupRows);
         $taxonomies = array();
         if ($evidence) {
             foreach ($this->translatedTaxonomies() as $taxonomy) {
@@ -560,7 +609,11 @@ class Polylang_Terms
         $groupedIds = array();
         $missing = array();
         $mismatched = array();
-        foreach ($decodedGroups as $clean) {
+        foreach ($decodedGroups as $group) {
+            $clean = isset($group['map']) && is_array($group['map']) ? $group['map'] : array();
+            if ($clean === array()) {
+                continue;
+            }
             $built = $this->translationsFromMap($clean, '', $details, $groupedIds, true);
             $missing = array_merge($missing, $built['missing']);
             $mismatched = array_merge($mismatched, $built['mismatched']);
@@ -572,10 +625,6 @@ class Polylang_Terms
         }
         $this->appendTermProblems($errors, $missing, $mismatched);
 
-        $languageMap = array();
-        if ($groups !== array() || $evidence) {
-            $languageMap = $this->fetchLanguageMap();
-        }
         $notes = array();
         $groups = $this->applyActualLanguages($groups, $languageMap, $notes);
         $this->appendCapped($errors, $notes);
@@ -989,8 +1038,122 @@ class Polylang_Terms
             return null;
         }
         return $this->dbResults(
-            "SELECT tt.description FROM {$table} AS tt WHERE tt.taxonomy = 'term_translations'"
+            "SELECT tt.term_taxonomy_id, tt.description FROM {$table} AS tt WHERE tt.taxonomy = 'term_translations'"
         );
+    }
+
+    /**
+     * Terms linked to a translation group in term_relationships.
+     *
+     * @param array<int, int> $ttIds
+     * @param array<int, string> $errors
+     * @return array<int, array<int, int>>
+     */
+    private function fetchGroupLinks(array $ttIds, array &$errors)
+    {
+        $clean = array();
+        foreach ($ttIds as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        $clean = array_values($clean);
+        if ($clean === array()) {
+            return array();
+        }
+        $relationships = $this->table('term_relationships');
+        if ($relationships === '') {
+            return array();
+        }
+
+        $map = array();
+        foreach (array_chunk($clean, $this->pageSize) as $chunk) {
+            if (count($chunk) === 1) {
+                $sql = "SELECT tr.term_taxonomy_id, tr.object_id
+                    FROM {$relationships} AS tr
+                    WHERE tr.term_taxonomy_id = %d";
+                $args = array($chunk[0]);
+            } else {
+                $placeholders = implode(', ', array_fill(0, count($chunk), '%d'));
+                $sql = "SELECT tr.term_taxonomy_id, tr.object_id
+                    FROM {$relationships} AS tr
+                    WHERE tr.term_taxonomy_id IN ({$placeholders})";
+                $args = $chunk;
+            }
+            $rows = $this->dbResults($sql, $args);
+            if ($rows === null) {
+                $errors[] = $this->text('Some term translation links could not be read. Groups were built from their stored descriptions.');
+                break;
+            }
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $tt = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
+                $objectId = isset($row['object_id']) ? (int) $row['object_id'] : 0;
+                if ($tt <= 0 || $objectId <= 0) {
+                    continue;
+                }
+                $map[$tt][$objectId] = $objectId;
+            }
+        }
+
+        $lists = array();
+        foreach ($map as $tt => $ids) {
+            $lists[$tt] = array_values($ids);
+        }
+        return $lists;
+    }
+
+    /**
+     * Add terms that are linked to the group but missing from its description.
+     *
+     * @param array<string, int> $map
+     * @param array<int, int> $objectIds
+     * @param array<int, string> $languageMap
+     * @param array<int, string> $notes
+     * @return array<string, int>
+     */
+    private function mergeLinkedTerms(array $map, array $objectIds, array $languageMap, array &$notes)
+    {
+        $present = array();
+        foreach ($map as $id) {
+            $present[(int) $id] = true;
+        }
+        foreach ($objectIds as $id) {
+            $id = (int) $id;
+            if ($id <= 0 || isset($present[$id])) {
+                continue;
+            }
+            $lang = $this->apiTermLanguage($id);
+            if ($lang === '' && isset($languageMap[$id])) {
+                $lang = $languageMap[$id];
+            }
+            if ($lang === '') {
+                $notes[] = sprintf(
+                    $this->text('Term %d is linked to a translation group but has no language, so it was left out of that group.'),
+                    $id
+                );
+                continue;
+            }
+            if (isset($map[$lang]) && (int) $map[$lang] !== $id) {
+                $notes[] = sprintf(
+                    $this->text('Term %1$d is linked to a translation group but was missing from its stored description. It was left out because %2$s is already used in that group.'),
+                    $id,
+                    $lang
+                );
+                continue;
+            }
+            $map[$lang] = $id;
+            $present[$id] = true;
+            $notes[] = sprintf(
+                $this->text('Term %1$d is linked to a translation group but was missing from its stored description. It was added as %2$s.'),
+                $id,
+                $lang
+            );
+        }
+        return $map;
     }
 
     /**
@@ -1828,8 +1991,12 @@ class Polylang_Terms
         if (is_int($value)) {
             return $value > 0 ? $value : 0;
         }
-        if (is_string($value) && preg_match('/^[0-9]+$/', $value)) {
-            return (int) $value;
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value !== '' && preg_match('/^[0-9]+$/', $value)) {
+                $number = (int) $value;
+                return $number > 0 ? $number : 0;
+            }
         }
         if (is_float($value) && is_finite($value) && $value > 0 && floor($value) === $value && $value <= PHP_INT_MAX) {
             return (int) $value;

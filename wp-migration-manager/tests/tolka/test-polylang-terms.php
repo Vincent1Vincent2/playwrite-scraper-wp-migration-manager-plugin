@@ -529,7 +529,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(509, $result['items']);
 
         $this->assertContains(
-            'A term translation group could not be read because its stored description is invalid. That group was skipped.',
+            'A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.',
             $result['errors']
         );
         $this->assertContains(
@@ -545,6 +545,113 @@ class Polylang_Terms_Test extends TestCase
             $result['errors']
         );
         $this->assertNotContains('Polylang is not active. Term translations were not exported.', $result['errors']);
+    }
+
+    public function test_export_on_an_instance_keeps_parent_ids(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('en' => 4, 'sv' => 15)));
+        $database->catalog = array(
+            $this->term(4, 'News', 'news', 'category', 'en', '0'),
+            array(
+                'id' => 15,
+                'name' => 'Local',
+                'slug' => 'local',
+                'taxonomy' => 'category',
+                'lang' => 'sv',
+                'parent' => ' 4 ',
+                'description' => '',
+            ),
+            array(
+                'id' => 16,
+                'name' => 'Orphan',
+                'slug' => 'orphan',
+                'taxonomy' => 'category',
+                'lang' => 'en',
+                'description' => '',
+            ),
+            $this->term(17, 'Tag', 'tag', 'post_tag', 'en', null),
+            $this->term(99, 'Missing parent target', 'dangling', 'category', 'en', 99),
+            $this->term(18, 'Float parent', 'float-parent', 'category', 'en', 8.0),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $this->assertTrue(is_callable(array($exporter, 'export')));
+        $result = $exporter->export();
+
+        $news = $this->itemByGroup($result['items'], 'term:4');
+        $this->assertSame(0, $news['translations']['en']['parent']);
+        $this->assertSame(4, $news['translations']['sv']['parent']);
+        $this->assertIsInt($news['translations']['en']['parent']);
+        $this->assertIsInt($news['translations']['sv']['parent']);
+
+        $orphan = $this->itemByGroup($result['items'], 'term:16');
+        $this->assertSame(0, $orphan['translations']['en']['parent']);
+
+        $tag = $this->itemByGroup($result['items'], 'term:17');
+        $this->assertSame(0, $tag['translations']['en']['parent']);
+
+        $dangling = $this->itemByGroup($result['items'], 'term:99');
+        $this->assertSame(99, $dangling['translations']['en']['parent']);
+
+        $floatParent = $this->itemByGroup($result['items'], 'term:18');
+        $this->assertSame(8, $floatParent['translations']['en']['parent']);
+    }
+
+    public function test_the_same_instance_can_export_twice(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(2, 'Child', 'child', 'category', 'en', 1),
+            $this->term(3, 'Root', 'root', 'category', 'en'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $method = new \ReflectionMethod(Polylang_Terms::class, 'export');
+        $this->assertFalse($method->isStatic());
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertSame(1, $this->itemByGroup($second['items'], 'term:2')['translations']['en']['parent']);
+        $this->assertSame(0, $this->itemByGroup($second['items'], 'term:3')['translations']['en']['parent']);
+    }
+
+    public function test_a_missing_parent_on_one_translation_is_zero(): void
+    {
+        $exporter = new Polylang_Terms(function () {
+            return array(
+                'state' => 'ok',
+                'default_lang' => 'en',
+                'groups' => array(
+                    array(
+                        'taxonomy' => 'category',
+                        'translations' => array(
+                            'en' => array('id' => 2, 'name' => 'Child', 'slug' => 'child', 'parent' => 1),
+                            'sv' => array('id' => 3, 'name' => 'Root', 'slug' => 'root'),
+                        ),
+                    ),
+                ),
+            );
+        });
+
+        $result = $exporter->export();
+
+        $this->assertSame(1, $result['items'][0]['translations']['en']['parent']);
+        $this->assertSame(0, $result['items'][0]['translations']['sv']['parent']);
     }
 
     public function test_a_term_with_no_translation_is_exported_on_its_own(): void
@@ -655,6 +762,71 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_links_rebuild_a_group_when_its_description_is_invalid(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->descriptions = array('not-a-map');
+        $database->links = array(1 => array(10, 11));
+        $database->catalog = array(
+            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(11, 'Nyheter', 'nyheter', 'category', 'sv'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $item = $this->itemByGroup($result['items'], 'term:10');
+
+        $this->assertSame(array('en', 'sv'), array_keys($item['translations']));
+        $this->assertSame('Nyheter', $item['translations']['sv']['name']);
+        $this->assertContains(
+            'A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 10 is linked to a translation group but was missing from its stored description. It was added as en.',
+            $result['errors']
+        );
+    }
+
+    public function test_a_linked_term_missing_from_the_description_is_added(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->descriptions = array(serialize(array('en' => 10)));
+        $database->links = array(1 => array(10, 11, 12));
+        $database->catalog = array(
+            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(11, 'Nyheter', 'nyheter', 'category', 'sv'),
+            $this->term(12, 'Extra', 'extra', 'category', 'sv'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $item = $this->itemByGroup($result['items'], 'term:10');
+
+        $this->assertSame(array('en', 'sv'), array_keys($item['translations']));
+        $this->assertSame(11, $item['translations']['sv']['id']);
+        $this->assertSame('Nyheter', $item['translations']['sv']['name']);
+        $extra = $this->itemByGroup($result['items'], 'term:12');
+        $this->assertSame(array('sv'), array_keys($extra['translations']));
+        $this->assertSame('Extra', $extra['translations']['sv']['name']);
+        $this->assertContains(
+            'Term 11 is linked to a translation group but was missing from its stored description. It was added as sv.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 12 is linked to a translation group but was missing from its stored description. It was left out because sv is already used in that group.',
+            $result['errors']
+        );
+    }
+
     public function test_leftover_groups_are_exported_when_polylang_is_deactivated(): void
     {
         if (!$this->canUseDatabaseStub()) {
@@ -700,7 +872,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array('term:12'), $this->groupIds($result['items']));
         $this->assertContains(
-            'A term translation group could not be read because its stored description is invalid. That group was skipped.',
+            'A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.',
             $result['errors']
         );
     }
@@ -1049,6 +1221,13 @@ class Polylang_Terms_Database
     public $descriptions = array();
 
     /**
+     * Translation-group term_taxonomy_id => linked term ids.
+     *
+     * @var array<int, array<int, int>>
+     */
+    public $links = array();
+
+    /**
      * @var array<int, array<string, mixed>>
      */
     public $catalog = array();
@@ -1120,8 +1299,36 @@ class Polylang_Terms_Database
         }
         if (strpos($query, "taxonomy = 'term_translations'") !== false) {
             $rows = array();
+            $termTaxonomyId = 1;
             foreach ($this->descriptions as $description) {
-                $rows[] = array('description' => $description);
+                $rows[] = array(
+                    'description' => $description,
+                    'term_taxonomy_id' => $termTaxonomyId,
+                );
+                $termTaxonomyId++;
+            }
+            return $rows;
+        }
+        if (strpos($query, 'term_relationships') !== false && strpos($query, 'object_id') !== false && strpos($query, "taxonomy = 'term_language'") === false) {
+            $wanted = array();
+            if (preg_match('/term_taxonomy_id = (\d+)/', $query, $match)) {
+                $wanted[(int) $match[1]] = true;
+            } elseif (preg_match('/IN \(([^)]*)\)/', $query, $match) && trim($match[1]) !== '') {
+                foreach (explode(',', $match[1]) as $piece) {
+                    $wanted[(int) trim($piece)] = true;
+                }
+            }
+            $rows = array();
+            foreach ($this->links as $termTaxonomyId => $ids) {
+                if ($wanted !== array() && !isset($wanted[(int) $termTaxonomyId])) {
+                    continue;
+                }
+                foreach ($ids as $id) {
+                    $rows[] = array(
+                        'term_taxonomy_id' => (int) $termTaxonomyId,
+                        'object_id' => (int) $id,
+                    );
+                }
             }
             return $rows;
         }
@@ -1206,7 +1413,7 @@ class Polylang_Terms_Database
             'name' => $term['name'],
             'slug' => $term['slug'],
             'taxonomy' => $term['taxonomy'],
-            'parent' => isset($term['parent']) ? (int) $term['parent'] : 0,
+            'parent' => array_key_exists('parent', $term) ? $term['parent'] : null,
             'description' => isset($term['description']) ? $term['description'] : '',
         );
     }
