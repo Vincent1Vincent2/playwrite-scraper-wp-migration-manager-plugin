@@ -405,6 +405,80 @@ class Polylang_Detector_Test extends TestCase
         $this->assertErrorsAreFinishedSentences($status['errors']);
     }
 
+    public function test_first_version_zero_wins_over_a_later_version(): void
+    {
+        $root = $this->temp_dir();
+        $contents = "<?php\n"
+            . "/**\n"
+            . " * Plugin Name: Polylang\n"
+            . " * Version: 0\n"
+            . " * Version: 9.9.9\n"
+            . " */\n";
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('0', $status['version']);
+        $this->assertStringNotContainsString('9.9.9', $status['errors'][0]);
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
+    public function test_version_zero_before_a_comment_closer_is_kept(): void
+    {
+        $root = $this->temp_dir();
+        $contents = "<?php\r\n/**\r\n * Plugin Name: Polylang\r\n * Version: 0 */\r\n */\r\n";
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('0', $status['version']);
+        $this->assertSame(
+            array('Polylang 0 is installed but not active. Activate Polylang, then return to Migrate to Tolka.'),
+            $status['errors']
+        );
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
+    public function test_second_status_call_reads_the_header_again(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '0'));
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $first = Polylang_Detector_Fixture::status();
+        $this->assertSame('0', $first['version']);
+
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '2.0.0'));
+        $second = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('2.0.0', $second['version']);
+        $this->assertNotSame($first, $second);
+        $this->assertErrorsAreFinishedSentences($second['errors']);
+    }
+
+    public function test_pro_version_zero_is_mentioned_beside_a_free_copy(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '1.0.0'));
+        $this->write_plugin(
+            $root,
+            'polylang-pro/polylang.php',
+            "<?php\n/**\n * Plugin Name: Polylang Pro\n * Version: 0\n */\n"
+        );
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('1.0.0', $status['version']);
+        $this->assertSame(
+            array('Polylang 1.0.0 is installed but not active. Polylang Pro 0 is also installed. Activate Polylang, then return to Migrate to Tolka.'),
+            $status['errors']
+        );
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
     public function test_active_version_zero_has_no_errors(): void
     {
         $root = $this->temp_dir();
