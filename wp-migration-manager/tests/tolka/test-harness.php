@@ -1048,7 +1048,7 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertFalse($this->included_wordpress_bootstrap());
 
         foreach ($this->wordpress_functions() as $function) {
-            $this->assertFalse(function_exists($function), $function);
+            $this->assert_not_defined_by_bootstrap($function);
         }
 
         $this->assertFalse(function_exists('pll_languages_list'));
@@ -1092,7 +1092,7 @@ class Harness_Test extends Tolka_Test_Case
 
         $this->assertSame(0, $probe['status'], $probe['output']);
         $this->assertSame($sentinel, $probe['abspath']);
-        $this->assertSame(array(), $probe['functions']);
+        $this->assertSame('', $probe['bootstrap_functions']);
         $this->assertFalse($probe['loaded']);
     }
 
@@ -1105,7 +1105,7 @@ class Harness_Test extends Tolka_Test_Case
 
         $this->assertSame(0, $probe['status'], $probe['output']);
         $this->assertSame(WMM_TOLKA_PLUGIN_DIR . '/', $probe['abspath']);
-        $this->assertSame(array(), $probe['functions']);
+        $this->assertSame('', $probe['bootstrap_functions']);
         $this->assertFalse($probe['loaded']);
         $this->assertFalse(is_file($probe['abspath'] . 'wp-load.php'));
     }
@@ -1121,8 +1121,28 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertFalse($this->included_wordpress_bootstrap());
 
         foreach ($this->wordpress_functions() as $function) {
-            $this->assertFalse(function_exists($function), $function);
+            $this->assert_not_defined_by_bootstrap($function);
         }
+    }
+
+    /**
+     * A WordPress API must not be declared by the test bootstrap.
+     *
+     * @param string $function Function name.
+     */
+    private function assert_not_defined_by_bootstrap($function)
+    {
+        if (!function_exists($function)) {
+            $this->assertFalse(function_exists($function), $function);
+            return;
+        }
+
+        $file = str_replace('\\', '/', (string) (new \ReflectionFunction($function))->getFileName());
+        $bootstrap = 'tests/tolka/bootstrap.php';
+        $this->assertFalse(
+            substr($file, -strlen($bootstrap)) === $bootstrap,
+            $function . ' must not be defined by the Tolka test bootstrap.'
+        );
     }
 
     /**
@@ -1156,10 +1176,14 @@ class Harness_Test extends Tolka_Test_Case
         $script = "<?php\n"
             . $preamble . "\n"
             . 'require ' . var_export(WMM_TOLKA_TEST_DIR . '/bootstrap.php', true) . ";\n"
-            . '$defined = array();' . "\n"
+            . '$from_bootstrap = array();' . "\n"
             . 'foreach (' . $functions . ' as $function) {' . "\n"
-            . '    if (function_exists($function)) {' . "\n"
-            . '        $defined[] = $function;' . "\n"
+            . '    if (!function_exists($function)) {' . "\n"
+            . '        continue;' . "\n"
+            . '    }' . "\n"
+            . '    $file = str_replace(\'\\\\\', \'/\', (string) (new ReflectionFunction($function))->getFileName());' . "\n"
+            . '    if (substr($file, -strlen(\'tests/tolka/bootstrap.php\')) === \'tests/tolka/bootstrap.php\') {' . "\n"
+            . '        $from_bootstrap[] = $function;' . "\n"
             . '    }' . "\n"
             . '}' . "\n"
             . '$loaded = false;' . "\n"
@@ -1170,7 +1194,7 @@ class Harness_Test extends Tolka_Test_Case
             . '    }' . "\n"
             . '}' . "\n"
             . 'echo \'ABSPATH=\' . ABSPATH . "\n";' . "\n"
-            . 'echo \'FUNCS=\' . implode(\',\', $defined) . "\n";' . "\n"
+            . 'echo \'BOOTFUNCS=\' . implode(\',\', $from_bootstrap) . "\n";' . "\n"
             . 'echo \'WPLOAD=\' . ($loaded ? \'1\' : \'0\') . "\n";' . "\n";
         file_put_contents($runner, $script);
 
@@ -1179,7 +1203,7 @@ class Harness_Test extends Tolka_Test_Case
         exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' 2>&1', $output, $status);
         $text = implode("\n", $output);
         $abspath = '';
-        $defined = array();
+        $bootstrap_functions = 'missing';
         $loaded = true;
 
         foreach ($output as $line) {
@@ -1187,9 +1211,8 @@ class Harness_Test extends Tolka_Test_Case
                 $abspath = substr($line, strlen('ABSPATH='));
             }
 
-            if (strpos($line, 'FUNCS=') === 0) {
-                $list = substr($line, strlen('FUNCS='));
-                $defined = $list === '' ? array() : explode(',', $list);
+            if (strpos($line, 'BOOTFUNCS=') === 0) {
+                $bootstrap_functions = substr($line, strlen('BOOTFUNCS='));
             }
 
             if (strpos($line, 'WPLOAD=') === 0) {
@@ -1201,7 +1224,7 @@ class Harness_Test extends Tolka_Test_Case
             'status' => $status,
             'output' => $text,
             'abspath' => $abspath,
-            'functions' => $defined,
+            'bootstrap_functions' => $bootstrap_functions,
             'loaded' => $loaded,
         );
     }
