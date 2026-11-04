@@ -1553,6 +1553,7 @@
     var note = provenance === "placeholder" && estimate ? provenanceText(estimate) : "";
     applyProvenance(slots, note, provenance);
     describeFaster(slots);
+    upsertTruncation(container, null);
     setPanelState(slots.panel, "error", note ? provenance : "");
     if (slots.panel) {
       slots.panel.classList.remove("wmm-tolka-is-busy");
@@ -1676,24 +1677,30 @@
   }
 
   function upsertTruncation(container, metrics) {
-    var existing = container.querySelector(".wmm-tolka-speed-truncated");
+    if (!container || !container.querySelector) {
+      return;
+    }
+    var existing = container.querySelector("#wmm-tolka-speed-truncated") || container.querySelector(".wmm-tolka-speed-truncated");
+    var sentence = "Only the first part of the page HTML was measured.";
     if (!metrics || metrics.truncated !== true) {
-      if (existing && existing.getAttribute("data-wmm-tolka-generated") === "1" && existing.parentNode) {
-        existing.parentNode.removeChild(existing);
+      if (!existing) {
+        return;
       }
+      if (existing.getAttribute("data-wmm-tolka-generated") === "1" && existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+        return;
+      }
+      setText(existing, "");
+      conceal(existing);
       return;
     }
     if (existing) {
+      setText(existing, sentence);
+      reveal(existing);
       return;
     }
     container.appendChild(
-      markGenerated(
-        el(
-          "p",
-          "wmm-tolka-speed-truncated",
-          "Only the first part of the page HTML was measured."
-        )
-      )
+      markGenerated(el("p", "wmm-tolka-speed-truncated", sentence))
     );
   }
 
