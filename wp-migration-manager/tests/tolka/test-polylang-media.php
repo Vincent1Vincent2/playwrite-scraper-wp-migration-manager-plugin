@@ -56,6 +56,63 @@ class Test_Polylang_Media extends TestCase
         $this->assertNotFalse(json_encode($result));
     }
 
+    public function test_untranslated_attachment_keeps_a_remote_file_url()
+    {
+        $url = 'https://cdn.example/photos/floor-plan.pdf?v=2';
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 42, 'lang' => 'en'),
+        ), array(42), array('en'), 'en', array(
+            42 => array(
+                'file' => $url,
+                'alt' => 'Floor plan',
+                'title' => 'Floor plan',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 42, $url, array(
+            'en' => 'Floor plan',
+        ), array(
+            'en' => 'Floor plan',
+        ));
+    }
+
+    public function test_two_language_group_keeps_a_protocol_relative_file_url()
+    {
+        $url = '//cdn.example/2024/05/hero.jpg';
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => $url, 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertSame($url, $result['items'][0]['file']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+    }
+
+    public function test_two_language_group_keeps_the_canonical_file_url()
+    {
+        $url = 'https://cdn.example/photos/hero.jpg';
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => $url, 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame($url, $result['items'][0]['file']);
+        $this->assertSame(array('en' => 'Harbor', 'fr' => 'Port'), $result['items'][0]['alt']);
+    }
+
     public function test_attachment_with_no_translation()
     {
         $result = $this->itemsFrom(array(), array(
@@ -633,10 +690,15 @@ class Test_Polylang_Media extends TestCase
 
     public function test_skipped_media_message_is_a_finished_sentence()
     {
-        $messages = $this->call('messages_for', array(1));
-        $this->assertCount(1, $messages);
-        $this->assertCustomerSentence($messages[0]);
-        $this->assertStringContainsString('Nothing was changed', $messages[0]);
+        $one = $this->call('messages_for', array(1));
+        $this->assertCount(1, $one);
+        $this->assertCustomerSentence($one[0]);
+        $this->assertSame('One media file could not be read and was left out of this export. Nothing was changed.', $one[0]);
+
+        $many = $this->call('messages_for', array(3));
+        $this->assertCount(1, $many);
+        $this->assertCustomerSentence($many[0]);
+        $this->assertSame('3 media files could not be read and were left out of this export. Nothing was changed.', $many[0]);
         $this->assertSame(array(), $this->call('messages_for', array(0)));
     }
 
@@ -838,7 +900,7 @@ class Test_Polylang_Media extends TestCase
     private function assertCustomerSentence($message)
     {
         $this->assertIsString($message);
-        $this->assertMatchesRegularExpression('/^[A-Z].+\.$/', $message);
+        $this->assertMatchesRegularExpression('/^[A-Z0-9].+\.$/', $message);
         $this->assertStringNotContainsString('taxonomy', strtolower($message));
         $this->assertStringNotContainsString('wpdb', strtolower($message));
     }
