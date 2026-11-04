@@ -296,6 +296,32 @@ if (!function_exists('wmm_tolka_concrete_class_names')) {
     }
 }
 
+if (!function_exists('wmm_tolka_primary_test_class')) {
+    /**
+     * Class PHPUnit 10 and 11 should run from a test file.
+     *
+     * A helper declared above the test case must not steal the file name.
+     * Names ending in Test are preferred. Otherwise the first class is used.
+     *
+     * @param string[] $names Concrete class names, in source order.
+     * @return string
+     */
+    function wmm_tolka_primary_test_class($names)
+    {
+        foreach ($names as $name) {
+            if (strlen($name) >= 4 && substr($name, -4) === 'Test') {
+                return $name;
+            }
+        }
+
+        if (isset($names[0])) {
+            return $names[0];
+        }
+
+        return '';
+    }
+}
+
 if (!function_exists('wmm_tolka_rewire_test_files')) {
     /**
      * Give PHPUnit 10 and 11 a real path whose name matches the test class.
@@ -346,7 +372,31 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
                 continue;
             }
 
-            $target = $temp . '/' . $names[0] . '.php';
+            $primary = wmm_tolka_primary_test_class($names);
+            $others = array();
+
+            foreach ($names as $name) {
+                if ($name !== $primary) {
+                    $others[] = $name;
+                }
+            }
+
+            $hidden_tests = array();
+
+            foreach ($others as $name) {
+                if (strlen($name) >= 4 && substr($name, -4) === 'Test') {
+                    $hidden_tests[] = $name;
+                }
+            }
+
+            if (!empty($hidden_tests)) {
+                fwrite(
+                    STDERR,
+                    $primary . ' is the test class PHPUnit ' . $version . ' will run from ' . basename($file) . '. These other test classes in that file will not run: ' . implode(', ', $hidden_tests) . '. Move their test methods onto ' . $primary . '. This PHPUnit release runs one test class from each test file.' . PHP_EOL
+                );
+            }
+
+            $target = $temp . '/' . $primary . '.php';
 
             if (!copy($file, $target)) {
                 throw new RuntimeException(
@@ -376,29 +426,46 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
             return;
         }
 
-        register_shutdown_function(
-            static function () use ($restore, $temp) {
-                foreach ($restore as $pair) {
-                    if (is_link($pair[0])) {
-                        unlink($pair[0]);
-                    }
-
-                    if (is_file($pair[1])) {
-                        rename($pair[1], $pair[0]);
-                    }
-                }
-
-                $copies = glob($temp . '/*.php');
-
-                if (is_array($copies)) {
-                    foreach ($copies as $copy) {
-                        unlink($copy);
-                    }
-                }
-
-                @rmdir($temp);
+        $restored = false;
+        $put_back = function () use (&$restored, $restore, $temp) {
+            if ($restored) {
+                return;
             }
-        );
+
+            $restored = true;
+
+            foreach ($restore as $pair) {
+                if (is_link($pair[0])) {
+                    unlink($pair[0]);
+                }
+
+                if (is_file($pair[1]) && !file_exists($pair[0])) {
+                    rename($pair[1], $pair[0]);
+                }
+            }
+
+            $copies = glob($temp . '/*.php');
+
+            if (is_array($copies)) {
+                foreach ($copies as $copy) {
+                    unlink($copy);
+                }
+            }
+
+            @rmdir($temp);
+        };
+
+        register_shutdown_function($put_back);
+
+        if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
+            pcntl_async_signals(true);
+            $stop = function () use ($put_back) {
+                $put_back();
+                exit(1);
+            };
+            pcntl_signal(SIGINT, $stop);
+            pcntl_signal(SIGTERM, $stop);
+        }
     }
 }
 
