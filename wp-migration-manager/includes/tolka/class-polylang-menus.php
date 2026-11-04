@@ -1750,10 +1750,10 @@ class Polylang_Menus
         $normalized['attr_title'] = $this->entity_text($normalized['attr_title']);
         $normalized['description'] = $this->entity_text($normalized['description']);
         $normalized['url'] = trim($this->without_null_bytes($normalized['url']));
-        $normalized['object'] = $this->text($normalized['object']);
-        $normalized['type'] = $this->text($normalized['type']);
-        $normalized['target'] = $this->text($normalized['target']);
-        $normalized['xfn'] = $this->text($normalized['xfn']);
+        $normalized['object'] = $this->without_null_bytes($normalized['object']);
+        $normalized['type'] = $this->without_null_bytes($normalized['type']);
+        $normalized['target'] = $this->without_null_bytes($normalized['target']);
+        $normalized['xfn'] = $this->without_null_bytes($normalized['xfn']);
         $normalized['classes'] = $this->normalize_classes($normalized['classes']);
         if ($normalized['object'] === '' && $normalized['type'] !== '') {
             $normalized['object'] = $normalized['type'];

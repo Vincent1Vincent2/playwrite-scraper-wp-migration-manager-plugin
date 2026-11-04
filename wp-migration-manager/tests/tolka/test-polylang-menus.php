@@ -2002,6 +2002,67 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(1, array_count_values($this->locations($second))['primary']);
     }
 
+    public function test_sv_child_stored_first_keeps_swedish_text_and_drops_null_fields(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'en',
+            'languages' => array('en', 'sv'),
+            'menus' => array(8 => 'Meny'),
+            'term_languages' => array(8 => 'sv'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('sv' => 8),
+                    ),
+                ),
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => 30,
+                        'parent' => '10',
+                        'title' => 'R&auml;ksm&ouml;rg&aring;s',
+                        'url' => "https://example.com/fågel\0",
+                        'object' => "page\0",
+                        'object_id' => 4,
+                        'type' => "post_type\0",
+                        'attr_title' => "F&ouml;nster\0",
+                        'description' => "Sm&ouml;rg&aring;s\0",
+                        'target' => "_blank\0",
+                        'xfn' => "nofollow\0",
+                        'position' => 1,
+                    ),
+                    array(
+                        'id' => 10,
+                        'parent' => 0,
+                        'title' => 'Mat',
+                        'url' => 'https://example.com/mat',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 4,
+                    ),
+                ),
+            ),
+        ));
+
+        $second = $fixture->export();
+        $child = $this->location($second, 'primary')['translations']['sv']['items'][0]['children'][0];
+
+        $this->assertSame('Räksmörgås', $child['title']);
+        $this->assertSame('https://example.com/fågel', $child['url']);
+        $this->assertSame('page', $child['object']);
+        $this->assertSame('post_type', $child['type']);
+        $this->assertSame('Fönster', $child['attr_title']);
+        $this->assertSame('Smörgås', $child['description']);
+        $this->assertSame('_blank', $child['target']);
+        $this->assertSame('nofollow', $child['xfn']);
+        $this->assertSame(10, $child['parent']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
+    }
+
     public function test_database_child_row_before_parent_stays_nested_under_sv(): void
     {
         if (function_exists('get_option')) {
