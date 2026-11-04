@@ -50,10 +50,10 @@ class Test_Migration_Report extends TestCase
             'Your Polylang content is packaged for Tolka: 2 languages, 1 post, 10 strings, 1 menu, and 2 media items. No terms were found. The package is saved on this site. Polylang data was left in place.',
             $report['summary']
         );
-        $this->assertSame('2 languages', $this->line($report, 'Languages'));
-        $this->assertSame('1 post', $this->line($report, 'Posts'));
-        $this->assertSame('0 terms', $this->line($report, 'Terms'));
-        $this->assertSame('2 media items', $this->line($report, 'Media'));
+        $this->assertSame('2', $this->line($report, 'Languages'));
+        $this->assertSame('1', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Terms'));
+        $this->assertSame('2', $this->line($report, 'Media'));
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
         $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
         $this->assertArrayNotHasKey('Next', $this->line_map($report));
@@ -93,7 +93,7 @@ class Test_Migration_Report extends TestCase
             'Nothing was found on this site. No languages, posts, terms, strings, menus, or media were found. If this site should have translations, check that Polylang has languages, then run the migration again. An empty Tolka package was saved on this site. Polylang data was left in place.',
             $report['summary']
         );
-        $this->assertSame('0 posts', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Posts'));
         $this->assertSame('Saved, but it is empty', $this->line($report, 'Tolka package'));
         $this->assertSame(
             'If this site should have translations, check that Polylang has languages, then run the migration again.',
@@ -140,12 +140,12 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('Nothing was found on this site.', $report['title']);
         $this->assertStringContainsString('Nothing was found', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
-        $this->assertSame('0 languages', $this->line($report, 'Languages'));
-        $this->assertSame('0 posts', $this->line($report, 'Posts'));
-        $this->assertSame('0 terms', $this->line($report, 'Terms'));
-        $this->assertSame('0 strings', $this->line($report, 'Strings'));
-        $this->assertSame('0 menus', $this->line($report, 'Menus'));
-        $this->assertSame('0 media items', $this->line($report, 'Media'));
+        $this->assertSame('0', $this->line($report, 'Languages'));
+        $this->assertSame('0', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Terms'));
+        $this->assertSame('0', $this->line($report, 'Strings'));
+        $this->assertSame('0', $this->line($report, 'Menus'));
+        $this->assertSame('0', $this->line($report, 'Media'));
     }
 
     public function test_several_missing_classes_are_named_in_one_sentence()
@@ -225,8 +225,8 @@ class Test_Migration_Report extends TestCase
             'The migration did not finish, so the Tolka package was not saved. Required classes are missing, so those parts were skipped: Polylang_Languages (languages) and Tolka_Writer (saving). Update the plugin, then run the migration again from Migrate to Tolka. Polylang data was left in place.',
             $report['summary']
         );
-        $this->assertSame('0 languages were not read.', $this->line($report, 'Languages'));
-        $this->assertSame('0 posts', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Languages'));
+        $this->assertSame('0', $this->line($report, 'Posts'));
         $missing = $this->lines_named($report, 'Missing step');
         $this->assertSame(
             array(
@@ -454,7 +454,7 @@ class Test_Migration_Report extends TestCase
             'errors' => array(),
         ));
 
-        $this->assertSame('0 posts were not read.', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Posts'));
         $this->assertStringContainsString(
             'A required class is missing, so that part was skipped: Polylang_Posts (posts).',
             $report['summary']
@@ -478,7 +478,7 @@ class Test_Migration_Report extends TestCase
             $partial['summary']
         );
         $this->assertStringNotContainsString('unavailable', $partial['summary']);
-        $this->assertSame('0 posts were not read.', $this->line($partial, 'Posts'));
+        $this->assertSame('0', $this->line($partial, 'Posts'));
     }
 
     public function test_garbage_input_still_returns_a_report()
@@ -494,7 +494,7 @@ class Test_Migration_Report extends TestCase
         $this->assertFalse($report['ok']);
         $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertStringEndsWith('Polylang data was left in place.', $report['summary']);
-        $this->assertSame('0 languages', $this->line($report, 'Languages'));
+        $this->assertSame('0', $this->line($report, 'Languages'));
         $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
     }
 
@@ -543,8 +543,8 @@ class Test_Migration_Report extends TestCase
             ),
         ));
 
-        $this->assertSame('3 languages', $this->line($report, 'Languages'));
-        $this->assertSame('4 media items', $this->line($report, 'Media'));
+        $this->assertSame('3', $this->line($report, 'Languages'));
+        $this->assertSame('4', $this->line($report, 'Media'));
     }
 
     public function test_negative_counts_are_treated_as_none()
@@ -555,9 +555,9 @@ class Test_Migration_Report extends TestCase
             'terms' => 1.9,
         ));
 
-        $this->assertSame('0 languages', $this->line($report, 'Languages'));
-        $this->assertSame('8 posts', $this->line($report, 'Posts'));
-        $this->assertSame('1 term', $this->line($report, 'Terms'));
+        $this->assertSame('0', $this->line($report, 'Languages'));
+        $this->assertSame('8', $this->line($report, 'Posts'));
+        $this->assertSame('1', $this->line($report, 'Terms'));
     }
 
     public function test_unconfirmed_package_does_not_claim_it_was_saved()
@@ -597,12 +597,12 @@ class Test_Migration_Report extends TestCase
         );
         $this->assertStringContainsString('Polylang is not active.', $report['summary']);
         $this->assert_section_order($report);
-        $this->assertSame('1 language', $this->line($report, 'Languages'));
-        $this->assertSame('2 posts', $this->line($report, 'Posts'));
-        $this->assertSame('0 terms', $this->line($report, 'Terms'));
-        $this->assertSame('0 strings', $this->line($report, 'Strings'));
-        $this->assertSame('0 menus', $this->line($report, 'Menus'));
-        $this->assertSame('4 media items', $this->line($report, 'Media'));
+        $this->assertSame('1', $this->line($report, 'Languages'));
+        $this->assertSame('2', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Terms'));
+        $this->assertSame('0', $this->line($report, 'Strings'));
+        $this->assertSame('0', $this->line($report, 'Menus'));
+        $this->assertSame('4', $this->line($report, 'Media'));
         $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
         $this->assertSame('No result was returned.', $this->line($report, 'Writer'));
         $names = array();
@@ -628,9 +628,9 @@ class Test_Migration_Report extends TestCase
         $this->assertStringNotContainsString('The migration is complete', $marked_ok['title']);
         $this->assertStringNotContainsString('The migration is complete', $marked_ok['summary']);
         $this->assert_section_order($marked_ok);
-        $this->assertSame('2 languages', $this->line($marked_ok, 'Languages'));
-        $this->assertSame('3 posts', $this->line($marked_ok, 'Posts'));
-        $this->assertSame('0 media items', $this->line($marked_ok, 'Media'));
+        $this->assertSame('2', $this->line($marked_ok, 'Languages'));
+        $this->assertSame('3', $this->line($marked_ok, 'Posts'));
+        $this->assertSame('0', $this->line($marked_ok, 'Media'));
 
         $bare = Migration_Report::format(array(
             'ok' => false,
@@ -640,12 +640,12 @@ class Test_Migration_Report extends TestCase
         $this->assertStringNotContainsString('The migration is complete', $bare['title']);
         $this->assertStringNotContainsString('The migration is complete', $bare['summary']);
         $this->assert_section_order($bare);
-        $this->assertSame('0 languages', $this->line($bare, 'Languages'));
-        $this->assertSame('0 posts', $this->line($bare, 'Posts'));
-        $this->assertSame('0 terms', $this->line($bare, 'Terms'));
-        $this->assertSame('0 strings', $this->line($bare, 'Strings'));
-        $this->assertSame('0 menus', $this->line($bare, 'Menus'));
-        $this->assertSame('0 media items', $this->line($bare, 'Media'));
+        $this->assertSame('0', $this->line($bare, 'Languages'));
+        $this->assertSame('0', $this->line($bare, 'Posts'));
+        $this->assertSame('0', $this->line($bare, 'Terms'));
+        $this->assertSame('0', $this->line($bare, 'Strings'));
+        $this->assertSame('0', $this->line($bare, 'Menus'));
+        $this->assertSame('0', $this->line($bare, 'Media'));
     }
 
     public function test_titles_are_finished_sentences()
@@ -817,7 +817,7 @@ echo json_encode($report);
         $this->assertContains('Strings', $labels);
         $this->assertContains('Menus', $labels);
         $this->assertContains('Media', $labels);
-        $this->assertSame('1 language', $this->line($report, 'Languages'));
+        $this->assertSame('1', $this->line($report, 'Languages'));
         $this->assertSame('The migration is complete.', $report['title']);
     }
 
@@ -862,12 +862,12 @@ echo json_encode($report);
 
         $this->assertFalse($report['ok']);
         $this->assertSame('The migration did not finish.', $report['title']);
-        $this->assertSame('0 languages', $this->line($report, 'Languages'));
-        $this->assertSame('0 posts', $this->line($report, 'Posts'));
-        $this->assertSame('0 terms', $this->line($report, 'Terms'));
-        $this->assertSame('0 strings', $this->line($report, 'Strings'));
-        $this->assertSame('0 menus', $this->line($report, 'Menus'));
-        $this->assertSame('0 media items', $this->line($report, 'Media'));
+        $this->assertSame('0', $this->line($report, 'Languages'));
+        $this->assertSame('0', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Terms'));
+        $this->assertSame('0', $this->line($report, 'Strings'));
+        $this->assertSame('0', $this->line($report, 'Menus'));
+        $this->assertSame('0', $this->line($report, 'Media'));
         $this->assertSame(array(), $this->lines_named($report, 'Missing step'));
         $this->assertStringNotContainsString('class is missing', $report['summary']);
         $this->assertStringEndsWith('Polylang data was left in place.', $report['summary']);
@@ -875,12 +875,12 @@ echo json_encode($report);
         $partial = Migration_Report::format(array(
             'counts' => array('posts' => 5),
         ));
-        $this->assertSame('0 languages', $this->line($partial, 'Languages'));
-        $this->assertSame('5 posts', $this->line($partial, 'Posts'));
-        $this->assertSame('0 terms', $this->line($partial, 'Terms'));
-        $this->assertSame('0 strings', $this->line($partial, 'Strings'));
-        $this->assertSame('0 menus', $this->line($partial, 'Menus'));
-        $this->assertSame('0 media items', $this->line($partial, 'Media'));
+        $this->assertSame('0', $this->line($partial, 'Languages'));
+        $this->assertSame('5', $this->line($partial, 'Posts'));
+        $this->assertSame('0', $this->line($partial, 'Terms'));
+        $this->assertSame('0', $this->line($partial, 'Strings'));
+        $this->assertSame('0', $this->line($partial, 'Menus'));
+        $this->assertSame('0', $this->line($partial, 'Media'));
 
         $missing_only = Migration_Report::format(array(
             'missing' => array('WMM\\Tolka\\Polylang_Menus', 'Tolka_Schema'),
@@ -889,8 +889,8 @@ echo json_encode($report);
             'Required classes are missing, so those parts were skipped: Polylang_Menus (menus) and Tolka_Schema (package builder).',
             $missing_only['summary']
         );
-        $this->assertSame('0 menus were not read.', $this->line($missing_only, 'Menus'));
-        $this->assertSame('0 languages', $this->line($missing_only, 'Languages'));
+        $this->assertSame('0', $this->line($missing_only, 'Menus'));
+        $this->assertSame('0', $this->line($missing_only, 'Languages'));
         $this->assertSame(
             array(
                 'Polylang_Menus (menus) is missing, so that part was skipped.',
@@ -907,8 +907,8 @@ echo json_encode($report);
             'errors' => 'could not read the screen text',
         ));
 
-        $this->assertSame('0 strings were not read.', $this->line($report, 'Strings'));
-        $this->assertSame('0 languages', $this->line($report, 'Languages'));
+        $this->assertSame('0', $this->line($report, 'Strings'));
+        $this->assertSame('0', $this->line($report, 'Languages'));
         $this->assertStringContainsString(
             'A required class is missing, so that part was skipped: Polylang_Strings (strings).',
             $report['summary']
@@ -992,7 +992,7 @@ echo json_encode($report);
             'All rights reserved (en), Med ensamratt (sv)',
             $this->line($report, 'Example string')
         );
-        $this->assertSame('1 string', $this->line($report, 'Strings'));
+        $this->assertSame('1', $this->line($report, 'Strings'));
     }
 
     public function test_section_count_lines_stay_in_contract_order()
@@ -1015,9 +1015,9 @@ echo json_encode($report);
             array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'),
             $labels
         );
-        $this->assertSame('1 language', $this->line($report, 'Languages'));
-        $this->assertSame('0 posts', $this->line($report, 'Posts'));
-        $this->assertSame('4 media items', $this->line($report, 'Media'));
+        $this->assertSame('1', $this->line($report, 'Languages'));
+        $this->assertSame('0', $this->line($report, 'Posts'));
+        $this->assertSame('4', $this->line($report, 'Media'));
     }
 
     public function test_menu_and_media_samples_use_visible_names()
@@ -1143,7 +1143,7 @@ echo json_encode($report);
         );
         $this->assertStringContainsString('The Tolka package on this site is incomplete.', $report['summary']);
         $this->assertSame('Saved, but it is incomplete', $this->line($report, 'Tolka package'));
-        $this->assertSame('5 posts', $this->line($report, 'Posts'));
+        $this->assertSame('5', $this->line($report, 'Posts'));
         $this->assertSame('3 of 5', $this->line($report, 'Posts stored'));
     }
 
@@ -1167,7 +1167,7 @@ echo json_encode($report);
         $this->assert_not_a_clean_finish($report);
         $this->assertSame('The migration finished with problems.', $report['title']);
         $this->assert_section_order($report);
-        $this->assertSame('2 media items', $this->line($report, 'Media'));
+        $this->assertSame('2', $this->line($report, 'Media'));
         $this->assertSame('1 of 2', $this->line($report, 'Media stored'));
         $this->assertStringContainsString(
             'Saving did not finish. The package contained more than was stored. 1 of 2 media items was saved.',
@@ -1198,7 +1198,7 @@ echo json_encode($report);
         ));
 
         $this->assert_not_a_clean_finish($report);
-        $this->assertSame('3 posts', $this->line($report, 'Posts'));
+        $this->assertSame('3', $this->line($report, 'Posts'));
         $this->assertStringContainsString(
             'The package contained more than was stored. 1 of 3 posts was saved.',
             $report['summary']
@@ -1318,17 +1318,18 @@ echo json_encode($report);
         $this->assertFalse($report['ok']);
         $this->assertSame('The migration finished with problems.', $report['title']);
         $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
+        $this->assertStringNotContainsString('complete', strtolower($report['title']));
         $this->assertNotSame('The migration is complete.', $report['title']);
         $this->assertStringNotContainsString('The migration is complete', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
         $this->assert_section_order($report);
-        $this->assertSame('2 languages', $this->line($report, 'Languages'));
-        $this->assertSame('5 posts', $this->line($report, 'Posts'));
-        $this->assertSame('1 term', $this->line($report, 'Terms'));
-        $this->assertSame('0 strings', $this->line($report, 'Strings'));
-        $this->assertSame('0 menus', $this->line($report, 'Menus'));
-        $this->assertSame('0 media items', $this->line($report, 'Media'));
+        $this->assertSame('2', $this->line($report, 'Languages'));
+        $this->assertSame('5', $this->line($report, 'Posts'));
+        $this->assertSame('1', $this->line($report, 'Terms'));
+        $this->assertSame('0', $this->line($report, 'Strings'));
+        $this->assertSame('0', $this->line($report, 'Menus'));
+        $this->assertSame('0', $this->line($report, 'Media'));
 
         $clean = $this->format_run(array(
             'languages' => 2,
@@ -1359,8 +1360,36 @@ echo json_encode($report);
         $this->assertNotSame('The migration finished with problems.', $report['title']);
         $this->assertStringContainsString('Nothing was stored.', $report['summary']);
         $this->assert_section_order($report);
-        $this->assertSame('3 posts', $this->line($report, 'Posts'));
-        $this->assertSame('0 languages', $this->line($report, 'Languages'));
+        $this->assertSame('3', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Languages'));
+    }
+
+    public function test_section_counts_are_whole_number_strings()
+    {
+        $report = $this->format_run(array(
+            'languages' => 2.0,
+            'posts' => 1.9,
+            'terms' => '8.0',
+            'strings' => 1200,
+            'menus' => -3,
+            'media' => 0,
+        ));
+
+        $expected = array(
+            'Languages' => '2',
+            'Posts' => '1',
+            'Terms' => '8',
+            'Strings' => '1200',
+            'Menus' => '0',
+            'Media' => '0',
+        );
+        foreach ($expected as $label => $value) {
+            $actual = $this->line($report, $label);
+            $this->assertSame($value, $actual);
+            $this->assertIsString($actual);
+            $this->assertMatchesRegularExpression('/^(0|[1-9][0-9]*)$/', $actual);
+            $this->assertStringNotContainsString('.', $actual);
+        }
     }
 
     public function test_large_counts_are_grouped()
@@ -1371,8 +1400,8 @@ echo json_encode($report);
             'strings' => 1200,
         ));
 
-        $this->assertSame('34,000 posts', $this->line($report, 'Posts'));
-        $this->assertSame('1,200 strings', $this->line($report, 'Strings'));
+        $this->assertSame('34000', $this->line($report, 'Posts'));
+        $this->assertSame('1200', $this->line($report, 'Strings'));
         $this->assertStringContainsString('2 languages, 34,000 posts, and 1,200 strings', $report['summary']);
     }
 
@@ -1482,8 +1511,8 @@ echo json_encode($report);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertStringNotContainsString('could not be saved', $report['summary']);
         $this->assertSame(array(), $report['errors']);
-        $this->assertSame('1 language', $this->line($report, 'Languages'));
-        $this->assertSame('1 post', $this->line($report, 'Posts'));
+        $this->assertSame('1', $this->line($report, 'Languages'));
+        $this->assertSame('1', $this->line($report, 'Posts'));
     }
 
     public function test_update_option_false_keeps_a_complete_report()
@@ -1527,12 +1556,12 @@ echo json_encode(array("clean" => $clean, "failed" => $failed));
         $this->assertStringContainsString('The report could not be saved.', $clean['summary']);
         $this->assertSame(array('The report could not be saved.'), $clean['errors']);
         $this->assert_saved_failure_keeps_sections($clean, array(
-            'Languages' => '2 languages',
-            'Posts' => '3 posts',
-            'Terms' => '0 terms',
-            'Strings' => '0 strings',
-            'Menus' => '0 menus',
-            'Media' => '0 media items',
+            'Languages' => '2',
+            'Posts' => '3',
+            'Terms' => '0',
+            'Strings' => '0',
+            'Menus' => '0',
+            'Media' => '0',
         ));
 
         $failed = $decoded['failed'];
@@ -1544,12 +1573,12 @@ echo json_encode(array("clean" => $clean, "failed" => $failed));
         $this->assertStringContainsString('The report could not be saved.', $failed['summary']);
         $this->assertSame(array('The report could not be saved.'), $failed['errors']);
         $this->assert_saved_failure_keeps_sections($failed, array(
-            'Languages' => '1 language',
-            'Posts' => '0 posts',
-            'Terms' => '0 terms',
-            'Strings' => '0 strings',
-            'Menus' => '2 menus',
-            'Media' => '0 media items',
+            'Languages' => '1',
+            'Posts' => '0',
+            'Terms' => '0',
+            'Strings' => '0',
+            'Menus' => '2',
+            'Media' => '0',
         ));
     }
 

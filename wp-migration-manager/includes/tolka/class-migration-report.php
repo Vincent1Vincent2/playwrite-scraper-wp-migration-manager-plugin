@@ -679,10 +679,20 @@ class Migration_Report
         }
 
         if ($status === 'problems') {
-            return self::text('The migration finished with problems.');
+            return self::partial_title();
         }
 
         return self::text('The migration did not finish.');
+    }
+
+    /**
+     * Partial finishes use this title, which does not say the run is complete.
+     *
+     * @return string
+     */
+    private static function partial_title()
+    {
+        return self::text('The migration finished with problems.');
     }
 
     /**
@@ -1191,7 +1201,7 @@ class Migration_Report
 
         foreach (self::section_catalog() as $key => $meta) {
             $count = isset($counts[$key]) ? (int) $counts[$key] : 0;
-            $lines[] = self::line(self::text($meta['label']), self::line_value($meta, $count, !empty($unavailable[$key])));
+            $lines[] = self::line(self::text($meta['label']), self::whole_number($count));
         }
 
         if ($shortfall) {
@@ -1282,24 +1292,27 @@ class Migration_Report
     }
 
     /**
-     * @param array $meta        Section copy.
-     * @param int   $count       Item count.
-     * @param bool  $unavailable Exporter was missing and the count is empty.
+     * A section count is a string of a whole number, never a float.
+     *
+     * @param mixed $count Raw count.
      * @return string
      */
-    private static function line_value(array $meta, $count, $unavailable)
+    private static function whole_number($count)
     {
-        if ((int) $count === 1) {
-            $phrase = sprintf(self::text($meta['one']), self::number(1));
-        } else {
-            $phrase = sprintf(self::text($meta['many']), self::number($count));
+        if (is_string($count)) {
+            $count = trim($count);
         }
 
-        if ($unavailable && $count <= 0) {
-            return sprintf(self::text('%s were not read.'), $phrase);
+        if (is_bool($count) || !is_numeric($count)) {
+            return '0';
         }
 
-        return $phrase;
+        $whole = (int) $count;
+        if ($whole < 0) {
+            $whole = 0;
+        }
+
+        return sprintf('%d', $whole);
     }
 
     /**
