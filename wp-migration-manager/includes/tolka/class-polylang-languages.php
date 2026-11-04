@@ -12,9 +12,7 @@
 
 namespace WMM\Tolka;
 
-if (class_exists(__NAMESPACE__ . '\\Polylang_Languages', false)) {
-    return;
-}
+if (!class_exists(__NAMESPACE__ . '\\Polylang_Languages', false)) {
 
 /**
  * Collects languages for the Tolka migration package.
@@ -1339,4 +1337,6 @@ class Polylang_Languages
 
         return __('Polylang languages could not be read. Nothing was changed. Preview the migration again.', 'migration-manager');
     }
+}
+
 }
