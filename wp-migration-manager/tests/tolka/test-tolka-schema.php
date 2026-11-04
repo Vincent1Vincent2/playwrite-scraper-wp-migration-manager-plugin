@@ -1982,6 +1982,126 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_zulu_header_keeps_string_time_and_polylang_option()
+    {
+        $polylang = array(
+            'default_lang' => 'en',
+            'force_lang' => 1,
+            'version' => '3.6.2',
+            'nav_menus' => array(
+                'twentytwentyfour' => array(
+                    'primary' => array(
+                        'en' => 20,
+                        'sv' => 21,
+                    ),
+                ),
+            ),
+            'post_types' => array(
+                'post' => 1,
+                'page' => 1,
+            ),
+            'taxonomies' => array(
+                'category' => 1,
+            ),
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['polylang_option'] = $polylang;
+        $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'] = $polylang;
+
+        $same = '2024-05-06T07:08:09+00:00';
+        $result = Tolka_Writer::write(array(
+            'version' => '1.0',
+            'generated_at' => $same,
+            'strings' => array(
+                array(
+                    'name' => 'updated',
+                    'string' => $same,
+                    'context' => 'theme',
+                    'translations' => array(
+                        'sv' => 'Saved ' . $same,
+                    ),
+                ),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame('2024-05-06T07:08:09Z', $stored['generated_at']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($stored['generated_at']));
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame($same, $stored['strings'][0]['string']);
+        $this->assertSame('Saved ' . $same, $stored['strings'][0]['translations']['sv']);
+        $this->assertSame($polylang, $GLOBALS['wmm_tolka_schema_driver']['polylang_option']);
+        $this->assertSame('3.6.2', $GLOBALS['wmm_tolka_schema_driver']['polylang_option']['version']);
+        $this->assertSame(20, $GLOBALS['wmm_tolka_schema_driver']['polylang_option']['nav_menus']['twentytwentyfour']['primary']['en']);
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+
+        $option_calls = 0;
+        foreach ($GLOBALS['wmm_tolka_schema_driver']['calls'] as $call) {
+            if ($call['fn'] === 'update_option' || $call['fn'] === 'get_option') {
+                $this->assertSame('wmm_tolka_package', $call['option']);
+                $option_calls++;
+            }
+        }
+        $this->assertSame(1, $option_calls);
+    }
+
+    public function test_failed_save_leaves_polylang_option_and_zulu_package()
+    {
+        $polylang = array(
+            'default_lang' => 'sv',
+            'version' => '3.6.2',
+            'nav_menus' => array('theme' => array('footer' => array('sv' => 8))),
+        );
+        $previous = array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => '2024-05-06T07:08:09Z',
+            'languages' => array(),
+            'posts' => array(),
+            'terms' => array(),
+            'strings' => array(
+                array(
+                    'name' => 'old',
+                    'string' => '2020-01-02T03:04:05+00:00',
+                    'context' => 'theme',
+                    'translations' => array(),
+                ),
+            ),
+            'menus' => array(),
+            'media' => array(),
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['polylang_option'] = $polylang;
+        $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'] = $polylang;
+        $GLOBALS['wmm_tolka_schema_driver']['stored_package'] = $previous;
+        $GLOBALS['wmm_tolka_schema_driver']['option_result'] = false;
+
+        $result = Tolka_Writer::write(array(
+            'version' => 1,
+            'generated_at' => '2024-05-06T07:08:09+00:00',
+            'strings' => array(
+                array(
+                    'name' => 'new',
+                    'string' => '2024-05-06T07:08:09+00:00',
+                    'context' => 'theme',
+                    'translations' => array(),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame($previous, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertSame('2024-05-06T07:08:09Z', $GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']));
+        $this->assertSame(1, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['version']);
+        $this->assertTrue(is_int($GLOBALS['wmm_tolka_schema_driver']['stored_package']['version']));
+        $this->assertSame('2020-01-02T03:04:05+00:00', $GLOBALS['wmm_tolka_schema_driver']['stored_package']['strings'][0]['string']);
+        $this->assertSame($polylang, $GLOBALS['wmm_tolka_schema_driver']['polylang_option']);
+        $this->assertSame('3.6.2', $GLOBALS['wmm_tolka_schema_driver']['polylang_option']['version']);
+    }
+
     public function test_padded_package_time_is_zulu_and_padded_string_text_stays()
     {
         $padded = '  2024-05-06T07:08:09+00:00  ';
