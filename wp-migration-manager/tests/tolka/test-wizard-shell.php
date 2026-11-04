@@ -1369,6 +1369,9 @@ PHP
             );
             $this->assertStringNotContainsString('Polylang 9.9 is active', $html);
 
+            $GLOBALS['wmm_tolka_detector_active'] = true;
+            $GLOBALS['wmm_tolka_detector_version'] = '';
+            $GLOBALS['wmm_tolka_detector_errors'] = array();
             $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
             if (!is_dir($directory)) {
                 mkdir($directory, 0777, true);
