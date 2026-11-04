@@ -2324,5 +2324,76 @@ namespace {
                 $failed['message']
             );
         }
+
+        public function test_whitespace_only_section_errors_do_not_fail_a_saved_package()
+        {
+            $this->reset_doubles();
+            $original = str_repeat('w', 415);
+            $spaces = " \t\r\n\v\f" . "\u{00A0}" . "\u{2003}" . "\u{3000}";
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array(array('name' => 'English', 'slug' => 'en')),
+                    'errors' => array($spaces, "\t\t", "\u{00A0}\u{00A0}", array('message' => "\u{3000}")),
+                ),
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Hello',
+                        'content' => $original,
+                    )),
+                    'errors' => $spaces,
+                ),
+            );
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => true,
+                'errors' => array(),
+            );
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($run['write']['ok']);
+            $this->assertTrue($run['ok']);
+            $this->assertSame('saved', $run['state']);
+            $this->assertSame(array(), $run['errors']);
+            $this->assertSame(array(), $run['posts']['errors']);
+            $this->assertSame(0, $run['sections']['posts']['error_count']);
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertSame(str_repeat('w', 400) . '...', $run['sample']['posts'][0]['content']);
+            $this->assertStringContainsString('Migration finished', $run['message']);
+
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Hello',
+                        'content' => $original,
+                    )),
+                    'errors' => array(
+                        $spaces,
+                        "\u{00A0}One post body could not be copied.\u{00A0}",
+                    ),
+                ),
+            );
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => true,
+                'errors' => array(),
+            );
+
+            $failed = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($failed['write']['ok']);
+            $this->assertFalse($failed['ok']);
+            $this->assertSame('partial', $failed['state']);
+            $this->assertStringNotContainsString('Migration finished', $failed['message']);
+            $this->assertContains('Posts: One post body could not be copied.', $failed['errors']);
+            $this->assertSame(
+                array('Posts: One post body could not be copied.'),
+                $failed['posts']['errors']
+            );
+            $this->assertSame($original, \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']);
+            $this->assertSame(415, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']));
+            $this->assertSame(str_repeat('w', 400) . '...', $failed['sample']['posts'][0]['content']);
+        }
     }
 }

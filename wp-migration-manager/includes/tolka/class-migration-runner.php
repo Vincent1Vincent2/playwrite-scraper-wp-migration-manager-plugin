@@ -286,11 +286,18 @@ class Migration_Runner
         $errors = array();
         $dropped = 0;
         foreach ($raw_errors as $error) {
-            if (self::is_blank_error($error)) {
+            $candidate = $error;
+            if (is_array($error) && isset($error['message']) && is_string($error['message'])) {
+                $candidate = $error['message'];
+            }
+            if (self::is_blank_error($candidate)) {
                 continue;
             }
             $text = self::clean_error_text($error);
             if ($text === '') {
+                if (is_string($error)) {
+                    continue;
+                }
                 $dropped++;
                 continue;
             }
@@ -1217,7 +1224,14 @@ class Migration_Runner
         if (!is_string($error)) {
             return false;
         }
-        return trim($error) === '';
+        if (trim($error) === '') {
+            return true;
+        }
+        $stripped = \preg_replace('/[\s\x{00A0}\x{1680}\x{2000}-\x{200D}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+/u', '', $error);
+        if (!is_string($stripped)) {
+            return false;
+        }
+        return $stripped === '';
     }
 
     /**
@@ -1390,7 +1404,11 @@ class Migration_Runner
      */
     private static function collapse_ws($value)
     {
-        $clean = \preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', ' ', $value);
+        $clean = \preg_replace('/[\x{00A0}\x{1680}\x{2000}-\x{200D}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]/u', ' ', $value);
+        if (!is_string($clean)) {
+            $clean = $value;
+        }
+        $clean = \preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', ' ', $clean);
         if (!is_string($clean)) {
             $clean = $value;
         }
