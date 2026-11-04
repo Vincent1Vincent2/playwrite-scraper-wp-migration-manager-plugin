@@ -548,48 +548,58 @@ class Polylang_Detector
         $pro = self::product_name($inspection) === 'Polylang Pro';
         $note = trim(self::also_installed($inspection) . self::also_missing($inspection));
         $errors = array();
+        $situation = '';
+        $action = '';
 
         if (!$active && $version !== '' && $listed_active) {
-            $errors[] = self::with_note(
-                self::fill_version(
-                    self::translate(
-                        $pro
-                            ? 'Polylang Pro %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.'
-                            : 'Polylang %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
-                    ),
-                    $version
+            $situation = self::fill_version(
+                self::translate(
+                    $pro
+                        ? 'Polylang Pro %s is listed as active, but it is not loaded yet.'
+                        : 'Polylang %s is listed as active, but it is not loaded yet.'
                 ),
-                $note
+                $version
+            );
+            $action = self::translate(
+                $pro
+                    ? 'Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.'
+                    : 'Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
             );
         } elseif (!$active && $version !== '') {
-            $errors[] = self::with_note(
-                self::fill_version(
-                    self::translate(
-                        $pro
-                            ? 'Polylang Pro %s is installed but not active. Activate Polylang Pro, then return to Migrate to Tolka.'
-                            : 'Polylang %s is installed but not active. Activate Polylang, then return to Migrate to Tolka.'
-                    ),
-                    $version
+            $situation = self::fill_version(
+                self::translate(
+                    $pro
+                        ? 'Polylang Pro %s is installed but not active.'
+                        : 'Polylang %s is installed but not active.'
                 ),
-                $note
+                $version
+            );
+            $action = self::translate(
+                $pro
+                    ? 'Activate Polylang Pro, then return to Migrate to Tolka.'
+                    : 'Activate Polylang, then return to Migrate to Tolka.'
             );
         } elseif (!$active && $header_found && $listed_active) {
-            $errors[] = self::with_note(
-                self::translate(
-                    $pro
-                        ? 'Polylang Pro is listed as active, but its plugin file has no readable Version header and Polylang Pro is not loaded yet. Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.'
-                        : 'Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
-                ),
-                $note
+            $situation = self::translate(
+                $pro
+                    ? 'Polylang Pro is listed as active, but its plugin file has no readable Version header and Polylang Pro is not loaded yet.'
+                    : 'Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet.'
+            );
+            $action = self::translate(
+                $pro
+                    ? 'Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.'
+                    : 'Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
             );
         } elseif (!$active && $header_found) {
-            $errors[] = self::with_note(
-                self::translate(
-                    $pro
-                        ? 'A Polylang Pro plugin file was found, but it has no readable Version header, and Polylang Pro is not active. Activate Polylang Pro, then return to Migrate to Tolka.'
-                        : 'A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. Activate Polylang, then return to Migrate to Tolka.'
-                ),
-                $note
+            $situation = self::translate(
+                $pro
+                    ? 'A Polylang Pro plugin file was found, but it has no readable Version header, and Polylang Pro is not active.'
+                    : 'A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active.'
+            );
+            $action = self::translate(
+                $pro
+                    ? 'Activate Polylang Pro, then return to Migrate to Tolka.'
+                    : 'Activate Polylang, then return to Migrate to Tolka.'
             );
         } elseif (!$active) {
             $errors[] = self::translate('Polylang is not active. Install and activate Polylang, then return to Migrate to Tolka.');
@@ -605,6 +615,17 @@ class Polylang_Detector
                     ? 'Polylang Pro is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.'
                     : 'Polylang is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.'
             );
+        }
+
+        if ($situation !== '') {
+            $parts = array($situation);
+            if ($note !== '') {
+                $parts[] = $note;
+            }
+            if ($action !== '') {
+                $parts[] = $action;
+            }
+            $errors[] = implode(' ', $parts);
         }
 
         return array(
@@ -1071,26 +1092,6 @@ class Polylang_Detector
         $boundary = strtolower(rtrim(str_replace('\\', '/', $boundary), '/'));
 
         return $boundary !== '' && $normalized === $boundary;
-    }
-
-    /**
-     * Put the extra edition note before the instruction to reload or activate.
-     */
-    private static function with_note(string $message, string $note): string
-    {
-        $note = trim($note);
-        if ($note === '' || $message === '') {
-            return $message;
-        }
-
-        foreach (array(' Activate ', ' Reload ') as $marker) {
-            $position = strpos($message, $marker);
-            if ($position !== false) {
-                return substr($message, 0, $position) . ' ' . $note . substr($message, $position);
-            }
-        }
-
-        return $message . ' ' . $note;
     }
 
     private static function product_name(array $inspection): string
