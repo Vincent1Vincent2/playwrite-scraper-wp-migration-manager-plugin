@@ -39,8 +39,11 @@ class Speed_Metrics
      * Script, image, stylesheet, and hreflang signals come from markup a
      * browser would load. HTML comments are ignored, as are the contents of
      * script, style, template, textarea, title, iframe, and noscript elements.
-     * An unclosed one of those hides the rest of the body, which is what a
-     * cut-off page looks like. Switcher markers are read from that same HTML
+     * An img counts when it has a src or a srcset. Several srcset candidates
+     * are one image. An img with neither does not count. An unclosed comment,
+     * script, style, template, textarea, title, iframe, or noscript hides the
+     * rest of the body, which is what a cut-off page looks like. Switcher
+     * markers are read from that same HTML
      * with comments and noscript contents removed. A marker that appears only
      * inside a comment or noscript does not count. The same marker in the
      * body, including a script URL outside noscript, still counts.
@@ -86,7 +89,7 @@ class Speed_Metrics
             'hreflang_count' => $hreflang_count,
             'script_count' => $visible['scripts'],
             'stylesheet_count' => self::count_stylesheets($visible['markup']),
-            'image_count' => self::count_tags($visible['markup'], 'img'),
+            'image_count' => self::count_images($visible['markup']),
             'has_polylang_switcher' => $has_switcher,
             'truncated' => $truncated,
         );
@@ -509,32 +512,59 @@ class Speed_Metrics
     }
 
     /**
-     * Count start tags of one name in already-visible markup.
+     * Count img tags that actually reference a file.
+     *
+     * A srcset with several candidates is one image. An img with neither src
+     * nor srcset is decorative markup and does not count.
      *
      * @param string $markup Visible HTML.
-     * @param string $name Lowercased tag name.
      * @return int
      */
-    private static function count_tags($markup, $name)
+    private static function count_images($markup)
     {
         if ($markup === '') {
             return 0;
         }
 
-        $open = '<' . $name;
-        $length = strlen($open);
         $count = 0;
+        $length = strlen($markup);
         $offset = 0;
 
-        while (($pos = strpos($markup, $open, $offset)) !== false) {
-            if (self::is_tag_boundary($markup, $pos + $length)) {
+        while (($pos = strpos($markup, '<img', $offset)) !== false) {
+            if (!self::is_tag_boundary($markup, $pos + 4)) {
+                $offset = $pos + 4;
+                continue;
+            }
+
+            $tag = self::read_tag($markup, $pos, $length);
+
+            if (self::image_has_source($tag['html'])) {
                 $count++;
             }
 
-            $offset = $pos + $length;
+            $offset = $tag['next'] > $pos ? $tag['next'] : $pos + 4;
         }
 
         return $count;
+    }
+
+    /**
+     * Whether an img tag has a non-empty src or srcset.
+     *
+     * @param string $tag One img start tag.
+     * @return bool
+     */
+    private static function image_has_source($tag)
+    {
+        $src = self::attribute_value($tag, 'src');
+
+        if ($src !== null && trim($src) !== '') {
+            return true;
+        }
+
+        $srcset = self::attribute_value($tag, 'srcset');
+
+        return $srcset !== null && trim($srcset) !== '';
     }
 
     /**
