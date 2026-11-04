@@ -111,6 +111,34 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
             throw new RuntimeException('disk failed');
         }
     }
+
+    class Polylang_Detector_Api_Fixture extends WMM\Tolka\Polylang_Detector
+    {
+        public static $directories = array();
+
+        protected static function use_loaded_plugin(): bool
+        {
+            return false;
+        }
+
+        protected static function use_plugin_list(): bool
+        {
+            return false;
+        }
+
+        protected static function plugin_directories(): array
+        {
+            return is_array(self::$directories) ? self::$directories : array();
+        }
+    }
+
+    class Polylang_Detector_Read_Throws_Fixture extends Polylang_Detector_Api_Fixture
+    {
+        protected static function inspect(): array
+        {
+            throw new RuntimeException('header read failed');
+        }
+    }
 }
 
 class Polylang_Detector_Test extends TestCase
@@ -1011,6 +1039,104 @@ class Polylang_Detector_Test extends TestCase
         $this->assertStringNotContainsString('boom', $status['errors'][0]);
     }
 
+    public function test_header_read_throw_when_polylang_is_not_loaded(): void
+    {
+        if (function_exists('pll_languages_list') || class_exists('PLL', false) || class_exists('Polylang', false)) {
+            $this->markTestSkipped('Polylang is loaded in this process.');
+        }
+
+        $status = Polylang_Detector_Read_Throws_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '',
+                'errors' => array(self::CHECK_FAILED),
+            ),
+            $status
+        );
+        $this->assertMatchesRegularExpression('/\.$/', $status['errors'][0]);
+        $this->assertStringNotContainsString('header read failed', $status['errors'][0]);
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_pll_languages_list_stays_active_when_the_header_cannot_be_read(): void
+    {
+        require_once $this->polylang_api_stub();
+
+        Polylang_Detector_Api_Fixture::$directories = array($this->temp_dir());
+        $status = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertTrue(function_exists('pll_languages_list'));
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '',
+                'errors' => array(self::ACTIVE_MISSING),
+            ),
+            $status
+        );
+
+        $plain = $this->temp_dir();
+        $this->write_plugin($plain, 'polylang/polylang.php', $this->header_without_version('Polylang'));
+        Polylang_Detector_Api_Fixture::$directories = array($plain);
+        $no_version = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '',
+                'errors' => array(self::ACTIVE_HEADER),
+            ),
+            $no_version
+        );
+
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '3.6.4'));
+        Polylang_Detector_Api_Fixture::$directories = array($root);
+        $with_header = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '3.6.4',
+                'errors' => array(),
+            ),
+            $with_header
+        );
+
+        $thrown = Polylang_Detector_Read_Throws_Fixture::status();
+        $this->assertTrue($thrown['active']);
+        $this->assertSame('', $thrown['version']);
+        $this->assertSame(array(self::ACTIVE_MISSING), $thrown['errors']);
+        $this->assertStringNotContainsString('header read failed', $thrown['errors'][0]);
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_pll_class_stays_active_when_the_header_cannot_be_read(): void
+    {
+        require_once $this->pll_class_stub();
+
+        Polylang_Detector_Api_Fixture::$directories = array($this->temp_dir());
+        $status = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertTrue(class_exists('PLL', false));
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '',
+                'errors' => array(self::ACTIVE_MISSING),
+            ),
+            $status
+        );
+    }
+
     public function test_header_read_failure_while_active_does_not_fatal(): void
     {
         $status = Polylang_Detector_Inspect_Throwing_Fixture::status();
@@ -1048,6 +1174,9 @@ class Polylang_Detector_Test extends TestCase
         Polylang_Detector_Fixture::$use_loaded = false;
         Polylang_Detector_Fixture::$use_list = false;
         Polylang_Detector_Fixture::$origin = '';
+        if (class_exists('Polylang_Detector_Api_Fixture')) {
+            Polylang_Detector_Api_Fixture::$directories = array();
+        }
     }
 
     private function temp_dir(): string
@@ -1067,6 +1196,25 @@ class Polylang_Detector_Test extends TestCase
             mkdir($parent, 0777, true);
         }
         file_put_contents($path, $contents);
+
+        return $path;
+    }
+
+    private function polylang_api_stub(): string
+    {
+        $path = $this->temp_dir() . '/pll-api-stub.php';
+        file_put_contents(
+            $path,
+            "<?php\nfunction pll_languages_list()\n{\n    throw new RuntimeException('pll_languages_list must not be called');\n}\n"
+        );
+
+        return $path;
+    }
+
+    private function pll_class_stub(): string
+    {
+        $path = $this->temp_dir() . '/pll-class-stub.php';
+        file_put_contents($path, "<?php\nclass PLL\n{\n}\n");
 
         return $path;
     }

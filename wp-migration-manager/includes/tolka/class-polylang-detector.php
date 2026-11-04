@@ -58,6 +58,9 @@ class Polylang_Detector
         try {
             $inspection = static::inspect();
         } catch (\Throwable $throwable) {
+            if (!$active) {
+                return self::unavailable_status();
+            }
             $inspection = array(
                 'version' => '',
                 'header_found' => false,
