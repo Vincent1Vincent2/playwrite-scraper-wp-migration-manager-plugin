@@ -2042,6 +2042,69 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertStringNotContainsString('do not store', json_encode($stored));
     }
 
+    public function test_post_and_string_timestamps_stay_in_their_own_text()
+    {
+        $post_title = 'Edited 2024-05-06T07:08:09+00:00';
+        $post_content = "<p>Published 2024-05-06T07:08:09z</p>";
+        $string = '  2024-05-06T07:08:09+00:00  ';
+
+        $result = Tolka_Writer::write(array(
+            'version' => 1,
+            'generated_at' => '2024-05-06T07:08:09+00:00',
+            'posts' => array(
+                array(
+                    'group' => 'post:8',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 8,
+                            'title' => $post_title,
+                            'content' => $post_content,
+                        ),
+                    ),
+                ),
+            ),
+            'strings' => array(
+                array(
+                    'name' => 'updated',
+                    'string' => $string,
+                    'context' => 'theme',
+                    'id' => 8,
+                    'translations' => array(
+                        'sv' => $string,
+                    ),
+                ),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $post = $stored['posts'][0]['translations']['en'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame($post_title, $post['title']);
+        $this->assertSame($post_content, $post['content']);
+        $this->assertSame($string, $stored['strings'][0]['string']);
+        $this->assertSame($string, $stored['strings'][0]['translations']['sv']);
+        $this->assertSame('2024-05-06T07:08:09Z', $stored['generated_at']);
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'post:8',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][8]
+        );
+        $this->assertSame(2, $this->call_count('update_post_meta'));
+
+        foreach ($GLOBALS['wmm_tolka_schema_driver']['calls'] as $call) {
+            if ($call['fn'] === 'update_post_meta') {
+                $this->assertSame(8, $call['id']);
+                $this->assertContains($call['key'], array('_wmm_tolka_lang', '_wmm_tolka_group'));
+            }
+        }
+    }
+
     public function test_string_envelope_keeps_timestamps_inside_text()
     {
         $item = array(
