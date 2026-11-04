@@ -970,6 +970,52 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         }
     }
 
+    public function test_broken_section_does_not_replace_a_saved_package_or_tags()
+    {
+        $previous = array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'posts' => array(
+                array(
+                    'group' => 'post:5',
+                    'translations' => array('en' => 5),
+                ),
+            ),
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['stored_package'] = $previous;
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][5] = array(
+            '_wmm_tolka_lang' => 'en',
+            '_wmm_tolka_group' => 'post:5',
+            '_pll_lang' => 'en',
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => 'not-a-list',
+            'terms' => array(
+                array(
+                    'group' => 'term:9',
+                    'translations' => array('sv' => 9),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('The Tolka package was not saved because part of it was not a list.', implode("\n", $result['errors']));
+        $this->assertSame($previous, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'post:5',
+                '_pll_lang' => 'en',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][5]
+        );
+        $this->assertArrayNotHasKey(9, $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(0, $this->call_count('update_option'));
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+    }
+
     public function test_unsaved_package_is_explained_after_many_row_errors()
     {
         $posts = array();
