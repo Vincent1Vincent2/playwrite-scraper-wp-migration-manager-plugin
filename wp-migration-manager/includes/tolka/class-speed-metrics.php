@@ -491,27 +491,87 @@ class Speed_Metrics
     /**
      * Link tags whose rel includes the stylesheet token.
      *
-     * The last tag still counts when a truncated body cuts it off after a
-     * complete rel attribute.
+     * A ">" inside a quoted attribute does not end the tag. The last tag still
+     * counts when a truncated body cuts it off after a complete rel attribute.
      *
      * @param string $lower_html Lowercased HTML.
      * @return int
      */
     private static function count_stylesheets($lower_html)
     {
-        if ($lower_html === '' || !preg_match_all('/<link\b[^>]*(?:>|$)/', $lower_html, $tags)) {
+        if ($lower_html === '') {
             return 0;
         }
 
         $count = 0;
+        $length = strlen($lower_html);
+        $offset = 0;
 
-        foreach ($tags[0] as $tag) {
-            if (self::rel_has_stylesheet($tag)) {
+        while (($pos = strpos($lower_html, '<link', $offset)) !== false) {
+            if (!self::is_tag_boundary($lower_html, $pos + 5)) {
+                $offset = $pos + 5;
+                continue;
+            }
+
+            $tag = self::read_tag($lower_html, $pos, $length);
+
+            if (self::rel_has_stylesheet($tag['html'])) {
                 $count++;
             }
+
+            $offset = $tag['next'];
         }
 
         return $count;
+    }
+
+    /**
+     * One start tag, including a ">" that sits inside a quoted attribute.
+     *
+     * A truncated body returns the unfinished tag through the last byte.
+     *
+     * @param string $html Markup.
+     * @param int    $start Offset of the opening "<".
+     * @param int    $length Byte length of $html.
+     * @return array{html:string,next:int}
+     */
+    private static function read_tag($html, $start, $length)
+    {
+        $quote = '';
+        $i = $start + 1;
+
+        while ($i < $length) {
+            $byte = $html[$i];
+
+            if ($quote !== '') {
+                if ($byte === $quote) {
+                    $quote = '';
+                }
+
+                $i++;
+                continue;
+            }
+
+            if ($byte === '"' || $byte === "'") {
+                $quote = $byte;
+                $i++;
+                continue;
+            }
+
+            if ($byte === '>') {
+                return array(
+                    'html' => substr($html, $start, $i - $start + 1),
+                    'next' => $i + 1,
+                );
+            }
+
+            $i++;
+        }
+
+        return array(
+            'html' => substr($html, $start),
+            'next' => $length,
+        );
     }
 
     /**

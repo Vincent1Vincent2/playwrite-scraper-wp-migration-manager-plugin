@@ -663,6 +663,56 @@ HTML;
         $this->assertFalse($result['truncated']);
     }
 
+    public function test_wordpress_head_counts_each_stylesheet_once()
+    {
+        $html = <<<'HTML'
+<!doctype html><html lang=en><head>
+<meta charset=utf-8>
+<link rel=icon href=data:,>
+<link rel="alternate" type="application/rss+xml" title="Feed" href="https://example.com/feed/" />
+<link rel="alternate" type="application/json+oembed" href="https://example.com/embed.json" />
+<link rel="https://api.w.org/" href="https://example.com/wp-json/" />
+<link rel='stylesheet' id='theme-css' href='https://example.com/style.css?ver=6.6' media="print" onload="this.media='all'" />
+<noscript><link rel='stylesheet' id='theme-css' href='https://example.com/style.css?ver=6.6' media='all' /></noscript>
+<link href="https://cdn.example/font.css?family=a>b" rel="stylesheet">
+<style>body{margin:0}</style>
+<title>Studio</title>
+</head><body>
+<p>One language, no switcher.</p>
+<script src=/theme.js></script>
+</body></html>
+HTML;
+
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertSame(2, $result['stylesheet_count']);
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(0, $result['image_count']);
+        $this->assertFalse($result['truncated']);
+    }
+
+    public function test_hreflang_split_across_lines_still_counts()
+    {
+        $html = "<link\n\trel=\"alternate\"\n\threflang=\"sv\"\n\thref=\"/sv/\"\n>";
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(0, $result['stylesheet_count']);
+    }
+
+    public function test_blank_hreflang_is_not_a_language()
+    {
+        $html = '<link rel="alternate" hreflang="   " href="/"><link rel="alternate" hreflang="" href="/empty">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+    }
+
     public function test_data_hreflang_is_not_a_language()
     {
         $result = $this->analyze('<div data-hreflang="zz">Hello</div>');
