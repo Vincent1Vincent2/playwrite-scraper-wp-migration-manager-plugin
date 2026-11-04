@@ -532,7 +532,32 @@ function wmm_tolka_strip_html_keys($value)
 }
 
 /**
- * Public URL posted to the measure action. Arrays are ignored.
+ * Whether a URL carries a username or password in its authority.
+ *
+ * @param string $url URL to inspect.
+ * @return bool
+ */
+function wmm_tolka_url_has_userinfo($url)
+{
+    if (!is_string($url) || $url === '') {
+        return false;
+    }
+
+    $parts = parse_url($url);
+
+    if (is_array($parts) && (array_key_exists('user', $parts) || array_key_exists('pass', $parts))) {
+        return true;
+    }
+
+    if (!preg_match('~^[a-z][a-z0-9+.-]*://([^/?#]*)~i', $url, $matches)) {
+        return false;
+    }
+
+    return strpos($matches[1], '@') !== false;
+}
+
+/**
+ * Public URL posted to the measure action. Arrays, blanks, and credentialed URLs are ignored.
  *
  * @return string
  */
@@ -544,13 +569,17 @@ function wmm_tolka_posted_url()
 
     $url = trim(wp_unslash($_POST['url']));
 
-    if ($url === '') {
+    if ($url === '' || wmm_tolka_url_has_userinfo($url)) {
         return '';
     }
 
     $url = esc_url_raw($url);
 
-    return is_string($url) ? $url : '';
+    if (!is_string($url) || $url === '' || wmm_tolka_url_has_userinfo($url)) {
+        return '';
+    }
+
+    return $url;
 }
 
 /**
@@ -567,6 +596,17 @@ function wmm_tolka_ajax_measure()
             __('A speed estimate is not available on this install. Nothing was changed.', 'migration-manager'),
             $missing
         );
+        return;
+    }
+
+    $raw_url = '';
+
+    if (isset($_POST['url']) && is_string($_POST['url'])) {
+        $raw_url = trim(wp_unslash($_POST['url']));
+    }
+
+    if ($raw_url !== '' && wmm_tolka_url_has_userinfo($raw_url)) {
+        wmm_tolka_json_error(__('That address includes a username or password, so it was not measured. Nothing was changed.', 'migration-manager'));
         return;
     }
 
