@@ -334,6 +334,7 @@ namespace {
                 $this->assertSame(array(), $preview['sample'][$section]);
                 $this->assertSame(array(), $preview['sections'][$section]['labels']);
                 $this->assertSame(0, $preview['sections'][$section]['more']);
+                $this->assertSame(0, $preview['sections'][$section]['error_count']);
                 $this->assertSame($message, $preview['sections'][$section]['message']);
             }
             $this->assertSame(array(), $preview['errors']);
@@ -395,6 +396,10 @@ namespace {
             $this->assertSame('Item 19', $preview['sections']['posts']['labels'][19]);
             $this->assertSame(5, $preview['sections']['posts']['more']);
             $this->assertSame(25, $preview['sections']['posts']['count']);
+            $this->assertSame(
+                '25 posts are ready to migrate. The preview shows the first 20.',
+                $preview['sections']['posts']['message']
+            );
             $encoded = json_encode($preview['sample']);
             $this->assertNotFalse($encoded);
             $this->assertStringNotContainsString('s20', $encoded);
@@ -466,6 +471,7 @@ namespace {
                     'items' => array(array(
                         'title' => '<script>alert(1)</script>Hello',
                         'group' => 'post:10',
+                        'status' => 'publish',
                     )),
                     'errors' => array(),
                 ),
@@ -481,12 +487,14 @@ namespace {
                     'items' => array(array(
                         'name' => 'Site title',
                         'string' => 'Hello',
+                        'context' => 'header',
                     )),
                     'errors' => array(),
                 ),
                 array(
                     'items' => array(array(
-                        'location' => 'primary',
+                        'name' => 'Primary',
+                        'location' => 'footer',
                     )),
                     'errors' => array(),
                 ),
@@ -505,8 +513,8 @@ namespace {
             $this->assertSame('alert(1)Hello', $preview['sections']['posts']['labels'][0]);
             $this->assertStringNotContainsString('<script', $preview['sections']['posts']['labels'][0]);
             $this->assertSame('News (category)', $preview['sections']['terms']['labels'][0]);
-            $this->assertSame('Site title', $preview['sections']['strings']['labels'][0]);
-            $this->assertSame('primary', $preview['sections']['menus']['labels'][0]);
+            $this->assertSame('Site title (header)', $preview['sections']['strings']['labels'][0]);
+            $this->assertSame('Primary (footer)', $preview['sections']['menus']['labels'][0]);
             $this->assertSame('Attachment 12', $preview['sections']['media']['labels'][0]);
         }
 
@@ -519,12 +527,12 @@ namespace {
                     'errors' => array(),
                 ),
                 1 => array(
-                    'items' => array(array('group' => 'post:10')),
+                    'items' => array(array('group' => 'post:10', 'status' => 'draft')),
                     'errors' => array(),
                 ),
             );
             $preview = Migration_Runner_Test_Double::preview();
-            $this->assertSame('post:10', $preview['sections']['posts']['labels'][0]);
+            $this->assertSame('post:10 (draft)', $preview['sections']['posts']['labels'][0]);
             $this->assertSame('Untitled language', $preview['sections']['languages']['labels'][0]);
         }
 
@@ -547,6 +555,11 @@ namespace {
                 array_slice($preview['errors'], 0, 2)
             );
             $this->assertSame('error', $preview['sections']['languages']['status']);
+            $this->assertSame(2, $preview['sections']['languages']['error_count']);
+            $this->assertSame(
+                'Languages could not be fully read. Review the errors before migrating. 1 language was still found.',
+                $preview['sections']['languages']['message']
+            );
             $this->assertSame('error', $preview['state']);
             $this->assertSame(
                 'The preview finished with errors. Review them before migrating. Existing Polylang data was not changed.',
@@ -580,6 +593,57 @@ namespace {
                 sprintf('%d more errors were omitted from this list.', (40 * 6) - $limit),
                 $preview['errors'][$limit]
             );
+        }
+
+        public function test_single_omitted_error_uses_singular_copy()
+        {
+            $this->reset_doubles();
+            $errors = array();
+            $extra = \WMM\Tolka\Migration_Runner::ERROR_LIMIT + 1;
+            for ($i = 0; $i < $extra; $i++) {
+                $errors[] = 'Problem ' . $i;
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array('items' => array(), 'errors' => $errors),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertCount($extra, $preview['errors']);
+            $this->assertSame(
+                '1 more error was omitted from this list.',
+                $preview['errors'][\WMM\Tolka\Migration_Runner::ERROR_LIMIT]
+            );
+        }
+
+        public function test_non_array_items_do_not_fatal()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array('not-a-record', 12),
+                    'errors' => array(),
+                ),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame(2, $preview['counts']['languages']);
+            $this->assertSame('Untitled item', $preview['sections']['languages']['labels'][0]);
+            $this->assertSame('Untitled item', $preview['sections']['languages']['labels'][1]);
+            $this->assertSame('not-a-record', $preview['sample']['languages'][0]);
+            $this->assertSame(12, $preview['sample']['languages'][1]);
+            $this->assertNotFalse(json_encode($preview));
+        }
+
+        public function test_padded_class_names_still_resolve()
+        {
+            $this->reset_doubles();
+            Migration_Runner_Test_Double::$map['languages'] = '  WMM\\Tolka\\RunnerTest\\Exporter  ';
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Exporter', $preview['missing']);
+            $this->assertSame('ready', $preview['sections']['languages']['status']);
+            $this->assertSame('English (en)', $preview['sections']['languages']['labels'][0]);
         }
 
         public function test_throw_invalid_and_unusable_exporters_do_not_fatal()
@@ -650,16 +714,41 @@ namespace {
                 $preview['sections']['terms']['message']
             );
             $this->assertSame('incomplete', $preview['state']);
+            $this->assertSame(1, $preview['sections']['terms']['error_count']);
             $this->assertSame(
-                'The preview is incomplete because some exporters are not available. Existing Polylang data was not changed.',
+                'The preview is incomplete because Terms could not be read. Existing Polylang data was not changed.',
                 $preview['message']
             );
 
             $run = Migration_Runner_Test_Double::run();
             $this->assertFalse($run['ok']);
+            $this->assertSame('partial', $run['state']);
+            $this->assertSame(
+                'The Tolka package was saved, but Terms could not be read. Existing Polylang data was not changed.',
+                $run['message']
+            );
             $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['terms']['items']);
             $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['languages']['items']);
             $this->assertArrayNotHasKey('missing', \WMM\Tolka\RunnerTest\Schema::$parts);
+        }
+
+        public function test_several_skipped_sections_are_named_in_the_result()
+        {
+            $this->reset_doubles();
+            Migration_Runner_Test_Double::$map['terms'] = 'WMM\\Tolka\\RunnerTest\\NotLoaded';
+            Migration_Runner_Test_Double::$map['media'] = 'WMM\\Tolka\\RunnerTest\\AlsoNotLoaded';
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en'));
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame('partial', $run['state']);
+            $this->assertSame(
+                'The Tolka package was saved, but Terms and Media could not be read. Existing Polylang data was not changed.',
+                $run['message']
+            );
+            $this->assertSame(
+                array('WMM\\Tolka\\RunnerTest\\NotLoaded', 'WMM\\Tolka\\RunnerTest\\AlsoNotLoaded'),
+                $run['missing']
+            );
         }
 
         public function test_unregistered_section_is_explained()
@@ -864,6 +953,59 @@ namespace {
                 'Languages: Polylang is not active on this site.',
                 $run['errors']
             );
+        }
+
+        public function test_preview_can_be_repeated()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+            $first = Migration_Runner_Test_Double::preview();
+            $second = Migration_Runner_Test_Double::preview();
+            $this->assertSame($first, $second);
+            $this->assertSame(12, \WMM\Tolka\RunnerTest\Exporter::$calls);
+        }
+
+        public function test_sample_survives_loops_and_duplicate_keys()
+        {
+            $this->reset_doubles();
+            $loop = array('title' => 'Loop');
+            $loop['again'] = &$loop;
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array(
+                    'items' => array(
+                        $loop,
+                        array(
+                            'Hello' => 'one',
+                            "Hello\n" => 'two',
+                        ),
+                    ),
+                    'errors' => array(),
+                ),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $sample = $preview['sample']['posts'];
+            $this->assertSame('Loop', $sample[0]['title']);
+            $this->assertArrayHasKey('again', $sample[0]);
+            $this->assertSame('one', $sample[1]['Hello']);
+            $this->assertSame('two', $sample[1]['Hello 2']);
+            $this->assertSame('Loop', $loop['title']);
+            $this->assertNotFalse(json_encode($preview));
+        }
+
+        public function test_writer_errors_are_plain_sentences()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => false,
+                'errors' => array("<strong>Could not update post 5.</strong>\nTry again."),
+            );
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertContains('Could not update post 5. Try again.', $run['errors']);
+            $this->assertStringNotContainsString('<strong>', implode("\n", $run['errors']));
+            $this->assertSame('failed', $run['state']);
         }
     }
 }

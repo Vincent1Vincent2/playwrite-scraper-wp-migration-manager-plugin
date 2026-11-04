@@ -43,11 +43,7 @@ class Migration_Runner
         $map = static::exporters();
 
         foreach (self::section_keys() as $section) {
-            $class = '';
-            if (isset($map[$section]) && is_string($map[$section])) {
-                $class = $map[$section];
-            }
-            $collected[$section] = self::read_section($section, $class, $missing);
+            $collected[$section] = self::read_section($section, self::class_for($map, $section), $missing);
         }
 
         $collected['missing'] = self::dedupe_strings($missing);
@@ -59,7 +55,8 @@ class Migration_Runner
      * Counts, a sample of at most 20 items per section, errors, and missing classes.
      *
      * Also returns a finished `message`, a `state` of missing, incomplete,
-     * error, empty, or ready, and the same state for each section. Does not write.
+     * error, empty, or ready, and per section: status, message, labels,
+     * error_count, and how many items were left out of the sample. Does not write.
      *
      * @return array
      */
@@ -130,7 +127,7 @@ class Migration_Runner
             'sample' => $view['sample'],
             'sections' => $view['sections'],
             'state' => self::run_state($ok, $saved, $attempted, $view['counts']),
-            'message' => self::run_message($ok, $saved, $attempted, $view['counts']),
+            'message' => self::run_message($ok, $saved, $attempted, $view),
         );
     }
 
@@ -165,6 +162,19 @@ class Migration_Runner
     protected static function writer_class()
     {
         return 'WMM\\Tolka\\Tolka_Writer';
+    }
+
+    /**
+     * @param array  $map
+     * @param string $section
+     * @return string
+     */
+    private static function class_for($map, $section)
+    {
+        if (!isset($map[$section]) || !is_string($map[$section])) {
+            return '';
+        }
+        return trim($map[$section]);
     }
 
     /**
@@ -359,10 +369,7 @@ class Migration_Runner
                 $labels[] = self::item_label($section, $item);
             }
 
-            $class = '';
-            if (isset($map[$section]) && is_string($map[$section])) {
-                $class = $map[$section];
-            }
+            $class = self::class_for($map, $section);
             $is_missing = ($class !== '' && in_array($class, $missing, true));
 
             if ($is_missing) {
@@ -371,6 +378,11 @@ class Migration_Runner
             } elseif (!empty($section_errors)) {
                 $status = 'error';
                 $message = self::line($meta['review']);
+                if ($count === 1) {
+                    $message .= ' ' . self::line($meta['found_one']);
+                } elseif ($count > 1) {
+                    $message .= ' ' . sprintf(self::line($meta['found_many']), $count);
+                }
             } elseif ($count === 0) {
                 $status = 'empty';
                 $message = self::line($meta['empty']);
@@ -380,6 +392,12 @@ class Migration_Runner
             } else {
                 $status = 'ready';
                 $message = sprintf(self::line($meta['many']), $count);
+                if ($count > self::SAMPLE_LIMIT) {
+                    $message .= ' ' . sprintf(
+                        self::line('The preview shows the first %d.'),
+                        self::SAMPLE_LIMIT
+                    );
+                }
             }
 
             $counts[$section] = $count;
@@ -391,6 +409,7 @@ class Migration_Runner
                 'message' => $message,
                 'labels' => $labels,
                 'more' => max(0, $count - count($presented)),
+                'error_count' => count($section_errors),
             );
             foreach ($section_errors as $error) {
                 $errors[] = $error;
@@ -451,7 +470,10 @@ class Migration_Runner
             return self::line('Nothing could be previewed because the Polylang exporters are not available. Activate the rest of the migration plugin and try again.');
         }
         if ($state === 'incomplete') {
-            return self::line('The preview is incomplete because some exporters are not available. Existing Polylang data was not changed.');
+            return sprintf(
+                self::line('The preview is incomplete because %s could not be read. Existing Polylang data was not changed.'),
+                self::join_clauses(self::missing_labels($view))
+            );
         }
         if ($state === 'error') {
             return self::line('The preview finished with errors. Review them before migrating. Existing Polylang data was not changed.');
@@ -494,11 +516,12 @@ class Migration_Runner
      * @param bool  $ok
      * @param bool  $saved
      * @param bool  $attempted
-     * @param array $counts
+     * @param array $view
      * @return string
      */
-    private static function run_message($ok, $saved, $attempted, $counts)
+    private static function run_message($ok, $saved, $attempted, $view)
     {
+        $counts = $view['counts'];
         if ($ok) {
             $total = array_sum($counts);
             if ($total === 0) {
@@ -510,12 +533,34 @@ class Migration_Runner
             );
         }
         if ($saved) {
+            $labels = self::missing_labels($view);
+            if (!empty($labels)) {
+                return sprintf(
+                    self::line('The Tolka package was saved, but %s could not be read. Existing Polylang data was not changed.'),
+                    self::join_clauses($labels)
+                );
+            }
             return self::line('The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.');
         }
         if ($attempted) {
             return self::line('The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.');
         }
         return self::line('The migration did not run. Nothing was written, and existing Polylang data was not changed.');
+    }
+
+    /**
+     * @param array $view
+     * @return string[]
+     */
+    private static function missing_labels($view)
+    {
+        $labels = array();
+        foreach (self::section_keys() as $section) {
+            if ($view['sections'][$section]['status'] === 'missing') {
+                $labels[] = $view['sections'][$section]['label'];
+            }
+        }
+        return $labels;
     }
 
     /**
@@ -577,15 +622,18 @@ class Migration_Runner
         }
 
         if ($section === 'posts') {
-            $title = self::field_text($item, 'title');
-            if ($title !== '') {
-                return $title;
+            $label = self::field_text($item, 'title');
+            if ($label === '') {
+                $label = self::field_text($item, 'group');
             }
-            $group = self::field_text($item, 'group');
-            if ($group !== '') {
-                return $group;
+            if ($label === '') {
+                return self::line($meta['untitled']);
             }
-            return self::line($meta['untitled']);
+            $status = self::field_text($item, 'status');
+            if ($status !== '' && strtolower($status) !== 'publish') {
+                $label .= ' (' . $status . ')';
+            }
+            return $label;
         }
 
         if ($section === 'terms') {
@@ -606,6 +654,10 @@ class Migration_Runner
 
         if ($section === 'strings') {
             $name = self::field_text($item, 'name');
+            $context = self::field_text($item, 'context');
+            if ($name !== '' && $context !== '' && strtolower($context) !== strtolower($name)) {
+                return $name . ' (' . $context . ')';
+            }
             if ($name !== '') {
                 return $name;
             }
@@ -618,10 +670,13 @@ class Migration_Runner
 
         if ($section === 'menus') {
             $name = self::field_text($item, 'name');
+            $location = self::field_text($item, 'location');
+            if ($name !== '' && $location !== '' && strtolower($name) !== strtolower($location)) {
+                return $name . ' (' . $location . ')';
+            }
             if ($name !== '') {
                 return $name;
             }
-            $location = self::field_text($item, 'location');
             if ($location !== '') {
                 return $location;
             }
@@ -878,10 +933,14 @@ class Migration_Runner
         }
         $shown = array_slice($clean, 0, self::ERROR_LIMIT);
         $extra = count($clean) - self::ERROR_LIMIT;
-        $shown[] = sprintf(
-            self::line('%d more errors were omitted from this list.'),
-            $extra
-        );
+        if ($extra === 1) {
+            $shown[] = self::line('1 more error was omitted from this list.');
+        } else {
+            $shown[] = sprintf(
+                self::line('%d more errors were omitted from this list.'),
+                $extra
+            );
+        }
         return $shown;
     }
 
@@ -978,6 +1037,7 @@ class Migration_Runner
                     if ($key === '') {
                         $key = 'item';
                     }
+                    $key = self::unique_key($out, $key);
                 } elseif (!is_int($key)) {
                     continue;
                 }
@@ -987,6 +1047,23 @@ class Migration_Runner
             return $out;
         }
         return self::line('Unsupported value');
+    }
+
+    /**
+     * @param array  $out
+     * @param string $key
+     * @return string
+     */
+    private static function unique_key($out, $key)
+    {
+        if (!array_key_exists($key, $out)) {
+            return $key;
+        }
+        $suffix = 2;
+        while (array_key_exists($key . ' ' . $suffix, $out) && $suffix < 100) {
+            $suffix++;
+        }
+        return $key . ' ' . $suffix;
     }
 
     /**
@@ -1159,6 +1236,9 @@ class Migration_Runner
         if ($count === 1) {
             return $parts[0];
         }
+        if ($count === 2) {
+            return $parts[0] . ' and ' . $parts[1];
+        }
         $last = array_pop($parts);
         return implode(', ', $parts) . ', and ' . $last;
     }
@@ -1194,6 +1274,8 @@ class Migration_Runner
                 'threw' => 'Languages could not be read (%s).',
                 'undisplayable' => 'Languages reported an error that could not be displayed.',
                 'review' => 'Languages could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 language was still found.',
+                'found_many' => '%d languages were still found.',
                 'empty' => 'No languages were found.',
                 'one' => '1 language is ready to migrate.',
                 'many' => '%d languages are ready to migrate.',
@@ -1210,6 +1292,8 @@ class Migration_Runner
                 'threw' => 'Posts could not be read (%s).',
                 'undisplayable' => 'Posts reported an error that could not be displayed.',
                 'review' => 'Posts could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 post was still found.',
+                'found_many' => '%d posts were still found.',
                 'empty' => 'No posts were found.',
                 'one' => '1 post is ready to migrate.',
                 'many' => '%d posts are ready to migrate.',
@@ -1226,6 +1310,8 @@ class Migration_Runner
                 'threw' => 'Terms could not be read (%s).',
                 'undisplayable' => 'Terms reported an error that could not be displayed.',
                 'review' => 'Terms could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 term was still found.',
+                'found_many' => '%d terms were still found.',
                 'empty' => 'No terms were found.',
                 'one' => '1 term is ready to migrate.',
                 'many' => '%d terms are ready to migrate.',
@@ -1242,6 +1328,8 @@ class Migration_Runner
                 'threw' => 'Strings could not be read (%s).',
                 'undisplayable' => 'Strings reported an error that could not be displayed.',
                 'review' => 'Strings could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 string was still found.',
+                'found_many' => '%d strings were still found.',
                 'empty' => 'No strings were found.',
                 'one' => '1 string is ready to migrate.',
                 'many' => '%d strings are ready to migrate.',
@@ -1258,6 +1346,8 @@ class Migration_Runner
                 'threw' => 'Menus could not be read (%s).',
                 'undisplayable' => 'Menus reported an error that could not be displayed.',
                 'review' => 'Menus could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 menu was still found.',
+                'found_many' => '%d menus were still found.',
                 'empty' => 'No menus were found.',
                 'one' => '1 menu is ready to migrate.',
                 'many' => '%d menus are ready to migrate.',
@@ -1274,6 +1364,8 @@ class Migration_Runner
                 'threw' => 'Media items could not be read (%s).',
                 'undisplayable' => 'Media items reported an error that could not be displayed.',
                 'review' => 'Media items could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 media item was still found.',
+                'found_many' => '%d media items were still found.',
                 'empty' => 'No media items were found.',
                 'one' => '1 media item is ready to migrate.',
                 'many' => '%d media items are ready to migrate.',
