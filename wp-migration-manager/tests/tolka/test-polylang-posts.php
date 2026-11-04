@@ -299,6 +299,10 @@ class Tolka_Posts_Fake_Db
         if ($this->fail) {
             return null;
         }
+        if (strpos($sql, 'SELECT post_status') !== false && preg_match('/ID = (\d+)/', $sql, $match)) {
+            $id = (int) $match[1];
+            return isset($this->posts_rows[$id]['post_status']) ? $this->posts_rows[$id]['post_status'] : null;
+        }
         if (strpos($sql, 'SELECT post_type') !== false && preg_match('/ID = (\d+)/', $sql, $match)) {
             $id = (int) $match[1];
             return isset($this->posts_rows[$id]['post_type']) ? $this->posts_rows[$id]['post_type'] : null;
@@ -620,6 +624,33 @@ class Polylang_Posts_Test extends TestCase
                 $this->assertStringNotContainsString('42', $sql);
             }
         }
+    }
+
+    public function test_revision_of_an_automatic_draft_is_left_out()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 25,
+                'description' => serialize(array('en' => 19)),
+            ),
+        );
+        $revision = $this->db_post(19, 'inherit', 'Shell autosave', '18-revision-v1', 'revision', '', 'Empty shell text');
+        $revision['post_parent'] = 18;
+        $fake->posts_rows = array(
+            18 => $this->db_post(18, 'auto-draft', '', '', 'post'),
+            19 => $revision,
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(array(), $result['errors']);
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Empty shell text', $encoded);
     }
 
     public function test_revision_group_exports_the_draft_parent_instead()

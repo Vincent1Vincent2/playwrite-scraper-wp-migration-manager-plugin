@@ -749,7 +749,44 @@ class Polylang_Posts
         if ($this->skip_reason(array('type' => $parent_type, 'status' => '')) !== '') {
             return 0;
         }
+        $status = $this->post_status_of($parent_id);
+        if ($status === '' || $status === 'auto-draft') {
+            return 0;
+        }
         return $parent_id;
+    }
+
+    /**
+     * @param int $post_id
+     * @return string
+     */
+    private function post_status_of($post_id)
+    {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return '';
+        }
+        if (array_key_exists($post_id, $this->record_cache) && is_array($this->record_cache[$post_id])) {
+            return (string) $this->record_cache[$post_id]['status'];
+        }
+        global $wpdb;
+        if ($this->db_ready($wpdb) && method_exists($wpdb, 'get_var')) {
+            $status = $wpdb->get_var($wpdb->prepare(
+                "SELECT post_status FROM {$wpdb->posts} WHERE ID = %d",
+                $post_id
+            ));
+            if (is_string($status) && $status !== '') {
+                return $status;
+            }
+        }
+        if (!function_exists('get_post')) {
+            return '';
+        }
+        $post = get_post($post_id);
+        if (!is_object($post) || !isset($post->post_status)) {
+            return '';
+        }
+        return (string) $post->post_status;
     }
 
     /**
