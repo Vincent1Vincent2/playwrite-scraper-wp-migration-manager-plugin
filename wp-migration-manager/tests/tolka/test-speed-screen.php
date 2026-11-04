@@ -183,6 +183,27 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-current-load'));
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-tolka-load'));
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-faster'));
+        $document = $this->document($html);
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+        }
+
+        $summary = $document->getElementById('wmm-tolka-speed-summary');
+        $this->assertSame('div', strtolower($summary->tagName));
+        $this->assertFalse($summary->hasAttribute('data-wmm-tolka-generated'));
+        $stamped = preg_replace(
+            '/(<p\b[^>]*\bid="wmm-tolka-speed-summary"[^>]*)(>)/',
+            '$1 data-wmm-tolka-generated="1"$2',
+            $html,
+            1
+        );
+        $this->assertStringNotContainsString('data-wmm-tolka-generated', $stamped);
         $this->assertStringNotContainsString('Placeholder coefficients', $html);
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-basis'));
         $this->assertFalse($this->document($html)->getElementById('wmm-tolka-basis')->hasAttribute('hidden'));
