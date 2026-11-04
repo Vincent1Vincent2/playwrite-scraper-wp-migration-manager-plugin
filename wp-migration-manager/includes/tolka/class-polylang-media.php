@@ -1557,6 +1557,9 @@ class Polylang_Media
             return '';
         }
         $trimmed = preg_replace('/^[\p{Z}\s]+|[\p{Z}\s]+$/u', '', $file);
+        if ($trimmed === null) {
+            $trimmed = trim($file);
+        }
         if (!is_string($trimmed) || $trimmed === '') {
             return '';
         }
