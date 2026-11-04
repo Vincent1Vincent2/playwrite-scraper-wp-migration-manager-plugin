@@ -1667,6 +1667,10 @@ echo json_encode(array(
     "first_summary" => $first["summary"],
     "second_summary" => $second["summary"],
     "third_summary" => $third["summary"],
+    "first_title" => $first["title"],
+    "second_title" => $second["title"],
+    "third_title" => $third["title"],
+    "second_lines" => $second["lines"],
     "stored_errors" => $GLOBALS["wmm_opt"]["errors"],
 ));
 ';
@@ -1679,6 +1683,18 @@ echo json_encode(array(
         $this->assertStringNotContainsString('could not be saved', $decoded['second_summary']);
         $this->assertStringNotContainsString('could not be saved', $decoded['third_summary']);
         $this->assertSame(array(), $decoded['stored_errors']);
+        $this->assertSame('The migration is complete.', $decoded['first_title']);
+        $this->assertSame('The migration is complete.', $decoded['second_title']);
+        $this->assertSame('The migration is complete.', $decoded['third_title']);
+        $this->assertNotSame('The migration finished with problems.', $decoded['second_title']);
+        $second = array('lines' => $decoded['second_lines']);
+        $this->assertSame('2', $this->line($second, 'Languages'));
+        $this->assertSame('1', $this->line($second, 'Posts'));
+        $this->assertSame('0', $this->line($second, 'Terms'));
+        $this->assertSame('0', $this->line($second, 'Strings'));
+        $this->assertSame('0', $this->line($second, 'Menus'));
+        $this->assertSame('0', $this->line($second, 'Media'));
+        $this->assert_section_order($second);
     }
 
     public function test_update_option_false_adds_an_error_only_when_the_value_is_not_stored()
