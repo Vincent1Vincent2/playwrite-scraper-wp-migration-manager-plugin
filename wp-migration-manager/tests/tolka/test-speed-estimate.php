@@ -700,6 +700,17 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(1, $fraction['current_ms']);
         $this->assertSame($estimate['faster_percent'], $fraction['faster_percent']);
         $this->assertSame('0.0% faster', $fraction['faster_label']);
+
+        $metrics_zero = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000, 'language_count' => 5),
+            array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
+            self::contractBenchmarks()
+        );
+        $this->assertTrue($metrics_zero['ok']);
+        $this->assertSame(971, $metrics_zero['tolka_ms']);
+        $this->assertSame(2.9, $metrics_zero['faster_percent']);
+        $this->assertSame('2.9% faster', $metrics_zero['faster_label']);
+        $this->assertNotSame(855, $metrics_zero['tolka_ms']);
     }
 
     public function test_negative_measured_time_uses_one_millisecond()
