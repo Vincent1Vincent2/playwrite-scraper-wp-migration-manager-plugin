@@ -139,7 +139,7 @@ $GLOBALS['wpdb'] = new class {
 PHP
         );
         $this->assertSame(
-            'Translated: No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.',
+            'Translated: No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.',
             $internal['errors'][0]
         );
     }
@@ -930,6 +930,47 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_polish_is_kept_and_its_internal_row_is_not()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(3, 'Polski', 'pl', 'pl_PL', 'pl', 0, 0),
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 1, 2),
+        ), 'pl');
+        $db->term_language_rows = array(
+            $this->language_term(30, 'Polski', 'pll_pl', 'pl_PL', 'pl', 0, 0),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('pl', 'en'), array_keys($by_slug));
+        $this->assertSame('Polski', $by_slug['pl']['name']);
+        $this->assertSame('pl_PL', $by_slug['pl']['locale']);
+        $this->assertSame('pl', $by_slug['pl']['flag']);
+        $this->assertTrue($by_slug['pl']['is_default']);
+        $this->assertSame(3, $by_slug['pl']['term_id']);
+        $this->assertArrayNotHasKey('pll_pl', $by_slug);
+    }
+
+    public function test_a_default_saved_as_pll_sv_marks_sv()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+            $this->language_term(8, 'Svenska', 'sv', 'sv_SE', 'se', 1, 0),
+            $this->language_term(41, 'pll_sv', 'pll_sv', 'sv_SE', 'se', 2, 0),
+        ), 'pll_sv');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+    }
+
     public function test_polylang_internal_pll_rows_are_not_languages()
     {
         $db = $this->database_with_languages(array(
@@ -983,7 +1024,41 @@ PHP
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.',
+            'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.',
+            $result['errors'][0]
+        );
+    }
+
+    public function test_an_api_list_of_only_internal_rows_explains_the_empty_state()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'pll_en',
+            'name' => 'pll_en',
+            'locale' => 'en_US',
+            'term_id' => 40,
+            'flag_code' => 'us',
+            'is_default' => true,
+        ),
+        (object) array(
+            'slug' => 'pll_sv',
+            'name' => 'pll_sv',
+            'locale' => 'sv_SE',
+            'term_id' => 41,
+            'flag_code' => 'se',
+            'is_default' => false,
+        ),
+    );
+}
+PHP
+        );
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.',
             $result['errors'][0]
         );
     }
