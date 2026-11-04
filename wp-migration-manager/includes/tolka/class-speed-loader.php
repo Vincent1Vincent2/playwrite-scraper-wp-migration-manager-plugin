@@ -97,9 +97,9 @@ class Speed_Loader
                 $landed = self::parse_public_url($final);
                 if ($landed['error'] !== '') {
                     $message = self::text('The site redirected to an address that cannot be measured.');
-                    if ($landed['reason'] === 'private' || $landed['reason'] === 'private-dns') {
-                        $message = self::text('The site redirected to a private or local address, so it cannot be measured.');
-                    }
+                if ($landed['reason'] === 'private' || $landed['reason'] === 'private-dns') {
+                    $message = self::text('The site redirected to a private or local address, so it cannot be measured. Enter the public address visitors use.');
+                }
                     return self::fail($result, $message, $code);
                 }
                 if ($landed['url'] !== '') {
@@ -282,6 +282,8 @@ class Speed_Loader
             $none['reason'] = 'empty';
             return $none;
         }
+
+        $trimmed = self::with_https_scheme($trimmed);
 
         if (strlen($trimmed) > 4096) {
             $none['url'] = $trimmed;
@@ -935,6 +937,61 @@ class Speed_Loader
     }
 
     /**
+     * Treat a pasted host, such as example.com, as https.
+     *
+     * A scheme that is already present is left alone, including ftp and
+     * javascript. Words that are not a host stay unchanged.
+     *
+     * @param string $url Trimmed address.
+     * @return string
+     */
+    private static function with_https_scheme($url)
+    {
+        if ($url === '' || preg_match('#^[a-z][a-z0-9+.-]*://#i', $url)) {
+            return $url;
+        }
+        // javascript: and data: are schemes. user:pass@host is not.
+        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $url) && !preg_match('#^[^/@]+:[^/@]*@#', $url)) {
+            return $url;
+        }
+        if (strpos($url, '//') === 0) {
+            return 'https:' . $url;
+        }
+        if (preg_match('/[\s\x00-\x1f\x7f\\\\]/', $url)) {
+            return $url;
+        }
+
+        $host = $url;
+        $slash = strpos($host, '/');
+        if ($slash !== false) {
+            $host = substr($host, 0, $slash);
+        }
+        $at = strrpos($host, '@');
+        if ($at !== false) {
+            $host = substr($host, $at + 1);
+        }
+        if ($host !== '' && $host[0] !== '[') {
+            $colon = strpos($host, ':');
+            if ($colon !== false) {
+                $host = substr($host, 0, $colon);
+            }
+        }
+
+        $host = strtolower(rtrim($host, '.'));
+        $looks_like_host = strpos($host, '.') !== false
+            || $host === 'localhost'
+            || (strlen($host) >= 2 && $host[0] === '[');
+        if (!$looks_like_host && preg_match('/^(0x[0-9a-f]+|[0-9]+)$/i', $host)) {
+            $looks_like_host = true;
+        }
+        if (!$looks_like_host) {
+            return $url;
+        }
+
+        return 'https://' . $url;
+    }
+
+    /**
      * Customer-facing sentence for a validation reason.
      *
      * @param string $reason Reason code.
@@ -944,7 +1001,7 @@ class Speed_Loader
     {
         switch ($reason) {
             case 'empty':
-                return self::text('Enter a public http or https address to measure.');
+                return self::text('Enter the public address of the site you want to measure.');
             case 'long':
                 return self::text('That address is too long to measure. Use the site\'s public home page.');
             case 'scheme':
@@ -952,9 +1009,9 @@ class Speed_Loader
             case 'host':
                 return self::text('That address has no host name, so it cannot be measured.');
             case 'private':
-                return self::text('That address points at a private or local network, so it cannot be measured.');
+                return self::text('That address points at a private or local network, so it cannot be measured. Enter the public address visitors use.');
             case 'private-dns':
-                return self::text('That address resolves to a private or local network, so it cannot be measured.');
+                return self::text('That address resolves to a private or local network, so it cannot be measured. Enter the public address visitors use.');
             default:
                 return self::text('That address could not be read. Use a full http or https URL.');
         }
@@ -1058,15 +1115,48 @@ class Speed_Loader
      */
     private static function http_status_error($code)
     {
-        $template = 'The site returned HTTP %d, so the load time could not be measured.';
-        if (function_exists('__')) {
-            $template = __(
-                'The site returned HTTP %d, so the load time could not be measured.',
-                'migration-manager'
+        $code = (int) $code;
+        if ($code === 401) {
+            return self::text('The site asked for a login, so the public page could not be measured.');
+        }
+        if ($code === 403) {
+            return self::text('The site refused access to that page, so the load time could not be measured.');
+        }
+        if ($code === 404) {
+            return self::text('That page was not found, so the load time could not be measured.');
+        }
+        if ($code >= 300 && $code <= 399) {
+            return sprintf(
+                self::status_template('The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.'),
+                $code
+            );
+        }
+        if ($code >= 500 && $code <= 599) {
+            return sprintf(
+                self::status_template('The site reported an error (HTTP %d), so the load time could not be measured.'),
+                $code
             );
         }
 
-        return sprintf($template, (int) $code);
+        return sprintf(
+            self::status_template('The site returned HTTP %d, so the load time could not be measured.'),
+            $code
+        );
+    }
+
+    /**
+     * Translate an sprintf template when WordPress is loaded.
+     *
+     * @param string $template Template with a %d placeholder.
+     * @return string
+     */
+    private static function status_template($template)
+    {
+        if (function_exists('__')) {
+            return __($template, 'migration-manager');
+        }
+
+        return $template;
     }
 
     /**

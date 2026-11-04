@@ -148,9 +148,9 @@ class Speed_Loader_Transport_Error
  */
 class Test_Speed_Loader extends TestCase
 {
-    const PRIVATE_MESSAGE = 'That address points at a private or local network, so it cannot be measured.';
+    const PRIVATE_MESSAGE = 'That address points at a private or local network, so it cannot be measured. Enter the public address visitors use.';
 
-    const PRIVATE_DNS_MESSAGE = 'That address resolves to a private or local network, so it cannot be measured.';
+    const PRIVATE_DNS_MESSAGE = 'That address resolves to a private or local network, so it cannot be measured. Enter the public address visitors use.';
 
     const SCHEME_MESSAGE = 'Only a public http or https address can be measured.';
 
@@ -158,7 +158,7 @@ class Test_Speed_Loader extends TestCase
 
     const HOST_MESSAGE = 'That address has no host name, so it cannot be measured.';
 
-    const EMPTY_MESSAGE = 'Enter a public http or https address to measure.';
+    const EMPTY_MESSAGE = 'Enter the public address of the site you want to measure.';
 
     const LONG_MESSAGE = 'That address is too long to measure. Use the site\'s public home page.';
 
@@ -250,7 +250,7 @@ class Test_Speed_Loader extends TestCase
             'empty' => array('', self::EMPTY_MESSAGE),
             'spaces' => array('   ', self::EMPTY_MESSAGE),
             'words' => array('not a url', $scheme),
-            'protocol relative' => array('//example.com/path', $scheme),
+            'single word' => array('notaurl', $scheme),
             'javascript' => array('javascript:alert(1)', $scheme),
             'data' => array('data:text/html,hi', $scheme),
             'file' => array('file:///etc/passwd', $scheme),
@@ -267,6 +267,10 @@ class Test_Speed_Loader extends TestCase
             'dot host' => array('http://./', $host),
             'empty brackets' => array('http://[]/', $host),
             'localhost' => array('http://localhost/wp', $private),
+            'bare localhost' => array('localhost', $private),
+            'bare loopback' => array('127.0.0.1', $private),
+            'protocol relative loopback' => array('//127.0.0.1/admin', $private),
+            'bare ten' => array('10.1.2.3/wp', $private),
             'localhost pasted newline' => array("http://localhost/\n", $private),
             'loopback pasted spaces' => array('  http://127.0.0.1/  ', $private),
             'integer zero with port' => array('http://0:80/', $private),
@@ -615,17 +619,52 @@ class Test_Speed_Loader extends TestCase
         $this->requireHarness();
         Speed_Loader_Harness::$resolved = array('1.1.1.1');
 
-        foreach (array(301, 302, 400, 401, 403, 404, 500, 503) as $code) {
+        $expected = array(
+            301 => 'The site redirected (HTTP 301) and did not return a page, so the load time could not be measured.',
+            302 => 'The site redirected (HTTP 302) and did not return a page, so the load time could not be measured.',
+            400 => 'The site returned HTTP 400, so the load time could not be measured.',
+            401 => 'The site asked for a login, so the public page could not be measured.',
+            403 => 'The site refused access to that page, so the load time could not be measured.',
+            404 => 'That page was not found, so the load time could not be measured.',
+            500 => 'The site reported an error (HTTP 500), so the load time could not be measured.',
+            503 => 'The site reported an error (HTTP 503), so the load time could not be measured.',
+        );
+
+        foreach ($expected as $code => $error) {
             Speed_Loader_Harness::$response = $this->http_response($code, '<html>secret error page</html>');
             $result = Speed_Loader_Harness::measure('https://example.com/missing');
 
             $this->assertFailure($result);
             $this->assertSame($code, $result['status_code'], (string) $code);
-            $this->assertSame(
-                sprintf('The site returned HTTP %d, so the load time could not be measured.', $code),
-                $result['error']
-            );
-            $this->assertStringNotContainsString('secret', json_encode($result));
+            $this->assertSame($error, $result['error'], (string) $code);
+            $this->assertStringNotContainsString('secret', (string) json_encode($result));
+        }
+    }
+
+    public function test_a_pasted_host_is_measured_as_https()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('93.184.216.34');
+        Speed_Loader_Harness::$response = $this->http_response(200, '<html>home</html>');
+
+        $cases = array(
+            'example.com/about' => 'https://example.com/about',
+            'www.example.com' => 'https://www.example.com',
+            '//www.example.com/path?x=1#section' => 'https://www.example.com/path?x=1',
+            'user:secret@example.com/admin' => 'https://example.com/admin',
+        );
+
+        foreach ($cases as $typed => $fetched) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('93.184.216.34');
+            Speed_Loader_Harness::$response = $this->http_response(200, '<html>home</html>');
+
+            $result = Speed_Loader_Harness::measure($typed);
+
+            $this->assertTrue($result['ok'], $typed);
+            $this->assertSame($fetched, $result['url'], $typed);
+            $this->assertSame($fetched, Speed_Loader_Harness::$requested_url, $typed);
+            $this->assertStringNotContainsString('secret', (string) json_encode($result));
         }
     }
 
@@ -685,7 +724,10 @@ class Test_Speed_Loader extends TestCase
         $result = Speed_Loader_Harness::measure('https://example.com/');
 
         $this->assertFailure($result);
-        $this->assertSame('The site redirected to a private or local address, so it cannot be measured.', $result['error']);
+        $this->assertSame(
+            'The site redirected to a private or local address, so it cannot be measured. Enter the public address visitors use.',
+            $result['error']
+        );
         $this->assertSame('', $result['html']);
         $this->assertSame(200, $result['status_code']);
         $this->assertSame('https://example.com/', $result['url']);
