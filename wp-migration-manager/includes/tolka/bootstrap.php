@@ -880,20 +880,39 @@ function wmm_tolka_html_has_speed_fields($html)
  * @param string $tolka   Estimated Tolka load text.
  * @param string $faster  Difference text.
  * @param string $basis   Basis sentence.
- * @param string $note    Provenance note.
+ * @param string $note          Provenance note.
+ * @param string $existing_html Markup that may already contain some fields.
  */
-function wmm_tolka_render_speed_fields($current, $tolka, $faster, $basis, $note)
+function wmm_tolka_render_speed_fields($current, $tolka, $faster, $basis, $note, $existing_html = '')
 {
-    echo '<dl class="wmm-tolka-speed-fields">';
-    echo '<dt>' . esc_html__('Measured load', 'migration-manager') . '</dt>';
-    echo '<dd id="wmm-tolka-current-load">' . esc_html($current) . '</dd>';
-    echo '<dt>' . esc_html__('Estimated on Tolka', 'migration-manager') . '</dt>';
-    echo '<dd id="wmm-tolka-tolka-load">' . esc_html($tolka) . '</dd>';
-    echo '<dt>' . esc_html__('Difference', 'migration-manager') . '</dt>';
-    echo '<dd id="wmm-tolka-faster">' . esc_html($faster) . '</dd>';
-    echo '</dl>';
-    echo '<p id="wmm-tolka-basis">' . esc_html($basis) . '</p>';
-    echo '<p id="wmm-tolka-provenance-note">' . esc_html($note) . '</p>';
+    $needs_current = !wmm_tolka_html_has_id($existing_html, 'wmm-tolka-current-load');
+    $needs_tolka = !wmm_tolka_html_has_id($existing_html, 'wmm-tolka-tolka-load');
+    $needs_faster = !wmm_tolka_html_has_id($existing_html, 'wmm-tolka-faster');
+
+    if ($needs_current || $needs_tolka || $needs_faster) {
+        echo '<dl class="wmm-tolka-speed-fields">';
+        if ($needs_current) {
+            echo '<dt>' . esc_html__('Measured load', 'migration-manager') . '</dt>';
+            echo '<dd id="wmm-tolka-current-load">' . esc_html($current) . '</dd>';
+        }
+        if ($needs_tolka) {
+            echo '<dt>' . esc_html__('Estimated on Tolka', 'migration-manager') . '</dt>';
+            echo '<dd id="wmm-tolka-tolka-load">' . esc_html($tolka) . '</dd>';
+        }
+        if ($needs_faster) {
+            echo '<dt>' . esc_html__('Difference', 'migration-manager') . '</dt>';
+            echo '<dd id="wmm-tolka-faster">' . esc_html($faster) . '</dd>';
+        }
+        echo '</dl>';
+    }
+
+    if (!wmm_tolka_html_has_id($existing_html, 'wmm-tolka-basis')) {
+        echo '<p id="wmm-tolka-basis">' . esc_html($basis) . '</p>';
+    }
+
+    if (!wmm_tolka_html_has_id($existing_html, 'wmm-tolka-provenance-note')) {
+        echo '<p id="wmm-tolka-provenance-note">' . esc_html($note) . '</p>';
+    }
 }
 
 /**
@@ -1277,7 +1296,8 @@ function wmm_tolka_render_fallback_wizard()
                 __('Not available', 'migration-manager'),
                 __('Not available', 'migration-manager'),
                 $gaps['measure'] . ' ' . __('Nothing was changed.', 'migration-manager'),
-                ''
+                '',
+                $speed_html
             );
         } elseif ($speed_html === '') {
             echo '<p class="wmm-tolka-empty" id="wmm-tolka-measure-note">';
@@ -1288,7 +1308,8 @@ function wmm_tolka_render_fallback_wizard()
                 __('Not measured yet', 'migration-manager'),
                 __('Not measured yet', 'migration-manager'),
                 __('No measurement yet. Enter the public site URL, then choose Measure speed. If the check fails, this screen shows an error and does not invent a percent.', 'migration-manager'),
-                ''
+                '',
+                $speed_html
             );
         } else {
             wmm_tolka_render_speed_fields(
@@ -1296,7 +1317,8 @@ function wmm_tolka_render_fallback_wizard()
                 __('Not measured yet', 'migration-manager'),
                 __('Not measured yet', 'migration-manager'),
                 '',
-                ''
+                '',
+                $speed_html
             );
         }
     }

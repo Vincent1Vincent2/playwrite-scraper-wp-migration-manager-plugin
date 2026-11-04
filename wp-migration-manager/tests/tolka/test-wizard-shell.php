@@ -1053,6 +1053,43 @@ PHP
             }
         }
 
+        public function test_speed_partial_fields_are_not_duplicated()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            $speed = $directory . 'speed-estimate.php';
+            $markup = '<p id="wmm-tolka-current-load">1 ms</p>'
+                . '<p id="wmm-tolka-tolka-load">1 ms</p>'
+                . '<p id="wmm-tolka-faster">0% faster</p>'
+                . '<p id="wmm-tolka-basis">From the partial.</p>'
+                . '<p id="wmm-tolka-provenance-note">Partial note.</p>';
+            file_put_contents($speed, $markup);
+            clearstatcache();
+
+            try {
+                $html = $this->render();
+                foreach (array(
+                    'wmm-tolka-current-load',
+                    'wmm-tolka-tolka-load',
+                    'wmm-tolka-faster',
+                    'wmm-tolka-basis',
+                    'wmm-tolka-provenance-note',
+                ) as $id) {
+                    $this->assertSame(1, substr_count($html, 'id="' . $id . '"'), $id);
+                }
+                $this->assertStringContainsString('From the partial.', $html);
+            } finally {
+                unlink($speed);
+                clearstatcache();
+            }
+        }
+
         public function test_failed_estimate_does_not_keep_a_percent()
         {
             $this->requireStubs();
