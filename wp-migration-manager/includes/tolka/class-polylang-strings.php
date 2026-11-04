@@ -204,7 +204,9 @@ class Polylang_Strings
         }
 
         $active = !empty($snapshot['active']);
-        if (!empty($snapshot['language_list_failed']) && !$items && !$active) {
+        $pll_list = !empty($snapshot['pll_languages_list']) || $this->pll_languages_list_exists();
+        $matched = !empty($items) || $this->catalogues_have_text(isset($snapshot['mo']) ? $snapshot['mo'] : array());
+        if (!empty($snapshot['language_list_failed']) && !$matched && !$pll_list && !$active) {
             $errors[] = $this->text('The language list could not be read. String translations that could still be matched are included.');
         }
         if (!$items && !$active) {
@@ -290,7 +292,8 @@ class Polylang_Strings
             'orphan_groups' => $stored['orphans'],
             'wpml_rows' => $this->read_wpml_tables($errors),
             'errors' => $errors,
-            'language_list_failed' => $this->language_list_failed,
+            'language_list_failed' => $this->language_list_failed && !$this->pll_languages_list_exists(),
+            'pll_languages_list' => $this->pll_languages_list_exists(),
         );
     }
 
@@ -307,18 +310,6 @@ class Polylang_Strings
     }
 
     /**
-     * Polylang's runtime object is safe to call.
-     *
-     * @return bool
-     */
-    protected function pll_booted()
-    {
-        return function_exists('PLL')
-            && isset($GLOBALS['polylang'])
-            && is_object($GLOBALS['polylang']);
-    }
-
-    /**
      * Languages in display order, with term ids when the database has them.
      *
      * @return array<int, array{slug: string, term_id: int}>
@@ -327,12 +318,12 @@ class Polylang_Strings
     {
         $from_database = $this->read_language_terms();
         $api = $this->read_api_languages();
+        if ($this->pll_languages_list_exists() || (is_array($api) && $api)) {
+            $this->language_list_failed = false;
+        }
         if (!is_array($api) || !$api) {
             return $from_database;
         }
-
-        // pll_languages_list() succeeded, so the site did expose its languages.
-        $this->language_list_failed = false;
         $by_slug = array();
         foreach ($from_database as $language) {
             $by_slug[$language['slug']] = $language;
@@ -368,6 +359,14 @@ class Polylang_Strings
      */
     protected function read_api_languages()
     {
+        $records = $this->pll_language_records();
+        if (is_array($records)) {
+            $from_records = $this->languages_from_records($records);
+            if ($from_records) {
+                return $from_records;
+            }
+        }
+
         $slugs = $this->pll_language_field('slug');
         if (!is_array($slugs)) {
             return null;
@@ -397,24 +396,125 @@ class Polylang_Strings
     }
 
     /**
-     * One field from pll_languages_list(), or null when Polylang is not booted.
+     * Whether pll_languages_list() can be called on this site.
+     *
+     * @return bool
+     */
+    protected function pll_languages_list_exists()
+    {
+        return function_exists('pll_languages_list');
+    }
+
+    /**
+     * Language records from pll_languages_list(), or null when it is absent.
+     *
+     * An empty fields value is how Polylang 3.9.1 returns English and Svenska
+     * as records, including each language term id.
+     *
+     * @return array|null
+     */
+    protected function pll_language_records()
+    {
+        return $this->call_pll_languages_list(array(
+            'hide_empty' => false,
+            'fields' => '',
+        ));
+    }
+
+    /**
+     * One field from pll_languages_list(), or null when that function is absent.
      *
      * @param string $field Language field, such as slug or term_id.
      * @return array|null
      */
     protected function pll_language_field($field)
     {
-        if (!$this->pll_booted() || !function_exists('pll_languages_list')) {
+        return $this->call_pll_languages_list(array(
+            'hide_empty' => false,
+            'fields' => $field,
+        ));
+    }
+
+    /**
+     * Call pll_languages_list() whenever it exists.
+     *
+     * A missing Polylang global makes the function throw. That failure stays
+     * inside this export and is not shown as a language-list error.
+     *
+     * @param array $args Arguments passed through to Polylang.
+     * @return array|null
+     */
+    protected function call_pll_languages_list(array $args)
+    {
+        if (!$this->pll_languages_list_exists() || !function_exists('pll_languages_list')) {
             return null;
         }
 
         try {
-            $list = pll_languages_list(array('fields' => $field));
+            $list = pll_languages_list($args);
         } catch (\Throwable $e) {
             return null;
         }
 
         return is_array($list) ? $list : null;
+    }
+
+    /**
+     * Map Polylang language records to slug and term id.
+     *
+     * A list of plain slugs is left for the field-by-field reader.
+     *
+     * @param array $raw Records from pll_languages_list().
+     * @return array<int, array{slug: string, term_id: int}>
+     */
+    protected function languages_from_records(array $raw)
+    {
+        $languages = array();
+        foreach ($raw as $language) {
+            if (is_string($language)) {
+                return array();
+            }
+            if (!is_object($language) && !is_array($language)) {
+                continue;
+            }
+            $slug = $this->clean_slug($this->field_value($language, 'slug'));
+            if ($slug === '' || isset($languages[$slug])) {
+                continue;
+            }
+            $term_id = $this->field_value($language, 'term_id');
+            if (!is_numeric($term_id) || (int) $term_id <= 0) {
+                $props = $this->field_value($language, 'term_props');
+                if (is_array($props) && isset($props['language']['term_id']) && is_numeric($props['language']['term_id'])) {
+                    $term_id = $props['language']['term_id'];
+                }
+            }
+            $languages[$slug] = array(
+                'slug' => $slug,
+                'term_id' => is_numeric($term_id) ? (int) $term_id : 0,
+            );
+        }
+
+        return array_values($languages);
+    }
+
+    /**
+     * @param object|array $record Language record or term.
+     * @param string       $field  Property name.
+     * @return mixed|null
+     */
+    protected function field_value($record, $field)
+    {
+        if (is_array($record)) {
+            return array_key_exists($field, $record) ? $record[$field] : null;
+        }
+        if (!is_object($record)) {
+            return null;
+        }
+        try {
+            return isset($record->$field) ? $record->$field : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -426,25 +526,62 @@ class Polylang_Strings
     {
         $db = $this->database();
         if (!$db) {
-            return array();
+            return $this->language_terms_from_wordpress();
         }
         $terms = $this->table_name($db, 'terms');
         $taxonomy = $this->table_name($db, 'term_taxonomy');
         if ($terms === '' || $taxonomy === '') {
-            return array();
+            return $this->language_terms_from_wordpress();
         }
 
+        $rows = $this->language_term_rows($db, $terms, $taxonomy, true);
+        if (!is_array($rows)) {
+            $rows = $this->language_term_rows($db, $terms, $taxonomy, false);
+        }
+        if (is_array($rows)) {
+            return $this->languages_from_term_rows($rows);
+        }
+
+        $from_wordpress = $this->language_terms_from_wordpress();
+        if ($from_wordpress) {
+            $this->language_list_failed = false;
+            return $from_wordpress;
+        }
+
+        $this->language_list_failed = true;
+        return array();
+    }
+
+    /**
+     * Language taxonomy rows, with or without the display order.
+     *
+     * term_group lives on the terms table. A host that rejects that column
+     * still returns the same rows from the unordered query.
+     *
+     * @param object $db       Database handle.
+     * @param string $terms    Terms table.
+     * @param string $taxonomy Term taxonomy table.
+     * @param bool   $ordered  Whether to sort by term_group.
+     * @return array|null
+     */
+    protected function language_term_rows($db, $terms, $taxonomy, $ordered)
+    {
+        $order = $ordered ? ' ORDER BY t.term_group ASC, t.term_id ASC' : '';
         $sql = $this->safe_prepare(
             $db,
-            "SELECT t.term_id, t.slug FROM {$terms} t INNER JOIN {$taxonomy} tt ON t.term_id = tt.term_id WHERE tt.taxonomy = %s ORDER BY t.term_group ASC, t.term_id ASC",
+            "SELECT t.term_id, t.slug FROM {$terms} t INNER JOIN {$taxonomy} tt ON t.term_id = tt.term_id WHERE tt.taxonomy = %s{$order}",
             array('language')
         );
-        $rows = $this->query_rows($sql);
-        if (!is_array($rows)) {
-            $this->language_list_failed = true;
-            return array();
-        }
 
+        return $this->query_rows($sql);
+    }
+
+    /**
+     * @param array $rows Database rows.
+     * @return array<int, array{slug: string, term_id: int}>
+     */
+    protected function languages_from_term_rows(array $rows)
+    {
         $languages = array();
         foreach ($rows as $row) {
             $row = $this->row_array($row);
@@ -462,6 +599,57 @@ class Polylang_Strings
         }
 
         return array_values($languages);
+    }
+
+    /**
+     * Languages from get_terms() when the taxonomy query did not return rows.
+     *
+     * @return array<int, array{slug: string, term_id: int}>
+     */
+    protected function language_terms_from_wordpress()
+    {
+        if (!function_exists('get_terms')) {
+            return array();
+        }
+
+        $terms = get_terms(array(
+            'taxonomy' => 'language',
+            'hide_empty' => false,
+            'orderby' => 'term_group',
+            'order' => 'ASC',
+        ));
+        if ((function_exists('is_wp_error') && is_wp_error($terms)) || !is_array($terms)) {
+            $terms = get_terms(array(
+                'taxonomy' => 'language',
+                'hide_empty' => false,
+            ));
+        }
+        if (!is_array($terms)) {
+            return array();
+        }
+
+        return $this->languages_from_records($terms);
+    }
+
+    /**
+     * Whether a stored catalogue contains a real original and translation.
+     *
+     * @param mixed $catalogues Language slug to stored pairs.
+     * @return bool
+     */
+    protected function catalogues_have_text($catalogues)
+    {
+        if (!is_array($catalogues)) {
+            return false;
+        }
+        foreach ($catalogues as $bucket) {
+            $decoded = $this->decode_bucket($bucket);
+            if (is_array($decoded) && $decoded) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1849,6 +2037,9 @@ class Polylang_Strings
             $rows = $db->get_results($sql, $output);
         } catch (\Throwable $e) {
             return null;
+        }
+        if (is_array($rows) && $rows) {
+            return $rows;
         }
         if (!empty($db->last_error)) {
             return null;
