@@ -1053,7 +1053,7 @@ function wmm_tolka_ajax_run()
         return;
     }
 
-    wp_send_json_success($report['value']);
+    wp_send_json_success(wmm_tolka_public_copy($report['value']));
 }
 
 /**
