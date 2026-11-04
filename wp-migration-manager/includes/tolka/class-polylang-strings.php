@@ -237,10 +237,20 @@ class Polylang_Strings
             }
             $messages[] = $error;
         }
+        $messages = array_values(array_unique($messages));
+        $hidden = count($messages) - 30;
+        if ($hidden > 0) {
+            $messages = array_slice($messages, 0, 30);
+            if ($hidden === 1) {
+                $messages[] = $this->text('1 more error was left out.');
+            } else {
+                $messages[] = sprintf($this->text('%d more errors were left out.'), $hidden);
+            }
+        }
 
         return array(
             'items' => $list,
-            'errors' => array_values(array_unique($messages)),
+            'errors' => $messages,
         );
     }
 
