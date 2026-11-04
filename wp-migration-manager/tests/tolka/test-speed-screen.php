@@ -325,6 +325,42 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         }
     }
 
+    public function test_speed_ids_stay_unique_on_an_empty_screen_and_after_a_failure()
+    {
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+        $pages = array(
+            'empty' => $this->render(false),
+            'failed' => $this->render(true, array(
+                'ok' => false,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 3,
+                'faster_label' => '3.0% faster',
+                'provenance' => 'lab',
+                'provenance_note' => 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.',
+                'error' => 'The host is not allowed.',
+            )),
+            'ready placeholder' => $this->render(true, $this->ready_estimate()),
+        );
+
+        foreach ($pages as $name => $html) {
+            foreach ($ids as $id) {
+                $this->assertSame(1, substr_count($html, 'id="' . $id . '"'), $name . ' #' . $id);
+            }
+        }
+
+        $failed = $pages['failed'];
+        $this->assertStringNotContainsString('3.0% faster', $failed);
+        $this->assertStringNotContainsString('Placeholder coefficients', $failed);
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-faster'));
+    }
+
     public function test_failed_estimate_keeps_the_speed_ids_and_shows_no_percent()
     {
         $ids = array(
