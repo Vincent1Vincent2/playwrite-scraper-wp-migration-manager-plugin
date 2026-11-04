@@ -608,27 +608,80 @@ class Polylang_Strings
      */
     protected function language_terms_from_wordpress()
     {
-        if (!function_exists('get_terms')) {
-            return array();
-        }
-
-        $terms = get_terms(array(
-            'taxonomy' => 'language',
-            'hide_empty' => false,
-            'orderby' => 'term_group',
-            'order' => 'ASC',
-        ));
-        if ((function_exists('is_wp_error') && is_wp_error($terms)) || !is_array($terms)) {
-            $terms = get_terms(array(
-                'taxonomy' => 'language',
-                'hide_empty' => false,
-            ));
-        }
+        $terms = $this->wordpress_language_terms();
         if (!is_array($terms)) {
             return array();
         }
 
         return $this->languages_from_records($terms);
+    }
+
+    /**
+     * Language terms from get_terms(), or null when that API cannot be used.
+     *
+     * @return array|null
+     */
+    protected function wordpress_language_terms()
+    {
+        if (!function_exists('get_terms')) {
+            return null;
+        }
+
+        try {
+            $terms = get_terms(array(
+                'taxonomy' => 'language',
+                'hide_empty' => false,
+                'orderby' => 'term_group',
+                'order' => 'ASC',
+            ));
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if ((function_exists('is_wp_error') && is_wp_error($terms)) || !is_array($terms)) {
+            try {
+                $terms = get_terms(array(
+                    'taxonomy' => 'language',
+                    'hide_empty' => false,
+                ));
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+        if ((function_exists('is_wp_error') && is_wp_error($terms)) || !is_array($terms)) {
+            return null;
+        }
+
+        return $terms;
+    }
+
+    /**
+     * Whether get_term_meta() can read string catalogues.
+     *
+     * @return bool
+     */
+    protected function wordpress_term_meta_available()
+    {
+        return function_exists('get_term_meta');
+    }
+
+    /**
+     * One term meta value, or null when WordPress cannot read it.
+     *
+     * @param int    $term_id Term id.
+     * @param string $key     Meta key.
+     * @return mixed|null
+     */
+    protected function wordpress_term_meta($term_id, $key)
+    {
+        if (!$this->wordpress_term_meta_available()) {
+            return null;
+        }
+
+        try {
+            return get_term_meta((int) $term_id, $key, true);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -1007,6 +1060,9 @@ class Polylang_Strings
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
+            if ($this->collect_term_meta_from_wordpress($buckets)) {
+                return;
+            }
             $this->catalogue_query_failed = true;
             return;
         }
@@ -1021,6 +1077,37 @@ class Polylang_Strings
                 isset($row['meta_value']) ? $row['meta_value'] : ''
             );
         }
+    }
+
+    /**
+     * String catalogues from get_term_meta() when the term meta query failed.
+     *
+     * @param array $buckets Term id to raw catalogues.
+     * @return bool True when WordPress could be asked, even if no catalogue was stored.
+     */
+    protected function collect_term_meta_from_wordpress(&$buckets)
+    {
+        if (!$this->wordpress_term_meta_available()) {
+            return false;
+        }
+        $terms = $this->wordpress_language_terms();
+        if (!is_array($terms)) {
+            return false;
+        }
+
+        foreach ($terms as $term) {
+            $term_id = $this->field_value($term, 'term_id');
+            if (!is_numeric($term_id) || (int) $term_id <= 0) {
+                continue;
+            }
+            $meta = $this->wordpress_term_meta((int) $term_id, '_pll_strings_translations');
+            if ($meta === null || $meta === false || $meta === '' || $meta === array()) {
+                continue;
+            }
+            $this->append_bucket($buckets, (int) $term_id, $meta);
+        }
+
+        return true;
     }
 
     /**
