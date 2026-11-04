@@ -912,6 +912,87 @@ namespace WMM\Tolka {
             }
         }
 
+        public function test_local_and_private_measure_urls_are_rejected()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+
+            $rejected = array(
+                'http://localhost/',
+                'http://localhost',
+                'https://LOCALHOST/path',
+                'http://foo.localhost/',
+                'http://localhost./',
+                'http://127.0.0.1/',
+                'http://127.0.0.1:8080/wp-admin',
+                'http://127.255.255.255/',
+                'http://127.1/',
+                'http://10.1.2.3/secret-path',
+                'http://192.168.1.20/page',
+                'http://172.16.5.5/',
+                'http://172.31.255.255/',
+                'http://[::1]/',
+                'http://[::ffff:127.0.0.1]/',
+                'http://[::ffff:10.0.0.8]/',
+                'http://2130706433/',
+            );
+
+            foreach ($rejected as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+
+                ob_start();
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $output = ob_get_clean();
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+                $encoded = json_encode($payload);
+                $message = $payload['data']['message'];
+
+                $this->assertSame('', $output, $url);
+                $this->assertFalse($payload['success'], $url);
+                $this->assertSame('That address is on a local or private network, so it was not measured.', $message, $url);
+                $this->assertSame(1, preg_match_all('/[.!?](?:\s|$)/', $message), $url);
+                $this->assertStringNotContainsString("\n", $message);
+                $this->assertDoesNotMatchRegularExpression('/stack trace|#\d+\s|Exception|Fatal error/i', $encoded);
+                $this->assertStringNotContainsString($url, $encoded);
+                $this->assertStringNotContainsString('127.0.0.1', $message);
+                $this->assertStringNotContainsString('192.168', $message);
+                $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $encoded);
+                $this->assertSame(0, $GLOBALS['wmm_tolka_measure_calls'], $url);
+                $this->assertNoSpeedPercent($payload);
+            }
+
+            $allowed = array(
+                'https://public.example.test/',
+                'http://8.8.8.8/',
+                'http://172.32.0.1/',
+                'https://example.com/localhost',
+            );
+
+            foreach ($allowed as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success'], $url);
+                $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls'], $url);
+            }
+        }
+
         public function test_measure_url_with_userinfo_does_not_call_speed_loader()
         {
             $this->requireStubs();
