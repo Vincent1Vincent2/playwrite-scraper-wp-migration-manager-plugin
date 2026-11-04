@@ -136,7 +136,11 @@ class Polylang_Languages
             $items = $this->ensure_single_default($items, $default);
         }
 
+        $before_internal_filter = count($items);
         $items = $this->without_internal_languages($items);
+        if (count($items) !== $before_internal_filter) {
+            $items = $this->ensure_single_default($items, $default);
+        }
 
         if (!empty($items)) {
             return $this->envelope($items, array());
