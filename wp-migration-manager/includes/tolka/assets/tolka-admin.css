@@ -297,12 +297,19 @@
     color: #fff;
 }
 
-#wmm-tolka-measure.button:focus-visible,
-#wmm-tolka-preview.button:focus-visible,
-#wmm-tolka-run.button:focus-visible,
 #wmm-tolka-url:focus-visible {
     outline: 2px solid var(--wmm-tolka-win);
     outline-offset: 2px;
+}
+
+#wmm-tolka-measure:focus,
+#wmm-tolka-preview:focus,
+#wmm-tolka-run:focus,
+#wmm-tolka-measure:focus-visible,
+#wmm-tolka-preview:focus-visible,
+#wmm-tolka-run:focus-visible {
+    outline: 3px solid #1d2327 !important;
+    outline-offset: 2px !important;
 }
 
 #wmm-tolka-wizard button.wmm-tolka-busy,
@@ -1456,8 +1463,9 @@ p.wmm-tolka-speed-tolka {
     line-height: 1.35;
 }
 
-#wmm-tolka-speed #wmm-tolka-faster[data-faster-percent^="-"] {
-    color: var(--wmm-tolka-danger);
+#wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster[data-faster-percent]:not([data-faster-percent=""]),
+#wmm-tolka-speed.wmm-tolka-has-result:not(.wmm-tolka-has-error) #wmm-tolka-faster[data-faster-percent]:not([data-faster-percent=""]) {
+    color: var(--wmm-tolka-win);
 }
 
 #wmm-tolka-provenance-note[hidden],
