@@ -85,7 +85,7 @@ class Test_Polylang_Languages extends PHPUnit\Framework\TestCase
         $by_slug = $this->index_by_slug($result['items']);
 
         $this->assertSame(array(), $result['errors']);
-        $this->assertSame(array('en', 'fr', 'de', 'sv', 'pt'), array_keys($by_slug));
+        $this->assertSame(array('fr', 'en', 'de', 'sv', 'pt'), array_keys($by_slug));
         $this->assertSame('English', $by_slug['en']['name']);
         $this->assertSame('en_US', $by_slug['en']['locale']);
         $this->assertSame(4, $by_slug['en']['term_id']);
@@ -355,9 +355,10 @@ PHP
         $first['errors'][] = 'Changed';
         $second = Polylang_Languages::export();
 
-        $this->assertSame('English', $second['items'][0]['name']);
+        $this->assertSame('Français', $second['items'][0]['name']);
+        $this->assertTrue($second['items'][0]['is_default']);
+        $this->assertSame('English', $second['items'][1]['name']);
         $this->assertSame(array(), $second['errors']);
-        $this->assertTrue($second['items'][1]['is_default']);
     }
 
     public function test_an_empty_language_can_be_the_default()
@@ -389,12 +390,19 @@ PHP
                 )),
             ),
         );
+        $db->term_translation_rows = array(
+            (object) array(
+                'description' => array(
+                    'de' => 20,
+                ),
+            ),
+        );
         $GLOBALS['wpdb'] = $db;
 
         $result = Polylang_Languages::export();
         $by_slug = $this->index_by_slug($result['items']);
 
-        $this->assertSame(array('en', 'fr'), array_keys($by_slug));
+        $this->assertSame(array('fr', 'de', 'en'), array_keys($by_slug));
         $this->assertFalse($by_slug['en']['is_default']);
         $this->assertTrue($by_slug['fr']['is_default']);
         $this->assertSame(0, $by_slug['fr']['term_id']);
@@ -416,6 +424,38 @@ PHP
         $this->assertSame('gb', $result['items'][0]['flag']);
         $this->assertSame(7, $result['items'][0]['term_id']);
         $this->assertTrue($result['items'][0]['is_default']);
+    }
+
+    public function test_a_blank_slug_is_left_out_of_the_list()
+    {
+        $blank = $this->language_term(3, 'Blank', '   ', 'en_US', 'us', 0, 0);
+        $english = $this->language_term(4, 'English', 'en', 'en_US', 'us', 1, 1);
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($blank, $english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
+    public function test_description_already_decoded_as_an_array_is_read()
+    {
+        $english = $this->language_term(4, 'English', 'en', '', '', 0, 0);
+        $english->description = array(
+            'locale' => 'en_GB',
+            'flag_code' => 'gb',
+            'fallbacks' => array('en_US'),
+        );
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame('en_GB', $result['items'][0]['locale']);
+        $this->assertSame('gb', $result['items'][0]['flag']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertArrayNotHasKey('fallbacks', $result['items'][0]);
     }
 
     public function test_json_description_and_equal_order_use_the_language_name()
@@ -654,7 +694,7 @@ PHP
         $by_slug = $this->index_by_slug($result['items']);
 
         $this->assertSame(array(), $result['errors']);
-        $this->assertSame(array('en', 'sv'), array_keys($by_slug));
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
         $this->assertSame('us', $by_slug['en']['flag']);
         $this->assertFalse($by_slug['en']['is_default']);
         $this->assertTrue($by_slug['sv']['is_default']);
@@ -845,7 +885,7 @@ PHP
         $by_slug = $this->index_by_slug($result['items']);
 
         $this->assertSame(array(), $result['errors']);
-        $this->assertSame(array('en', 'sv'), array_keys($by_slug));
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
         $this->assertSame('us', $by_slug['en']['flag']);
         $this->assertSame(4, $by_slug['en']['term_id']);
         $this->assertFalse($by_slug['en']['is_default']);

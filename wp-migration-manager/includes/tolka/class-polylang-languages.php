@@ -701,12 +701,12 @@ class Polylang_Languages
             foreach ($items as $index => $item) {
                 $items[$index]['is_default'] = ($canonical !== '' && $item['slug'] === $canonical);
             }
-            return array_values($items);
+            return $this->default_first($items);
         }
 
         if (count($items) === 1) {
             $items[0]['is_default'] = true;
-            return array_values($items);
+            return $this->default_first($items);
         }
 
         $seen_default = false;
@@ -718,7 +718,30 @@ class Polylang_Languages
             $items[$index]['is_default'] = false;
         }
 
-        return array_values($items);
+        return $this->default_first($items);
+    }
+
+    /**
+     * Put the default language first so a short preview still shows it.
+     *
+     * The other languages stay in Polylang's order.
+     *
+     * @param array $items Language rows.
+     * @return array
+     */
+    private function default_first($items)
+    {
+        $first = array();
+        $rest = array();
+        foreach ($items as $item) {
+            if ($first === array() && isset($item['is_default']) && $item['is_default'] === true) {
+                $first[] = $item;
+                continue;
+            }
+            $rest[] = $item;
+        }
+
+        return array_merge($first, $rest);
     }
 
     /**
