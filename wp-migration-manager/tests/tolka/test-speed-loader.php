@@ -99,6 +99,13 @@ if (class_exists(__NAMESPACE__ . '\\Speed_Loader', false)) {
         public static $delay_us = 0;
 
         /**
+         * Nanosecond clock readings consumed in order. Null uses the real clock.
+         *
+         * @var array|null
+         */
+        public static $clock = null;
+
+        /**
          * @param string $url Validated URL.
          * @return mixed
          */
@@ -124,6 +131,18 @@ if (class_exists(__NAMESPACE__ . '\\Speed_Loader', false)) {
          * @param string $host Host name.
          * @return string[]
          */
+        protected static function now_ns()
+        {
+            if (is_array(self::$clock) && self::$clock !== array()) {
+                $next = array_shift(self::$clock);
+                if (is_int($next) || is_float($next)) {
+                    return $next;
+                }
+            }
+
+            return parent::now_ns();
+        }
+
         protected static function resolve_ips($host)
         {
             if (is_array(self::$resolved)) {
@@ -148,6 +167,7 @@ if (class_exists(__NAMESPACE__ . '\\Speed_Loader', false)) {
             self::$throw_message = 'transport failed';
             self::$throw_after = 0;
             self::$delay_us = 0;
+            self::$clock = null;
         }
     }
 }
@@ -856,6 +876,60 @@ class Speed_Loader_Test extends TestCase
                 'The site could not be reached. Check the address and try again.',
             ),
         );
+    }
+
+    public function test_total_ms_is_a_non_negative_integer_on_every_result()
+    {
+        $method = new \ReflectionMethod(Speed_Loader::class, 'non_negative_ms');
+        $method->setAccessible(true);
+        $values = array(-5, -1.5, 0, 1, 1.2, 1.6, INF, -INF, NAN, '12', '-4', '999999999999999999999', null, true, '');
+        foreach ($values as $value) {
+            $ms = $method->invoke(null, $value);
+            $this->assertIsInt($ms);
+            $this->assertGreaterThanOrEqual(0, $ms);
+        }
+
+        $this->requireHarness();
+        $rejected = Speed_Loader::measure('http://127.0.0.1/');
+        $this->assertIsInt($rejected['total_ms']);
+        $this->assertSame(0, $rejected['total_ms']);
+
+        $clocks = array(
+            array(5000000000, 0),
+            array(0, INF),
+            array(1000000, -5000000),
+            array(0, 15000000000),
+        );
+        foreach ($clocks as $clock) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            Speed_Loader_Harness::$clock = $clock;
+            Speed_Loader_Harness::$response = new Speed_Loader_Transport_Error(
+                'cURL error 28: Operation timed out after 15000 milliseconds'
+            );
+            $result = $this->measureWithoutThrowing('http://1.1.1.1/');
+            $this->assertTimeoutResult($result);
+            $this->assertIsInt($result['total_ms']);
+            $this->assertGreaterThanOrEqual(0, $result['total_ms']);
+        }
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$clock = array(0, 15000000000);
+        Speed_Loader_Harness::$response = new Speed_Loader_Transport_Error('Operation timed out');
+        $fifteen = $this->measureWithoutThrowing('http://1.1.1.1/');
+        $this->assertTimeoutResult($fifteen);
+        $this->assertSame(15000, $fifteen['total_ms']);
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$clock = array(9000000000, 1000000000);
+        Speed_Loader_Harness::$response = $this->http_response(200, '<html>ok</html>');
+        $page = Speed_Loader_Harness::measure('https://example.com/');
+        $this->assertTrue($page['ok']);
+        $this->assertIsInt($page['total_ms']);
+        $this->assertSame(0, $page['total_ms']);
+        $this->assertSame('<html>ok</html>', $page['html']);
     }
 
     public function test_timeout_records_the_request_time()
@@ -1584,6 +1658,8 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame(self::TIMEOUT_MESSAGE, $result['error']);
         $this->assertSame(1, preg_match_all('/\./', $result['error']));
         $this->assertMatchesRegularExpression('/\.\z/', $result['error']);
+        $this->assertIsInt($result['total_ms']);
+        $this->assertGreaterThanOrEqual(0, $result['total_ms']);
     }
 
     private function requireHarness()

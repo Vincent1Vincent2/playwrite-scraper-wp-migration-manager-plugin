@@ -89,7 +89,7 @@ class Speed_Loader
             return self::fail($result, $checked['error']);
         }
 
-        $started = self::now_ns();
+        $started = static::now_ns();
         $current = $checked['url'];
         $redirects = 0;
         $response = null;
@@ -177,7 +177,7 @@ class Speed_Loader
         $result['error'] = '';
         $result['ttfb_ms'] = null;
 
-        return $result;
+        return self::finish($result);
     }
 
     /**
@@ -404,7 +404,57 @@ class Speed_Loader
             $result['status_code'] = (int) $status;
         }
 
+        return self::finish($result);
+    }
+
+    /**
+     * Guarantee the public timing field is a non-negative integer.
+     *
+     * @param array $result Measurement.
+     * @return array
+     */
+    private static function finish(array $result)
+    {
+        $result['total_ms'] = self::non_negative_ms(
+            array_key_exists('total_ms', $result) ? $result['total_ms'] : 0
+        );
+
         return $result;
+    }
+
+    /**
+     * Whole milliseconds, never negative and never non-finite.
+     *
+     * @param mixed $value Raw duration.
+     * @return int
+     */
+    private static function non_negative_ms($value)
+    {
+        if (is_int($value)) {
+            return $value < 0 ? 0 : $value;
+        }
+        if (is_float($value)) {
+            if (!is_finite($value) || $value <= 0) {
+                return 0;
+            }
+            if ($value >= PHP_INT_MAX) {
+                return PHP_INT_MAX;
+            }
+            $rounded = (int) round($value);
+            return $rounded < 0 ? 0 : $rounded;
+        }
+        if (is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+            if ($value[0] === '-') {
+                return 0;
+            }
+            if (strlen(ltrim($value, '0')) > strlen((string) PHP_INT_MAX)) {
+                return PHP_INT_MAX;
+            }
+            $number = (int) $value;
+            return $number < 0 ? 0 : $number;
+        }
+
+        return 0;
     }
 
     /**
@@ -1848,9 +1898,11 @@ class Speed_Loader
     /**
      * Monotonic clock in nanoseconds.
      *
+     * Tests may override this. Production uses hrtime when it is available.
+     *
      * @return float|int
      */
-    private static function now_ns()
+    protected static function now_ns()
     {
         if (function_exists('hrtime')) {
             $now = hrtime(true);
@@ -1870,17 +1922,18 @@ class Speed_Loader
      */
     private static function elapsed_ms($start)
     {
-        $delta = self::now_ns() - $start;
-        if ($delta < 0) {
+        $end = static::now_ns();
+        if (!is_int($start) && !is_float($start)) {
+            return 0;
+        }
+        if (!is_int($end) && !is_float($end)) {
+            return 0;
+        }
+        if ((is_float($start) && !is_finite($start)) || (is_float($end) && !is_finite($end))) {
             return 0;
         }
 
-        $ms = (int) round($delta / 1000000);
-        if ($ms < 0) {
-            return 0;
-        }
-
-        return $ms;
+        return self::non_negative_ms(($end - $start) / 1000000);
     }
 
     /**
