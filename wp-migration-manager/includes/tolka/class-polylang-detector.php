@@ -96,6 +96,7 @@ class Polylang_Detector
                         'header_found' => true,
                         'version_missing' => $version === '',
                         'listed_active' => false,
+                        'label' => (isset($parsed['label']) && $parsed['label'] === 'Polylang Pro') ? 'Polylang Pro' : 'Polylang',
                     );
                 }
             }
@@ -337,6 +338,7 @@ class Polylang_Detector
             $entry = array(
                 'file' => $file,
                 'version' => $version,
+                'label' => (isset($parsed['label']) && $parsed['label'] === 'Polylang Pro') ? 'Polylang Pro' : 'Polylang',
             );
             if (self::matches_any_relative($file, $active_relative)) {
                 $listed[] = $entry;
@@ -348,17 +350,25 @@ class Polylang_Detector
         $pool = !empty($listed) ? $listed : $others;
         $best_version = '';
         $best_rank = PHP_INT_MAX;
+        $label = 'Polylang';
+        $label_rank = PHP_INT_MAX;
         foreach ($pool as $entry) {
-            if (!isset($entry['version']) || !is_string($entry['version']) || $entry['version'] === '') {
-                continue;
-            }
             if (!isset($entry['file']) || !is_string($entry['file'])) {
                 continue;
             }
             $rank = static::rank_plugin_file($entry['file']);
-            if ($rank < $best_rank) {
+            $entry_version = (isset($entry['version']) && is_string($entry['version'])) ? $entry['version'] : '';
+            $entry_label = (isset($entry['label']) && $entry['label'] === 'Polylang Pro') ? 'Polylang Pro' : 'Polylang';
+            if ($entry_version !== '' && $rank < $best_rank) {
                 $best_rank = $rank;
-                $best_version = $entry['version'];
+                $best_version = $entry_version;
+                $label = $entry_label;
+                $label_rank = $rank;
+                continue;
+            }
+            if ($best_version === '' && $rank < $label_rank) {
+                $label = $entry_label;
+                $label_rank = $rank;
             }
         }
 
@@ -367,6 +377,7 @@ class Polylang_Detector
             'header_found' => $header_found,
             'version_missing' => $header_found && $best_version === '',
             'listed_active' => !empty($listed),
+            'label' => $label,
         );
     }
 
@@ -432,7 +443,18 @@ class Polylang_Detector
         return array(
             'is_polylang' => true,
             'version' => $version,
+            'label' => self::plugin_label($name),
         );
+    }
+
+    private static function plugin_label(string $name): string
+    {
+        $collapsed = preg_replace('/\s+/', ' ', trim($name));
+        if (is_string($collapsed) && strtolower($collapsed) === 'polylang pro') {
+            return 'Polylang Pro';
+        }
+
+        return 'Polylang';
     }
 
     /**
@@ -457,28 +479,53 @@ class Polylang_Detector
         }
         $header_found = !empty($inspection['header_found']);
         $listed_active = !empty($inspection['listed_active']);
+        $pro = self::product_name($inspection) === 'Polylang Pro';
         $errors = array();
 
         if (!$active && $version !== '' && $listed_active) {
             $errors[] = self::fill_version(
-                self::translate('Polylang %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'),
+                self::translate(
+                    $pro
+                        ? 'Polylang Pro %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.'
+                        : 'Polylang %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
+                ),
                 $version
             );
         } elseif (!$active && $version !== '') {
             $errors[] = self::fill_version(
-                self::translate('Polylang %s is installed but not active. Activate Polylang, then return to Migrate to Tolka.'),
+                self::translate(
+                    $pro
+                        ? 'Polylang Pro %s is installed but not active. Activate Polylang Pro, then return to Migrate to Tolka.'
+                        : 'Polylang %s is installed but not active. Activate Polylang, then return to Migrate to Tolka.'
+                ),
                 $version
             );
         } elseif (!$active && $header_found && $listed_active) {
-            $errors[] = self::translate('Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.');
+            $errors[] = self::translate(
+                $pro
+                    ? 'Polylang Pro is listed as active, but its plugin file has no readable Version header and Polylang Pro is not loaded yet. Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.'
+                    : 'Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
+            );
         } elseif (!$active && $header_found) {
-            $errors[] = self::translate('A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. Activate Polylang, then return to Migrate to Tolka.');
+            $errors[] = self::translate(
+                $pro
+                    ? 'A Polylang Pro plugin file was found, but it has no readable Version header, and Polylang Pro is not active. Activate Polylang Pro, then return to Migrate to Tolka.'
+                    : 'A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. Activate Polylang, then return to Migrate to Tolka.'
+            );
         } elseif (!$active) {
             $errors[] = self::translate('Polylang is not active. Install and activate Polylang, then return to Migrate to Tolka.');
         } elseif ($version === '' && $header_found) {
-            $errors[] = self::translate('Polylang is active, but its plugin file has no readable Version header. You can continue. The migration uses the Polylang data already loaded on this site.');
+            $errors[] = self::translate(
+                $pro
+                    ? 'Polylang Pro is active, but its plugin file has no readable Version header. You can continue. The migration uses the Polylang data already loaded on this site.'
+                    : 'Polylang is active, but its plugin file has no readable Version header. You can continue. The migration uses the Polylang data already loaded on this site.'
+            );
         } elseif ($version === '') {
-            $errors[] = self::translate('Polylang is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.');
+            $errors[] = self::translate(
+                $pro
+                    ? 'Polylang Pro is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.'
+                    : 'Polylang is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.'
+            );
         }
 
         return array(
@@ -945,6 +992,15 @@ class Polylang_Detector
         $boundary = strtolower(rtrim(str_replace('\\', '/', $boundary), '/'));
 
         return $boundary !== '' && $normalized === $boundary;
+    }
+
+    private static function product_name(array $inspection): string
+    {
+        if (isset($inspection['label']) && $inspection['label'] === 'Polylang Pro') {
+            return 'Polylang Pro';
+        }
+
+        return 'Polylang';
     }
 
     private static function fill_version(string $template, string $version): string

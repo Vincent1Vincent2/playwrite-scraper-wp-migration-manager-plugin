@@ -109,9 +109,15 @@ class Polylang_Detector_Test extends TestCase
 
     const INACTIVE_INSTALLED = 'Polylang %s is installed but not active. Activate Polylang, then return to Migrate to Tolka.';
 
+    const INACTIVE_INSTALLED_PRO = 'Polylang Pro %s is installed but not active. Activate Polylang Pro, then return to Migrate to Tolka.';
+
     const INACTIVE_LISTED = 'Polylang %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.';
 
+    const INACTIVE_LISTED_PRO = 'Polylang Pro %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang Pro is switched off, activate it, then return to Migrate to Tolka.';
+
     const INACTIVE_HEADER = 'A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. Activate Polylang, then return to Migrate to Tolka.';
+
+    const INACTIVE_HEADER_PRO = 'A Polylang Pro plugin file was found, but it has no readable Version header, and Polylang Pro is not active. Activate Polylang Pro, then return to Migrate to Tolka.';
 
     const INACTIVE_LISTED_HEADER = 'Polylang is listed as active, but its plugin file has no readable Version header and Polylang is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.';
 
@@ -331,6 +337,27 @@ class Polylang_Detector_Test extends TestCase
 
         $this->assertFalse($status['active']);
         $this->assertSame('3.7.0', $status['version']);
+        $this->assertSame(array(sprintf(self::INACTIVE_INSTALLED_PRO, '3.7.0')), $status['errors']);
+    }
+
+    public function test_pro_file_without_version_names_polylang_pro(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin(
+            $root,
+            'polylang-pro/polylang.php',
+            "<?php\n/**\n * Plugin Name: Polylang Pro\n * Description: Header without a version.\n */\n"
+        );
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '',
+                'errors' => array(self::INACTIVE_HEADER_PRO),
+            ),
+            Polylang_Detector_Fixture::status()
+        );
     }
 
     public function test_windows_plugin_path_lists_the_pro_copy(): void
@@ -345,7 +372,7 @@ class Polylang_Detector_Test extends TestCase
         $status = Polylang_Detector_Fixture::status();
 
         $this->assertSame('4.2.0', $status['version']);
-        $this->assertSame(array(sprintf(self::INACTIVE_LISTED, '4.2.0')), $status['errors']);
+        $this->assertSame(array(sprintf(self::INACTIVE_LISTED_PRO, '4.2.0')), $status['errors']);
     }
 
     public function test_parent_directory_segment_is_not_treated_as_active(): void
@@ -374,7 +401,7 @@ class Polylang_Detector_Test extends TestCase
         $status = Polylang_Detector_Fixture::status();
 
         $this->assertSame('4.0.0', $status['version']);
-        $this->assertSame(array(sprintf(self::INACTIVE_LISTED, '4.0.0')), $status['errors']);
+        $this->assertSame(array(sprintf(self::INACTIVE_LISTED_PRO, '4.0.0')), $status['errors']);
     }
 
     public function test_listed_file_without_version_does_not_borrow_another_install(): void
@@ -518,7 +545,7 @@ class Polylang_Detector_Test extends TestCase
         $status = Polylang_Detector_Fixture::status();
 
         $this->assertSame('3.5.0', $status['version']);
-        $this->assertSame(array(sprintf(self::INACTIVE_INSTALLED, '3.5.0')), $status['errors']);
+        $this->assertSame(array(sprintf(self::INACTIVE_INSTALLED_PRO, '3.5.0')), $status['errors']);
     }
 
     public function test_must_use_plugin_file_is_read(): void
