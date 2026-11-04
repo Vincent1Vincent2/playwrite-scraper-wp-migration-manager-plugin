@@ -862,18 +862,235 @@
     if (!url) {
       return "Enter a public site URL, then measure again.";
     }
+    if (url.length > 2000) {
+      return "That address is longer than 2000 characters, so it was not measured. Nothing was changed.";
+    }
     if (/\s/.test(url)) {
       return "Enter the public site URL without spaces.";
     }
-    var match = url.match(/^([a-z][a-z0-9+.-]*):/i);
-    if (!match) {
-      return "Enter a public http or https URL.";
+    var scheme = urlScheme(url);
+    if (scheme === "javascript" || scheme === "data") {
+      return "javascript: and data: addresses are not measured. Nothing was changed.";
     }
-    var scheme = match[1].toLowerCase();
     if (scheme !== "http" && scheme !== "https") {
       return "Enter a public http or https URL. The speed check does not measure other kinds of addresses.";
     }
+    if (urlHasUserinfo(url)) {
+      return "That address includes a username or password, so it was not measured. Nothing was changed.";
+    }
+    if (urlHasEmptyHost(url)) {
+      return "That address has no host, so it was not measured.";
+    }
+    if (urlIsLocal(url)) {
+      return "That address is on a local or private network, so it was not measured.";
+    }
     return "";
+  }
+
+  function urlScheme(url) {
+    var match = String(url || "").match(/^([a-z][a-z0-9+.-]*):/i);
+    return match ? match[1].toLowerCase() : "";
+  }
+
+  function urlHasUserinfo(url) {
+    var match = String(url || "").match(/^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i);
+    if (match && match[1].indexOf("@") !== -1) {
+      return true;
+    }
+    try {
+      var parsed = new URL(url);
+      return parsed.username !== "" || parsed.password !== "";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function urlHasEmptyHost(url) {
+    var match = String(url || "").match(/^https?:\/\/([^/?#]*)/i);
+    if (!match) {
+      return false;
+    }
+    var authority = match[1];
+    var at = authority.lastIndexOf("@");
+    if (at !== -1) {
+      authority = authority.slice(at + 1);
+    }
+    if (authority.charAt(0) === "[" && authority.charAt(authority.length - 1) === "]") {
+      authority = authority.slice(1, -1);
+    }
+    authority = authority.replace(/\.+$/g, "").replace(/^\s+|\s+$/g, "");
+    return authority === "";
+  }
+
+  function measureHost(url) {
+    try {
+      var parsed = new URL(url);
+      var host = String(parsed.hostname || "").toLowerCase();
+      if (host.charAt(0) === "[" && host.charAt(host.length - 1) === "]") {
+        host = host.slice(1, -1);
+      }
+      return host.replace(/\.+$/g, "");
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function urlIsLocal(url) {
+    var host = measureHost(url);
+    if (!host) {
+      return false;
+    }
+    if (host === "localhost" || host.slice(-10) === ".localhost") {
+      return true;
+    }
+    var ipv4 = ipv4Long(host);
+    if (ipv4 != null && ipv4IsLocal(ipv4)) {
+      return true;
+    }
+    return ipv6IsLocal(host);
+  }
+
+  function ipv4Long(host) {
+    var quad = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (quad) {
+      return ipv4Pack([Number(quad[1]), Number(quad[2]), Number(quad[3]), Number(quad[4])], [255, 255, 255, 255]);
+    }
+    var triple = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,10})$/);
+    if (triple) {
+      return ipv4Pack([Number(triple[1]), Number(triple[2]), Number(triple[3])], [255, 255, 65535]);
+    }
+    var pair = host.match(/^(\d{1,3})\.(\d{1,10})$/);
+    if (pair) {
+      return ipv4Pack([Number(pair[1]), Number(pair[2])], [255, 16777215]);
+    }
+    if (/^\d+$/.test(host)) {
+      var number = Number(host);
+      if (String(number) === host && number >= 0 && number <= 4294967295) {
+        return number;
+      }
+    }
+    return null;
+  }
+
+  function ipv4Pack(parts, limits) {
+    var weights = parts.length === 4
+      ? [16777216, 65536, 256, 1]
+      : parts.length === 3
+        ? [16777216, 65536, 1]
+        : [16777216, 1];
+    var total = 0;
+    for (var i = 0; i < parts.length; i += 1) {
+      if (parts[i] < 0 || parts[i] > limits[i]) {
+        return null;
+      }
+      total += parts[i] * weights[i];
+    }
+    return total;
+  }
+
+  function ipv4IsLocal(number) {
+    var first = Math.floor(number / 16777216);
+    var second = Math.floor((number % 16777216) / 65536);
+    if (first === 0 || first === 10 || first === 127) {
+      return true;
+    }
+    if (first === 192 && second === 168) {
+      return true;
+    }
+    if (first === 172 && second >= 16 && second <= 31) {
+      return true;
+    }
+    return first === 169 && second === 254;
+  }
+
+  function ipv6IsLocal(host) {
+    var bytes = ipv6Bytes(host);
+    if (!bytes) {
+      return false;
+    }
+    var loopback = true;
+    var i;
+    for (i = 0; i < 15; i += 1) {
+      if (bytes[i] !== 0) {
+        loopback = false;
+        break;
+      }
+    }
+    if (loopback && bytes[15] === 1) {
+      return true;
+    }
+    var mapped = true;
+    for (i = 0; i < 10; i += 1) {
+      if (bytes[i] !== 0) {
+        mapped = false;
+        break;
+      }
+    }
+    if (mapped && bytes[10] === 255 && bytes[11] === 255) {
+      return ipv4IsLocal(
+        bytes[12] * 16777216 + bytes[13] * 65536 + bytes[14] * 256 + bytes[15]
+      );
+    }
+    if ((bytes[0] & 254) === 252) {
+      return true;
+    }
+    return bytes[0] === 254 && (bytes[1] & 192) === 128;
+  }
+
+  function ipv6Bytes(host) {
+    var value = String(host || "").split("%")[0];
+    if (value.indexOf(":") === -1) {
+      return null;
+    }
+    var halves = value.split("::");
+    if (halves.length > 2) {
+      return null;
+    }
+    var head = ipv6Side(halves[0]);
+    if (!head) {
+      return null;
+    }
+    if (halves.length === 1) {
+      return head.length === 16 ? head : null;
+    }
+    var tail = ipv6Side(halves[1]);
+    if (!tail || head.length + tail.length > 16) {
+      return null;
+    }
+    var bytes = head.slice();
+    while (bytes.length + tail.length < 16) {
+      bytes.push(0);
+    }
+    return bytes.concat(tail);
+  }
+
+  function ipv6Side(side) {
+    if (side === "") {
+      return [];
+    }
+    var parts = side.split(":");
+    var bytes = [];
+    for (var i = 0; i < parts.length; i += 1) {
+      if (parts[i].indexOf(".") !== -1) {
+        var long = ipv4Long(parts[i]);
+        if (long == null || i !== parts.length - 1) {
+          return null;
+        }
+        bytes.push(
+          Math.floor(long / 16777216) & 255,
+          Math.floor(long / 65536) & 255,
+          Math.floor(long / 256) & 255,
+          long & 255
+        );
+        continue;
+      }
+      if (!/^[0-9a-f]{1,4}$/i.test(parts[i])) {
+        return null;
+      }
+      var piece = parseInt(parts[i], 16);
+      bytes.push((piece >> 8) & 255, piece & 255);
+    }
+    return bytes;
   }
 
   function renderSpeed(container, data, url) {
