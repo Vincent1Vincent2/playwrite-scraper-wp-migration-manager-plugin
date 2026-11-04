@@ -2238,6 +2238,132 @@ class Test_Speed_Estimate extends TestCase
         }
     }
 
+    public function test_oversized_numbers_do_not_invent_a_percent()
+    {
+        $loaded = Speed_Estimate::benchmarks();
+        $metrics = array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0);
+        $too_large = 'A Tolka speed estimate is not available. The measured load time is too large to calculate.';
+
+        foreach (array(1e16, 1e20, '1e16', ' 1e20 ', -1e16) as $total) {
+            $estimate = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total),
+                $metrics,
+                $loaded
+            );
+            $this->assertUnavailable($estimate, $too_large);
+            $this->assertSame(0, $estimate['current_ms']);
+            $this->assertSame(0, $estimate['tolka_ms']);
+            $this->assertSame(0.0, $estimate['faster_percent']);
+            $this->assertSame('', $estimate['faster_label']);
+            $this->assertNotSame(946, $estimate['tolka_ms']);
+            $this->assertNotSame(971, $estimate['tolka_ms']);
+            $this->assertNotSame(5.4, $estimate['faster_percent']);
+            $this->assertNotSame(2.9, $estimate['faster_percent']);
+        }
+
+        $languages = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1e16, 'has_polylang_switcher' => true, 'script_count' => 0),
+            $loaded
+        );
+        $this->assertUnavailable(
+            $languages,
+            'A Tolka speed estimate is not available. The language count is too large to calculate.'
+        );
+        $this->assertSame('', $languages['faster_label']);
+
+        $scripts = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $loaded
+        );
+        $this->assertSame(971, $scripts['tolka_ms']);
+        $measured_scripts = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000, 'script_count' => '1e16'),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $loaded
+        );
+        $this->assertUnavailable(
+            $measured_scripts,
+            'A Tolka speed estimate is not available. The script count is too large to calculate.'
+        );
+        $this->assertNotSame(971, $measured_scripts['tolka_ms']);
+        $this->assertNotSame(2.9, $measured_scripts['faster_percent']);
+
+        $both_counts = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => '1e16', 'has_polylang_switcher' => true, 'script_count' => '1e16'),
+            $loaded
+        );
+        $this->assertUnavailable(
+            $both_counts,
+            'A Tolka speed estimate is not available. The language count is too large to calculate. The script count is too large to calculate.'
+        );
+        $this->assertSame('', $both_counts['faster_label']);
+        $this->assertNotSame(946, $both_counts['tolka_ms']);
+        $this->assertNotSame(5.4, $both_counts['faster_percent']);
+
+        $one_coefficient = $loaded;
+        $one_coefficient['polylang_extra_ms_per_language'] = 1e16;
+        $one = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            $metrics,
+            $one_coefficient
+        );
+        $this->assertUnavailable(
+            $one,
+            'A Tolka speed estimate is not available. The benchmark file has a number that is too large for extra milliseconds per language (polylang_extra_ms_per_language).'
+        );
+        $this->assertSame('', $one['faster_label']);
+        $this->assertNotSame(5.4, $one['faster_percent']);
+
+        $two_coefficients = $loaded;
+        $two_coefficients['polylang_switcher_ms'] = 1e16;
+        $two_coefficients['tolka_ms_per_language'] = '1e16';
+        $two = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $two_coefficients
+        );
+        $this->assertUnavailable(
+            $two,
+            'A Tolka speed estimate is not available. The benchmark file has numbers that are too large for language switcher milliseconds (polylang_switcher_ms) and Tolka milliseconds per language (tolka_ms_per_language).'
+        );
+
+        $ratio = $loaded;
+        $ratio['max_overhead_ratio'] = 1e20;
+        $ratio_estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            $metrics,
+            $ratio
+        );
+        $this->assertUnavailable(
+            $ratio_estimate,
+            'A Tolka speed estimate is not available. The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'
+        );
+        $this->assertStringNotContainsString('too large', $ratio_estimate['error']);
+        $this->assertStringNotContainsString('not a number', $ratio_estimate['error']);
+
+        $on = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0),
+            Speed_Estimate::benchmarks()
+        );
+        $off = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            Speed_Estimate::benchmarks()
+        );
+        $this->assertSame(946, $on['tolka_ms']);
+        $this->assertSame(5.4, $on['faster_percent']);
+        $this->assertSame('5.4% faster', $on['faster_label']);
+        $this->assertSame(971, $off['tolka_ms']);
+        $this->assertSame(2.9, $off['faster_percent']);
+        $this->assertSame('2.9% faster', $off['faster_label']);
+        $this->assertSame(35, Speed_Estimate::benchmarks()['polylang_extra_ms_per_language']);
+        $this->assertSame(0.7, Speed_Estimate::benchmarks()['max_overhead_ratio']);
+    }
+
     public function test_successful_estimate_does_not_exceed_the_measured_page()
     {
         $benchmarks = self::contractBenchmarks();
@@ -2422,7 +2548,9 @@ class Test_Speed_Estimate extends TestCase
             . '$estimate = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false, "total_ms" => 5000), array(), array());' . "\n"
             . '$with_url = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false, "url" => "https://example.com/start"), array(), array());' . "\n"
             . '$copied = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => true, "total_ms" => 1000), array("language_count" => 1, "script_count" => 0, "has_polylang_switcher" => false), $loaded);' . "\n"
-            . 'echo $estimate["error"], "\n", $with_url["error"], "\n", $estimate["basis"], "\n", $estimate["faster_label"], "\n", $estimate["faster_percent"], "\n", $estimate["current_ms"], "\n", $loaded["provenance"], "\n", $loaded["provenance_note"], "\n", $copied["provenance"], "\n", $copied["provenance_note"], "\n", $copied["faster_label"];' . "\n";
+            . '$huge = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => true, "total_ms" => 1e16), array("language_count" => 1, "script_count" => 0, "has_polylang_switcher" => true), $loaded);' . "\n"
+            . '$on = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => true, "total_ms" => 1000), array("language_count" => 1, "script_count" => 0, "has_polylang_switcher" => true), $loaded);' . "\n"
+            . 'echo $estimate["error"], "\n", $with_url["error"], "\n", $estimate["basis"], "\n", $estimate["faster_label"], "\n", $estimate["faster_percent"], "\n", $estimate["current_ms"], "\n", $loaded["provenance"], "\n", $loaded["provenance_note"], "\n", $copied["provenance"], "\n", $copied["provenance_note"], "\n", $copied["faster_label"], "\n", $huge["error"], "\n", $huge["faster_label"], "\n", $on["tolka_ms"], "\n", $on["faster_label"];' . "\n";
 
         $path = tempnam(sys_get_temp_dir(), 'tolka-i18n-');
         file_put_contents($path, $script);
@@ -2444,7 +2572,11 @@ class Test_Speed_Estimate extends TestCase
             . "Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.\n"
             . "placeholder\n"
             . "Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.\n"
-            . '2.9% faster',
+            . '2.9% faster' . "\n"
+            . "TR:A Tolka speed estimate is not available. TR:The measured load time is too large to calculate.\n"
+            . "\n"
+            . "946\n"
+            . '5.4% faster',
             $text
         );
     }
