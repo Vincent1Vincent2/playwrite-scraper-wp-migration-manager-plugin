@@ -1007,7 +1007,7 @@ class Polylang_Media
 
         return array(
             'attachment_id' => $id,
-            'file' => $this->record_string($records, $id, 'file'),
+            'file' => $this->portable_file($this->record_string($records, $id, 'file')),
             'alt' => $alt,
             'title' => $title,
         );
@@ -1042,20 +1042,59 @@ class Polylang_Media
     private function file_from_records($map, $canonical_id, $records)
     {
         $file = $this->record_string($records, $canonical_id, 'file');
-        if ($file !== '') {
-            return $file;
-        }
-
-        $ids = array_map('intval', array_values($map));
-        sort($ids, SORT_NUMERIC);
-        foreach ($ids as $id) {
-            $file = $this->record_string($records, $id, 'file');
-            if ($file !== '') {
-                return $file;
+        if ($file === '') {
+            $ids = array_map('intval', array_values($map));
+            sort($ids, SORT_NUMERIC);
+            foreach ($ids as $id) {
+                $file = $this->record_string($records, $id, 'file');
+                if ($file !== '') {
+                    break;
+                }
             }
         }
 
-        return '';
+        return $this->portable_file($file);
+    }
+
+    /**
+     * Store a path Tolka can use on another server.
+     *
+     * Absolute uploads paths become the path relative to the uploads directory.
+     * URLs and paths that are already relative stay as they are.
+     *
+     * @param string $file
+     * @param string|null $uploads_basedir
+     * @return string
+     */
+    private function portable_file($file, $uploads_basedir = null)
+    {
+        $file = str_replace('\\', '/', $this->string_value($file));
+        if ($file === '' || preg_match('#^[a-z][a-z0-9+.-]*://#i', $file) === 1) {
+            return $file;
+        }
+
+        $base = $uploads_basedir;
+        if ($base === null && function_exists('wp_get_upload_dir')) {
+            try {
+                $uploads = wp_get_upload_dir();
+            } catch (\Throwable $e) {
+                $uploads = array();
+            }
+            if (is_array($uploads) && isset($uploads['basedir'])) {
+                $base = $uploads['basedir'];
+            }
+        }
+        if (!is_string($base) || $base === '') {
+            return $file;
+        }
+
+        $base = rtrim(str_replace('\\', '/', $base), '/');
+        $prefix = $base . '/';
+        if ($base !== '' && strncmp($file, $prefix, strlen($prefix)) === 0) {
+            return substr($file, strlen($prefix));
+        }
+
+        return $file;
     }
 
     /**

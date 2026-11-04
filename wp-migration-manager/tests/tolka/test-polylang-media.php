@@ -478,6 +478,22 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('Café 港', $decoded['alt']);
     }
 
+    public function test_file_paths_are_portable()
+    {
+        $base = '/var/www/html/wp-content/uploads';
+        $this->assertSame('2024/01/a.jpg', $this->call('portable_file', array(
+            $base . '/2024/01/a.jpg',
+            $base,
+        )));
+        $this->assertSame('2024/01/a.jpg', $this->call('portable_file', array(
+            '\\var\\www\\html\\wp-content\\uploads\\2024\\01\\a.jpg',
+            $base,
+        )));
+        $this->assertSame('2024/01/a.jpg', $this->call('portable_file', array('2024/01/a.jpg', $base)));
+        $this->assertSame('https://cdn.example/a.jpg', $this->call('portable_file', array('https://cdn.example/a.jpg', $base)));
+        $this->assertSame('/var/www2/a.jpg', $this->call('portable_file', array('/var/www2/a.jpg', '/var/www')));
+    }
+
     public function test_id_query_placeholders_match_the_batch_size()
     {
         $this->assertSame('%d, %d, %d', $this->call('int_placeholders', array(3)));
