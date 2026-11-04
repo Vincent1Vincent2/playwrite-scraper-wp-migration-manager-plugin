@@ -74,6 +74,11 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
         {
             return static::header_byte_limit();
         }
+
+        public static function expose_beside(string $plugin_file): array
+        {
+            return static::directories_beside_plugin($plugin_file);
+        }
     }
 
     class Polylang_Detector_Throwing_Fixture extends WMM\Tolka\Polylang_Detector
@@ -714,6 +719,47 @@ class Polylang_Detector_Test extends TestCase
             ),
             $parsed
         );
+    }
+
+    public function test_plugins_directory_also_checks_must_use_plugins(): void
+    {
+        $plugin_file = '/var/www/wp-content/plugins/wp-migration-manager/includes/tolka/class-polylang-detector.php';
+
+        $this->assertSame(
+            array(
+                '/var/www/wp-content/plugins',
+                '/var/www/wp-content/mu-plugins',
+            ),
+            Polylang_Detector_Fixture::expose_beside($plugin_file)
+        );
+    }
+
+    public function test_must_use_plugin_also_checks_the_plugins_directory(): void
+    {
+        $plugin_file = '/var/www/wp-content/mu-plugins/wp-migration-manager/includes/tolka/class-polylang-detector.php';
+
+        $this->assertSame(
+            array(
+                '/var/www/wp-content/mu-plugins',
+                '/var/www/wp-content/plugins',
+            ),
+            Polylang_Detector_Fixture::expose_beside($plugin_file)
+        );
+    }
+
+    public function test_unrelated_project_directory_does_not_guess_mu_plugins(): void
+    {
+        $plugin_file = '/agent/repos/project/wp-migration-manager/includes/tolka/class-polylang-detector.php';
+
+        $this->assertSame(
+            array('/agent/repos/project'),
+            Polylang_Detector_Fixture::expose_beside($plugin_file)
+        );
+    }
+
+    public function test_short_plugin_path_does_not_scan_the_filesystem_root(): void
+    {
+        $this->assertSame(array(), Polylang_Detector_Fixture::expose_beside('/class-polylang-detector.php'));
     }
 
     public function test_official_file_ranks(): void

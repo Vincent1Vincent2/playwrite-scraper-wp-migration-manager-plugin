@@ -185,9 +185,8 @@ class Polylang_Detector
             $candidates[] = $content . '/mu-plugins';
         }
 
-        $sibling = dirname(__FILE__, 4);
-        if (is_string($sibling) && $sibling !== '') {
-            $candidates[] = $sibling;
+        foreach (static::directories_beside_plugin(__FILE__) as $beside) {
+            $candidates[] = $beside;
         }
 
         $directories = array();
@@ -200,6 +199,53 @@ class Polylang_Detector
         }
 
         return array_values(array_unique($directories));
+    }
+
+    /**
+     * Plugin directory that contains this file, plus mu-plugins or plugins beside it.
+     *
+     * A normal install lives in wp-content/plugins, so the sibling of that
+     * folder is wp-content/mu-plugins. The same idea runs in reverse when
+     * this plugin itself is a must-use plugin.
+     *
+     * @return string[]
+     */
+    protected static function directories_beside_plugin(string $plugin_file): array
+    {
+        $plugin_file = str_replace('\\', '/', $plugin_file);
+        if ($plugin_file === '') {
+            return array();
+        }
+
+        $plugins = dirname($plugin_file, 4);
+        if (!is_string($plugins) || $plugins === '' || $plugins === '.' || $plugins === '/') {
+            return array();
+        }
+
+        $plugins = rtrim(str_replace('\\', '/', $plugins), '/');
+        if ($plugins === '' || $plugins === '/') {
+            return array();
+        }
+
+        $directories = array($plugins);
+        $parent = dirname($plugins);
+        if (!is_string($parent) || $parent === '' || $parent === '.' || $parent === $plugins) {
+            return $directories;
+        }
+
+        $parent = rtrim(str_replace('\\', '/', $parent), '/');
+        if ($parent === '' || $parent === '/') {
+            return $directories;
+        }
+
+        $base_name = strtolower(basename($plugins));
+        if ($base_name === 'plugins') {
+            $directories[] = $parent . '/mu-plugins';
+        } elseif ($base_name === 'mu-plugins') {
+            $directories[] = $parent . '/plugins';
+        }
+
+        return $directories;
     }
 
     /**
