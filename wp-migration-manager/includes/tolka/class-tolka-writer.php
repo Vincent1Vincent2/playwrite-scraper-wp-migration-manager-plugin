@@ -1334,43 +1334,18 @@ class Tolka_Writer
      */
     private static function with_saved_header(array $package)
     {
-        $generated = self::zulu_timestamp(isset($package['generated_at']) ? $package['generated_at'] : null);
+        $generated = isset($package['generated_at']) ? $package['generated_at'] : null;
         unset($package['format'], $package['version'], $package['generated_at']);
+
+        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
+            return Tolka_Schema::header($generated) + $package;
+        }
 
         return array(
             'format' => 'tolka-migration',
             'version' => 1,
-            'generated_at' => $generated,
+            'generated_at' => self::gmt_timestamp(),
         ) + $package;
-    }
-
-    /**
-     * ISO-8601 GMT timestamp that ends with Z.
-     *
-     * @param mixed $value Candidate timestamp.
-     * @return string
-     */
-    private static function zulu_timestamp($value)
-    {
-        if (is_string($value) && substr($value, -1) === 'z') {
-            $value = substr($value, 0, -1) . 'Z';
-        }
-
-        $gmt = false;
-        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
-            $gmt = Tolka_Schema::is_gmt_timestamp($value);
-        } elseif (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|\+00:00)$/', $value)) {
-            $gmt = true;
-        }
-
-        if ($gmt) {
-            $stamp = strtotime($value);
-            if ($stamp !== false) {
-                return gmdate('Y-m-d\TH:i:s\Z', $stamp);
-            }
-        }
-
-        return self::gmt_timestamp();
     }
 
     /**
