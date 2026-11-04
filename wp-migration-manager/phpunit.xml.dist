@@ -8,6 +8,7 @@ It does not load wp-load.php and does not define WordPress functions.
 Only files whose names start with test- and end with .php are tests.
 bootstrap.php and any other PHP file in that directory are not test cases.
 Missing Tolka classes are skipped by the test that needs them.
+Two missing classes are two skips, each naming its class, and the run still succeeds.
 -->
 <phpunit bootstrap="tests/tolka/bootstrap.php" colors="true">
     <testsuites>

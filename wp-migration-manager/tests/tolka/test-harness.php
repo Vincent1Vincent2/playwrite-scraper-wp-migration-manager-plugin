@@ -1411,6 +1411,66 @@ class Harness_Test extends Tolka_Test_Case
     }
 
     /**
+     * One missing class is one skip, and the skip names that class.
+     */
+    public function test_first_missing_class_is_its_own_skip()
+    {
+        wmm_tolka_skip_without_class('First_Missing_Slice');
+    }
+
+    /**
+     * A second missing class is a second skip, and it names that class.
+     */
+    public function test_second_missing_class_is_its_own_skip()
+    {
+        wmm_tolka_skip_without_class('Second_Missing_Slice');
+    }
+
+    /**
+     * Two missing classes produce two skips, and the suite still exits successfully.
+     */
+    public function test_two_missing_classes_produce_two_skips_and_exit_successfully()
+    {
+        $binary = $this->phpunit_binary();
+
+        if ($binary === null) {
+            $this->markTestSkipped('PHPUnit could not be found for a subprocess, so this check was skipped.');
+        }
+
+        $cache = sys_get_temp_dir() . '/wmm-tolka-two-skips-' . getmypid();
+        $version_output = array();
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary) . ' --version 2>&1', $version_output);
+        $version_text = implode(' ', $version_output);
+        $extra = ' --verbose';
+        $major = 9;
+
+        if (preg_match('/PHPUnit (\d+)/', $version_text, $version_match)) {
+            $major = (int) $version_match[1];
+        }
+
+        if ($major >= 10) {
+            $extra = ' --display-skipped --do-not-fail-on-skipped --cache-directory ' . escapeshellarg($cache);
+        }
+
+        $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary)
+            . ' -c ' . escapeshellarg(WMM_TOLKA_PLUGIN_DIR . '/phpunit.xml.dist')
+            . ' --do-not-cache-result' . $extra
+            . ' --filter ' . escapeshellarg('test_first_missing_class_is_its_own_skip|test_second_missing_class_is_its_own_skip');
+        $output = array();
+        $status = 1;
+        exec($command . ' 2>&1', $output, $status);
+        $text = implode("\n", $output);
+
+        $this->assertSame(0, $status, $text);
+        $this->assertMatchesRegularExpression('/Skipped:\s+2\b/', $text);
+        $this->assertStringContainsString('WMM\\Tolka\\First_Missing_Slice', $text);
+        $this->assertStringContainsString('WMM\\Tolka\\Second_Missing_Slice', $text);
+        $this->assertGreaterThanOrEqual(2, substr_count($text, 'is not loaded, so this test was skipped'));
+        $this->assertStringNotContainsString('Fatal error', $text);
+        $this->assertStringNotContainsString('FAILURES', $text);
+    }
+
+    /**
      * Class files use the plugin's class-*.php names.
      */
     public function test_class_file_names_follow_the_plugin_pattern()
