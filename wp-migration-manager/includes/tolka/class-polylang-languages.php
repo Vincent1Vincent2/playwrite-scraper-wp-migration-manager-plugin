@@ -1435,10 +1435,10 @@ class Polylang_Languages
     private function message_only_internal()
     {
         if (!function_exists('__')) {
-            return 'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.';
+            return 'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.';
         }
 
-        return __('No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.', 'migration-manager');
+        return __('No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.', 'migration-manager');
     }
 
     /**

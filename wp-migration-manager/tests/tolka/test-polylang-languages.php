@@ -139,7 +139,7 @@ $GLOBALS['wpdb'] = new class {
 PHP
         );
         $this->assertSame(
-            'Translated: No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.',
+            'Translated: No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.',
             $internal['errors'][0]
         );
     }
@@ -1024,7 +1024,7 @@ PHP
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.',
+            'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.',
             $result['errors'][0]
         );
     }
