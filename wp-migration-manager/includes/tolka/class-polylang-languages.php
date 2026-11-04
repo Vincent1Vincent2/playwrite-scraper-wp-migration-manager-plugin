@@ -62,7 +62,8 @@ class Polylang_Languages
      * `errors` is empty when at least one language was read. Otherwise it
      * holds one sentence explaining what the site owner can do next.
      *
-     * Languages that have no posts are included. Nothing is written.
+     * Languages that have no posts are included. The default language is
+     * listed first. Nothing is written.
      *
      * @return array
      */

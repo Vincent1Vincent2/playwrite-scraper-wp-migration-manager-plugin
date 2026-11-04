@@ -212,6 +212,8 @@ PHP
 
         $result = Polylang_Languages::export();
 
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('fr', $result['items'][1]['slug']);
         $this->assertFalse($result['items'][0]['is_default']);
         $this->assertFalse($result['items'][1]['is_default']);
     }
@@ -425,6 +427,25 @@ PHP
         $this->assertTrue($second['items'][0]['is_default']);
         $this->assertSame('English', $second['items'][1]['name']);
         $this->assertSame(array(), $second['errors']);
+    }
+
+    public function test_json_option_marks_the_default_language_first()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 1),
+            $this->language_term(6, 'Français', 'fr', 'fr_FR', 'fr', 1, 0),
+        ), '');
+        $db->option_value = '{"default_lang":"fr"}';
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('fr', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertSame(6, $result['items'][0]['term_id']);
+        $this->assertSame('en', $result['items'][1]['slug']);
+        $this->assertFalse($result['items'][1]['is_default']);
     }
 
     public function test_an_empty_language_can_be_the_default()
