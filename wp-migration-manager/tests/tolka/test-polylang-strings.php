@@ -530,6 +530,27 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     }
 
     /**
+     * A backslash in the text is part of the string, not an escape to remove.
+     *
+     * @return void
+     */
+    public function test_backslashes_stay_in_the_string_and_translation()
+    {
+        $original = "Keep the \\ slash and \"quote\"\n";
+        $translated = "Garder le \\ et la \"citation\"\r\n";
+        $slashed = addslashes(serialize(array(array($original, $translated))));
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array('fr' => $slashed),
+        ));
+
+        $this->assertSame($original, $result['items'][0]['string']);
+        $this->assertSame($translated, $result['items'][0]['translations']['fr']);
+        $this->assertExportShape($result);
+    }
+
+    /**
      * @return void
      */
     public function test_a_second_export_does_not_append_duplicate_items()
