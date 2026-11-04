@@ -139,6 +139,14 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
             throw new RuntimeException('header read failed');
         }
     }
+
+    class Polylang_Detector_Reflect_Fixture extends Polylang_Detector_Api_Fixture
+    {
+        protected static function use_loaded_plugin(): bool
+        {
+            return true;
+        }
+    }
 }
 
 class Polylang_Detector_Test extends TestCase
@@ -1174,6 +1182,33 @@ class Polylang_Detector_Test extends TestCase
                 'errors' => array(self::ACTIVE_HEADER),
             ),
             $status
+        );
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_loaded_class_header_wins_over_another_installed_copy(): void
+    {
+        $running = $this->temp_dir();
+        $this->write_plugin($running, 'polylang.php', $this->wordpress_header('Polylang', '2.1.0'));
+        $class_file = $running . '/include/pll-body.php';
+        mkdir(dirname($class_file), 0777, true);
+        file_put_contents($class_file, "<?php\nclass PLL\n{\n}\n");
+        require_once $class_file;
+
+        $other = $this->temp_dir();
+        $this->write_plugin($other, 'polylang/polylang.php', $this->wordpress_header('Polylang', '9.9.9'));
+        Polylang_Detector_Reflect_Fixture::$directories = array($other);
+
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '2.1.0',
+                'errors' => array(),
+            ),
+            Polylang_Detector_Reflect_Fixture::status()
         );
     }
 

@@ -90,7 +90,7 @@ class Polylang_Detector
             return true;
         }
 
-        return class_exists('PLL') || class_exists('Polylang');
+        return class_exists('\\PLL') || class_exists('\\Polylang');
     }
 
     /**
@@ -1061,10 +1061,11 @@ class Polylang_Detector
                 }
                 $reflection = new \ReflectionFunction($name);
             } else {
-                if (!class_exists($name, false)) {
+                $global = '\\' . ltrim($name, '\\');
+                if (!class_exists($global, false)) {
                     return '';
                 }
-                $reflection = new \ReflectionClass($name);
+                $reflection = new \ReflectionClass($global);
             }
             $filename = $reflection->getFileName();
         } catch (\Throwable $throwable) {
