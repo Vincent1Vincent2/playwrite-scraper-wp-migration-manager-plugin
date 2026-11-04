@@ -787,6 +787,12 @@ HTML;
         $language = $this->analyze('<a title="a>b" hreflang="sv" href="/sv/"></a>');
         $this->assertSame(1, $language['hreflang_count']);
         $this->assertSame(1, $language['language_count']);
+
+        $inside_attribute = $this->analyze('<script data-note="></script><img src=/inside-attr.png>" src="/a.js"></script><img src="/after.png"><link rel="stylesheet" href="/a.css">');
+        $this->assertSame(1, $inside_attribute['script_count']);
+        $this->assertSame(1, $inside_attribute['image_count']);
+        $this->assertSame(1, $inside_attribute['stylesheet_count']);
+        $this->assertSame(1, $inside_attribute['language_count']);
     }
 
     public function test_comment_syntax_inside_an_attribute_is_not_a_switcher()

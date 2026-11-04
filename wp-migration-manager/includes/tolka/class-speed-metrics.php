@@ -403,7 +403,15 @@ class Speed_Metrics
                     $scripts++;
                 }
 
-                $i = self::skip_element($lower_html, $next, $name);
+                $tag = self::read_tag($lower_html, $next, $length);
+                $close = self::find_close($lower_html, $tag['next'], $name);
+
+                if ($close === null) {
+                    $i = $length;
+                } else {
+                    $i = $close['next'];
+                }
+
                 $skipped = true;
                 break;
             }
@@ -461,48 +469,6 @@ class Speed_Metrics
         }
 
         return self::is_tag_boundary($html, $i + $length);
-    }
-
-    /**
-     * Move past an element, or to the end when the closer was cut off.
-     *
-     * @param string $html Lowercased HTML.
-     * @param int    $i Offset of the opening "<".
-     * @param string $name Lowercased element name.
-     * @return int
-     */
-    private static function skip_element($html, $i, $name)
-    {
-        $length = strlen($html);
-        $gt = strpos($html, '>', $i);
-
-        if ($gt === false) {
-            return $length;
-        }
-
-        $close = '</' . $name;
-        $close_length = strlen($close);
-        $pos = $gt + 1;
-
-        while (($end = strpos($html, $close, $pos)) !== false) {
-            $j = $end + $close_length;
-
-            while ($j < $length && self::is_ascii_space($html[$j])) {
-                $j++;
-            }
-
-            if ($j >= $length) {
-                return $length;
-            }
-
-            if ($html[$j] === '>') {
-                return $j + 1;
-            }
-
-            $pos = $end + 1;
-        }
-
-        return $length;
     }
 
     /**
