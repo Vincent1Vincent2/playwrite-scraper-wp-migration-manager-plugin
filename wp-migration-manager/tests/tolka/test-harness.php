@@ -121,7 +121,7 @@ abstract class Tolka_Test_Case extends TestCase
             return call_user_func_array(array($class, $method), $arguments);
         } catch (Throwable $error) {
             if ($this->needs_wordpress($error)) {
-                $this->markTestSkipped(
+                wmm_tolka_mark_skipped(
                     $class . '::' . $method . ' needs WordPress, so this test was skipped. ' . $error->getMessage()
                 );
             }
@@ -1468,6 +1468,40 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertGreaterThanOrEqual(2, substr_count($text, 'is not loaded, so this test was skipped'));
         $this->assertStringNotContainsString('Fatal error', $text);
         $this->assertStringNotContainsString('FAILURES', $text);
+    }
+
+    /**
+     * A skip names the missing class and does not leak a path from outside the plugin.
+     */
+    public function test_skip_sentence_names_the_class_and_hides_outside_paths()
+    {
+        $outside = $this->make_temp_dir();
+        file_put_contents(
+            $outside . '/class-outside-path.php',
+            "<?php\nnamespace WMM\\Tolka;\n\nwmm_tolka_outside_path_missing();\n"
+        );
+        $previous = wmm_tolka_load_errors();
+
+        try {
+            wmm_tolka_load_classes($outside);
+
+            try {
+                wmm_tolka_skip_without_class('Outside_Path');
+                $this->fail('A missing class should skip the test.');
+            } catch (Throwable $error) {
+                $message = $error->getMessage();
+                $this->assertTrue($this->is_skip_exception($error), get_class($error));
+                $this->assertStringContainsString('WMM\\Tolka\\Outside_Path', $message);
+                $this->assertStringContainsString('skipped', strtolower($message));
+                $this->assertStringNotContainsString($outside, $message);
+                $this->assertStringNotContainsString(sys_get_temp_dir(), $message);
+                $this->assertStringNotContainsString('/tmp/', $message);
+                $this->assertDoesNotMatchRegularExpression('#/(?:[^\\s/:]+/)+#', $message);
+                $this->assert_finished_sentence($message, 'outside path');
+            }
+        } finally {
+            $GLOBALS['wmm_tolka_load_errors'] = $previous;
+        }
     }
 
     /**
