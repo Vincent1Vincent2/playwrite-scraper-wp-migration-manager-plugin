@@ -137,6 +137,37 @@ if (class_exists(__NAMESPACE__ . '\\Speed_Loader', false)) {
 }
 
 /**
+ * Case-insensitive header bag, like WordPress's HTTP header dictionary.
+ */
+class Speed_Loader_Header_Bag
+{
+    /**
+     * @var array
+     */
+    private $items = array();
+
+    /**
+     * @param array $items Header names and values.
+     */
+    public function __construct(array $items)
+    {
+        foreach ($items as $key => $value) {
+            $this->items[strtolower((string) $key)] = $value;
+        }
+    }
+
+    /**
+     * @param mixed $offset Header name.
+     * @return mixed
+     */
+    public function offsetGet($offset)
+    {
+        $key = strtolower((string) $offset);
+        return isset($this->items[$key]) ? $this->items[$key] : null;
+    }
+}
+
+/**
  * Transport failure stub. It is not a WordPress WP_Error.
  */
 class Speed_Loader_Transport_Error
@@ -849,6 +880,7 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame(0, $result['html_bytes'], $location);
         $this->assertSame(302, $result['status_code'], $location);
         $this->assertGreaterThanOrEqual(0, $result['total_ms'], $location);
+        $this->assertSame('https://example.com/start', $result['url'], $location);
         $this->assertSame(array('https://example.com/start'), Speed_Loader_Harness::$requested_urls, $location);
         $this->assertStringNotContainsString('secret', (string) json_encode($result));
         $this->assertStringNotContainsString('should not load', (string) json_encode($result));
@@ -873,6 +905,7 @@ class Speed_Loader_Test extends TestCase
             'unbracketed ipv6' => array('http://::1/secret'),
             'unspecified v4' => array('http://0.0.0.0/x'),
             'unspecified v6' => array('http://[::]/x'),
+            'userinfo hides loopback' => array('http://example.com@127.0.0.1/secret'),
             'ten boundary' => array('http://10.255.255.255/'),
             'lan boundary' => array('http://192.168.255.255/'),
         );
@@ -1064,6 +1097,27 @@ class Speed_Loader_Test extends TestCase
         );
     }
 
+    public function test_case_insensitive_location_header_is_checked_first()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        $redirect = $this->http_response(302, '<html>secret</html>');
+        $redirect['headers'] = new Speed_Loader_Header_Bag(array(
+            'LoCaTiOn' => 'http://192.168.8.8/secret',
+        ));
+        Speed_Loader_Harness::$queue = array(
+            $redirect,
+            $this->http_response(200, '<html>no</html>'),
+        );
+
+        $result = Speed_Loader_Harness::measure('https://example.com/');
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('', $result['html']);
+        $this->assertSame(302, $result['status_code']);
+        $this->assertSame(array('https://example.com/'), Speed_Loader_Harness::$requested_urls);
+    }
+
     public function test_location_header_list_is_read_before_the_next_hop()
     {
         $this->requireHarness();
@@ -1106,6 +1160,25 @@ class Speed_Loader_Test extends TestCase
             Speed_Loader_Harness::$requested_urls
         );
         $this->assertStringNotContainsString('secret', (string) json_encode($result));
+    }
+
+    public function test_statuses_from_200_through_299_keep_html()
+    {
+        $this->requireHarness();
+
+        foreach (array(200, 201, 204, 299) as $code) {
+            $body = ($code === 204) ? '' : '<html>ok</html>';
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            Speed_Loader_Harness::$response = $this->http_response($code, $body);
+            $result = Speed_Loader_Harness::measure('https://example.com/');
+
+            $this->assertTrue($result['ok'], (string) $code);
+            $this->assertSame($body, $result['html'], (string) $code);
+            $this->assertSame($code, $result['status_code'], (string) $code);
+            $this->assertLessThanOrEqual(2000000, strlen($result['html']), (string) $code);
+            $this->assertSame('', $result['error'], (string) $code);
+        }
     }
 
     public function test_status_outside_success_range_drops_html()
