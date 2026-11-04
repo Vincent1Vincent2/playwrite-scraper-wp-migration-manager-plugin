@@ -161,6 +161,49 @@ namespace WMM\Tolka\RunnerTest {
         }
     }
 
+    class InstanceParent
+    {
+        public function export()
+        {
+            return array(
+                'items' => array(array('title' => 'Inherited', 'group' => 'post:9')),
+                'errors' => array(),
+            );
+        }
+    }
+
+    class InstanceChild extends InstanceParent
+    {
+        public static $constructed = 0;
+
+        public function __construct()
+        {
+            self::$constructed++;
+        }
+    }
+
+    class StaticParent
+    {
+        public static function export()
+        {
+            return array(
+                'items' => array(array('title' => 'Static parent', 'status' => 'publish')),
+                'errors' => array(),
+            );
+        }
+    }
+
+    class StaticChild extends StaticParent
+    {
+        public static $constructed = 0;
+
+        public function __construct()
+        {
+            self::$constructed++;
+            throw new \RuntimeException('do not construct static child');
+        }
+    }
+
     class Schema
     {
         public static $parts = null;
@@ -1531,6 +1574,31 @@ namespace {
                 $this->assertNotContains($class, $run['missing']);
                 $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
             }
+        }
+
+        public function test_inherited_export_uses_the_declared_shape()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\InstanceChild::$constructed = 0;
+            \WMM\Tolka\RunnerTest\StaticChild::$constructed = 0;
+            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\InstanceChild';
+            Migration_Runner_Test_Double::$map['terms'] = 'WMM\\Tolka\\RunnerTest\\StaticChild';
+
+            $preview = Migration_Runner_Test_Double::preview();
+
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\InstanceChild::$constructed);
+            $this->assertSame('Inherited', $preview['sections']['posts']['labels'][0]);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\StaticChild::$constructed);
+            $this->assertSame('Static parent', $preview['sample']['terms'][0]['title']);
+            $this->assertSame('ready', $preview['sections']['posts']['status']);
+            $this->assertSame('ready', $preview['sections']['terms']['status']);
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertTrue($run['ok']);
+            $this->assertSame(2, \WMM\Tolka\RunnerTest\InstanceChild::$constructed);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\StaticChild::$constructed);
+            $this->assertSame('Inherited', \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['title']);
+            $this->assertSame('Static parent', \WMM\Tolka\RunnerTest\Writer::$package['terms'][0]['title']);
         }
     }
 }
