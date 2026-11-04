@@ -751,6 +751,11 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(856, $estimate['tolka_ms']);
         $this->assertSame(14.4, $estimate['faster_percent']);
         $this->assertSame($this->fiveUsedCoefficients($benchmarks), $estimate['coefficients']);
+        $this->assertSame(35, $estimate['coefficients']['polylang_extra_ms_per_language']);
+        $this->assertNotSame($benchmarks['polylang_extra_ms_per_language'], $estimate['coefficients']['polylang_extra_ms_per_language']);
+        $after = Speed_Estimate::benchmarks();
+        $this->assertSame(35, $after['polylang_extra_ms_per_language']);
+        $this->assertSame(0.7, $after['max_overhead_ratio']);
 
         $decimal = Speed_Estimate::project(
             array('ok' => true, 'total_ms' => '1000.0'),
@@ -774,8 +779,12 @@ class Test_Speed_Estimate extends TestCase
         $with_switcher = Speed_Estimate::project($measurement, $on, self::contractBenchmarks());
         $without_switcher = Speed_Estimate::project($measurement, $off, self::contractBenchmarks());
 
-        $this->assertSame(909, $with_switcher['tolka_ms']);
         $this->assertSame(934, $without_switcher['tolka_ms']);
+        $this->assertSame(25, $without_switcher['coefficients']['polylang_switcher_ms']);
+        $this->assertSame(
+            $with_switcher['coefficients'],
+            $without_switcher['coefficients']
+        );
 
         foreach (array(true, 1, 1.0, '1', 'true', 'yes', ' YES ', 'on') as $flag) {
             $metrics = $on;
@@ -1021,6 +1030,15 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0, $estimate['overhead_ms']);
         $this->assertSame(0.0, $estimate['faster_percent']);
         $this->assertSame('0.0% faster', $estimate['faster_label']);
+        $this->assertSame($this->fiveUsedCoefficients($benchmarks), $estimate['coefficients']);
+        $this->assertSame(0, $estimate['coefficients']['polylang_extra_ms_per_language']);
+        $this->assertSame(0.7, $estimate['coefficients']['max_overhead_ratio']);
+        $again = Speed_Estimate::benchmarks();
+        $this->assertSame(35, $again['polylang_extra_ms_per_language']);
+        $this->assertSame(25, $again['polylang_switcher_ms']);
+        $this->assertSame(8, $again['polylang_extra_ms_per_script']);
+        $this->assertSame(6, $again['tolka_ms_per_language']);
+        $this->assertSame(0.7, $again['max_overhead_ratio']);
     }
 
     public function test_failed_measurement_does_not_invent_a_percent()
