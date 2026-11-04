@@ -141,7 +141,7 @@ class Polylang_Terms_Test extends TestCase
                 array(
                     'taxonomy' => 'category',
                     'translations' => array(
-                        'en' => array('id' => '10', 'name' => 'News', 'slug' => 'news'),
+                        'en' => array('id' => '10', 'name' => 'News', 'slug' => 'news', 'description' => 'Latest'),
                         'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter'),
                     ),
                 ),
@@ -154,13 +154,13 @@ class Polylang_Terms_Test extends TestCase
                 'taxonomy' => 'category',
                 'group' => 'term:4',
                 'translations' => array(
-                    'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter', 'parent' => 0),
-                    'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'parent' => 0),
+                    'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter', 'description' => '', 'parent' => 0),
+                    'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'description' => 'Latest', 'parent' => 0),
                 ),
             ),
         ), $result['items']);
         $this->assertSame(array('taxonomy', 'group', 'translations'), array_keys($result['items'][0]));
-        $this->assertSame(array('id', 'name', 'slug', 'parent'), array_keys($result['items'][0]['translations']['sv']));
+        $this->assertSame(array('id', 'name', 'slug', 'description', 'parent'), array_keys($result['items'][0]['translations']['sv']));
     }
 
     public function test_group_without_the_default_language_uses_the_lowest_term_id(): void
@@ -181,7 +181,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame('term:12', $result['items'][0]['group']);
         $this->assertSame(
-            array('id' => 30, 'name' => '', 'slug' => '', 'parent' => 0),
+            array('id' => 30, 'name' => '', 'slug' => '', 'description' => '', 'parent' => 0),
             $result['items'][0]['translations']['de']
         );
         $this->assertSame(9, $result['items'][0]['translations']['fr']['parent']);
@@ -434,7 +434,7 @@ class Polylang_Terms_Test extends TestCase
             serialize(array('en' => 70)),
         );
         $database->catalog = array(
-            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(10, 'News', 'news', 'category', 'en', 0, 'Latest news'),
             $this->term(11, 'Nachrichten', 'nachrichten', 'category', 'de', 6),
             $this->term(15, 'Child', 'child', 'category', 'en', 10),
             $this->term(12, 'Actualités', 'actualites', 'product_cat', 'fr'),
@@ -461,8 +461,8 @@ class Polylang_Terms_Test extends TestCase
         $news = $this->itemByGroup($result['items'], 'term:10');
         $this->assertSame('category', $news['taxonomy']);
         $this->assertSame(array(
-            'de' => array('id' => 11, 'name' => 'Nachrichten', 'slug' => 'nachrichten', 'parent' => 6),
-            'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'parent' => 0),
+            'de' => array('id' => 11, 'name' => 'Nachrichten', 'slug' => 'nachrichten', 'description' => '', 'parent' => 6),
+            'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'description' => 'Latest news', 'parent' => 0),
         ), $news['translations']);
 
         $product = $this->itemByGroup($result['items'], 'term:12');
@@ -471,7 +471,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame('Actualités', $product['translations']['fr']['name']);
 
         $single = $this->itemByGroup($result['items'], 'term:21');
-        $this->assertSame(array('sv' => array('id' => 21, 'name' => 'Ensam', 'slug' => 'ensam', 'parent' => 0)), $single['translations']);
+        $this->assertSame(array('sv' => array('id' => 21, 'name' => 'Ensam', 'slug' => 'ensam', 'description' => '', 'parent' => 0)), $single['translations']);
 
         $alpha = $this->itemByGroup($result['items'], 'term:30');
         $this->assertSame(array('en'), array_keys($alpha['translations']));
@@ -733,7 +733,7 @@ class Polylang_Terms_Test extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function term($id, $name, $slug, $taxonomy, $lang, $parent = 0)
+    private function term($id, $name, $slug, $taxonomy, $lang, $parent = 0, $description = '')
     {
         return array(
             'id' => $id,
@@ -742,6 +742,7 @@ class Polylang_Terms_Test extends TestCase
             'taxonomy' => $taxonomy,
             'lang' => $lang,
             'parent' => $parent,
+            'description' => $description,
         );
     }
 
@@ -960,6 +961,7 @@ class Polylang_Terms_Database
             'slug' => $term['slug'],
             'taxonomy' => $term['taxonomy'],
             'parent' => isset($term['parent']) ? (int) $term['parent'] : 0,
+            'description' => isset($term['description']) ? $term['description'] : '',
         );
     }
 }

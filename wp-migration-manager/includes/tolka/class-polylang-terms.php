@@ -46,7 +46,8 @@ class Polylang_Terms
      * Export term translation groups and terms Polylang never linked.
      *
      * Each item has taxonomy, group (`term:{id}`), and translations.
-     * A translation is keyed by language slug and has id, name, slug, and parent.
+     * A translation is keyed by language slug and has id, name, slug, description, and parent.
+     * description is the term description in that language.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
      * The group id is the default-language term when that translation exists,
      * otherwise the lowest term id in the group.
@@ -287,6 +288,7 @@ class Polylang_Terms
                     'id' => $id,
                     'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
                     'slug' => $this->stringValue(isset($term['slug']) ? $term['slug'] : ''),
+                    'description' => $this->stringValue(isset($term['description']) ? $term['description'] : ''),
                     'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
                 ),
             ),
@@ -398,6 +400,7 @@ class Polylang_Terms
                 'id' => $termId,
                 'name' => $term['name'],
                 'slug' => $term['slug'],
+                'description' => isset($term['description']) ? $term['description'] : '',
                 'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
             );
         }
@@ -451,6 +454,7 @@ class Polylang_Terms
                 'id' => $translatedId,
                 'name' => $details['name'],
                 'slug' => $details['slug'],
+                'description' => isset($details['description']) ? $details['description'] : '',
                 'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
             );
         }
@@ -588,6 +592,7 @@ class Polylang_Terms
                         'id' => $termId,
                         'name' => $term['name'],
                         'slug' => $term['slug'],
+                        'description' => isset($term['description']) ? $term['description'] : '',
                         'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
                     );
                 }
@@ -997,7 +1002,7 @@ class Polylang_Terms
         }
 
         $placeholders = implode(', ', array_fill(0, count($clean), '%d'));
-        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent, tt.description
             FROM {$terms} AS t
             INNER JOIN {$taxonomy} AS tt ON tt.term_id = t.term_id
             WHERE t.term_id IN ({$placeholders})";
@@ -1023,7 +1028,7 @@ class Polylang_Terms
         $all = array();
         $seen = array();
         $guard = 0;
-        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent, tt.description
             FROM {$terms} AS t
             INNER JOIN {$taxonomyTable} AS tt ON tt.term_id = t.term_id
             WHERE tt.taxonomy = %s
@@ -1226,6 +1231,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term->name) ? $term->name : '');
             $slug = $this->stringValue(isset($term->slug) ? $term->slug : '');
             $taxonomy = $this->stringValue(isset($term->taxonomy) ? $term->taxonomy : '');
+            $description = $this->stringValue(isset($term->description) ? $term->description : '');
             $parent = $this->parentId(isset($term->parent) ? $term->parent : 0);
         } elseif (is_array($term)) {
             if (isset($term['term_id'])) {
@@ -1238,6 +1244,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term['name']) ? $term['name'] : '');
             $slug = $this->stringValue(isset($term['slug']) ? $term['slug'] : '');
             $taxonomy = $this->stringValue(isset($term['taxonomy']) ? $term['taxonomy'] : '');
+            $description = $this->stringValue(isset($term['description']) ? $term['description'] : '');
             $parent = $this->parentId(isset($term['parent']) ? $term['parent'] : 0);
         } else {
             return null;
@@ -1255,6 +1262,7 @@ class Polylang_Terms
             'name' => $name,
             'slug' => $slug,
             'taxonomy' => $taxonomy,
+            'description' => $description,
             'parent' => $parent,
         );
     }
@@ -1269,11 +1277,13 @@ class Polylang_Terms
             $id = isset($row['id']) ? (int) $row['id'] : 0;
             $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
             $slug = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
+            $description = $this->stringValue(isset($row['description']) ? $row['description'] : '');
             $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
         } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
             $id = (int) $row;
             $name = '';
             $slug = '';
+            $description = '';
             $parent = 0;
         } else {
             return null;
@@ -1285,6 +1295,7 @@ class Polylang_Terms
             'id' => $id,
             'name' => $name,
             'slug' => $slug,
+            'description' => $description,
             'parent' => $parent,
         );
     }
