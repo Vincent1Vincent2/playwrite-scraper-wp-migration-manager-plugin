@@ -606,6 +606,23 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($before, $after);
     }
 
+    public function test_version_zero_with_trailing_space_and_windows_line_endings_is_kept(): void
+    {
+        $root = $this->temp_dir();
+        $contents = "<?php\r\n/**\r\n * Plugin Name: Polylang\r\n * Version: 0 \r\n */\r\n";
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $first = Polylang_Detector_Fixture::status();
+        $second = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('0', $first['version']);
+        $this->assertSame(1, strlen($first['version']));
+        $this->assertSame($first, $second);
+        $this->assertSame(1, substr_count($second['errors'][0], 'Polylang 0 is installed but not active.'));
+        $this->assertSame($second['errors'], array_values(array_unique($second['errors'])));
+    }
+
     public function test_version_3_9_1_with_carriage_returns_only_is_unchanged(): void
     {
         $root = $this->temp_dir();
