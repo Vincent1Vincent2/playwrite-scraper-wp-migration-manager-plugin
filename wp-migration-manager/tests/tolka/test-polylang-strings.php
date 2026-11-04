@@ -473,6 +473,117 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     /**
      * @return void
      */
+    public function test_swedish_letters_are_kept_in_names_strings_and_translations()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('sv', 'en'),
+            'registered' => array(
+                array(
+                    'name' => 'Välkommen',
+                    'string' => 'Färjor till öar',
+                    'context' => 'Ångbåt',
+                ),
+            ),
+            'mo' => array(
+                'en' => array(array('Färjor till öar', 'Ferries to islands')),
+                'sv' => array(array('Färjor till öar', 'Färjor till öarna')),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Välkommen', $result['items'][0]['name']);
+        $this->assertSame('Färjor till öar', $result['items'][0]['string']);
+        $this->assertSame('Ångbåt', $result['items'][0]['context']);
+        $this->assertSame('Färjor till öarna', $result['items'][0]['translations']['sv']);
+        $this->assertSame('Ferries to islands', $result['items'][0]['translations']['en']);
+        $this->assertExportShape($result);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'sv'),
+        );
+        $db->option_rows = array(
+            array(
+                'option_name' => 'polylang_wpml_strings',
+                'option_value' => serialize(array(
+                    'ferry' => array(
+                        'name' => 'Ångbåt',
+                        'string' => 'Öppet för säsongen',
+                        'context' => 'Skärgård',
+                    ),
+                )),
+            ),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 10,
+                'meta_value' => serialize(array(
+                    array('Öppet för säsongen', 'Öppet även på lördag'),
+                )),
+            ),
+        );
+        $exported = $this->probe($db, array(), true)->export();
+        $this->assertSame('Ångbåt', $exported['items'][0]['name']);
+        $this->assertSame('Öppet för säsongen', $exported['items'][0]['string']);
+        $this->assertSame('Skärgård', $exported['items'][0]['context']);
+        $this->assertSame('Öppet även på lördag', $exported['items'][0]['translations']['sv']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_more_than_thirty_errors_keeps_the_first_thirty_and_a_count()
+    {
+        $errors = array();
+        for ($i = 1; $i <= 35; $i++) {
+            $errors[] = 'Problem ' . $i . ' needs attention.';
+        }
+        $many = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('sv'),
+            'registered' => array(
+                array('name' => 'Ö', 'string' => 'ä', 'context' => 'å'),
+            ),
+            'errors' => $errors,
+        ));
+        $this->assertSame('Ö', $many['items'][0]['name']);
+        $this->assertSame('ä', $many['items'][0]['string']);
+        $this->assertSame('å', $many['items'][0]['context']);
+        $this->assertCount(31, $many['errors']);
+        $this->assertSame('Problem 1 needs attention.', $many['errors'][0]);
+        $this->assertSame('Problem 30 needs attention.', $many['errors'][29]);
+        $this->assertSame('5 more errors were left out.', $many['errors'][30]);
+        $this->assertNotContains('Problem 31 needs attention.', $many['errors']);
+        $this->assertExportShape($many);
+
+        $one_over = $errors;
+        $one_over = array_slice($errors, 0, 31);
+        $barely = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'errors' => $one_over,
+        ));
+        $this->assertCount(31, $barely['errors']);
+        $this->assertSame('1 more error was left out.', $barely['errors'][30]);
+
+        $exact = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'errors' => array_slice($errors, 0, 30),
+        ));
+        $this->assertCount(30, $exact['errors']);
+        $this->assertSame('Problem 30 needs attention.', $exact['errors'][29]);
+
+        $repeated = array_fill(0, 40, 'The same problem was reported.');
+        $collapsed = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'errors' => $repeated,
+        ));
+        $this->assertSame(array('The same problem was reported.'), $collapsed['errors']);
+    }
+
+    /**
+     * @return void
+     */
     public function test_newlines_and_quotation_marks_are_kept()
     {
         $original = "She said \"hello\"\r\nThen 'goodbye'\n";
