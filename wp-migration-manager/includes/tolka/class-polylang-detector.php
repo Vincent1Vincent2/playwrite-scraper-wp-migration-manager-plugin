@@ -635,7 +635,7 @@ class Polylang_Detector
         return array(
             'active' => $active,
             'version' => $version,
-            'errors' => array_values($errors),
+            'errors' => self::finished_errors($errors),
         );
     }
 
@@ -649,9 +649,9 @@ class Polylang_Detector
         return array(
             'active' => false,
             'version' => '',
-            'errors' => array(
+            'errors' => self::finished_errors(array(
                 self::translate('Polylang could not be checked on this site. Reload Migrate to Tolka and try again.'),
-            ),
+            )),
         );
     }
 
@@ -982,6 +982,8 @@ class Polylang_Detector
 
     /**
      * Keep a header version only when it is a single version token.
+     *
+     * "0" is a real version. Comparisons use === '' because empty("0") is true.
      */
     private static function sanitize_version(string $version): string
     {
@@ -994,6 +996,27 @@ class Polylang_Detector
         }
 
         return $version;
+    }
+
+    /**
+     * @param array<mixed> $errors
+     * @return string[]
+     */
+    private static function finished_errors(array $errors): array
+    {
+        $clean = array();
+        foreach ($errors as $error) {
+            if (!is_string($error)) {
+                continue;
+            }
+            $error = trim($error);
+            if ($error === '') {
+                continue;
+            }
+            $clean[] = $error;
+        }
+
+        return $clean;
     }
 
     /**

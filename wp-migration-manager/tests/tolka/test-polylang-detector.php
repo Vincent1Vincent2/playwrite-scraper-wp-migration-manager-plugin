@@ -382,6 +382,111 @@ class Polylang_Detector_Test extends TestCase
         );
     }
 
+    public function test_version_zero_is_kept(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin(
+            $root,
+            'polylang/polylang.php',
+            "<?php\n/**\n * Plugin Name: Polylang\n * Version: 0\n */\n"
+        );
+        $this->write_plugin($root, 'polylang-pro/polylang.php', $this->header_without_version('Polylang Pro'));
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+        $again = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('0', $status['version']);
+        $this->assertSame(
+            array('Polylang 0 is installed but not active. A Polylang Pro plugin file was also found, but it has no readable Version header. Activate Polylang, then return to Migrate to Tolka.'),
+            $status['errors']
+        );
+        $this->assertSame($status, $again);
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
+    public function test_active_version_zero_has_no_errors(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '0'));
+        Polylang_Detector_Fixture::$directories = array($root);
+        Polylang_Detector_Fixture::$active = true;
+
+        $status = Polylang_Detector_Fixture::status();
+        $again = Polylang_Detector_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '0',
+                'errors' => array(),
+            ),
+            $status
+        );
+        $this->assertSame($status, $again);
+    }
+
+    public function test_version_zero_on_pro_is_kept_when_free_has_no_version_line(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->header_without_version('Polylang'));
+        $this->write_plugin(
+            $root,
+            'polylang-pro/polylang.php',
+            "<?php\n/**\n * Plugin Name: Polylang Pro\n * Version: 0\n */\n"
+        );
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('0', $status['version']);
+        $this->assertSame(
+            array('Polylang Pro 0 is installed but not active. A Polylang plugin file was also found, but it has no readable Version header. Activate Polylang Pro, then return to Migrate to Tolka.'),
+            $status['errors']
+        );
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
+    public function test_status_is_safe_to_call_twice(): void
+    {
+        $seen = array();
+        set_error_handler(
+            static function () use (&$seen) {
+                $seen[] = 'outer';
+
+                return true;
+            }
+        );
+
+        try {
+            $root = $this->temp_dir();
+            $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '0.0.0'));
+            Polylang_Detector_Fixture::$directories = array($root);
+
+            $first = Polylang_Detector_Fixture::status();
+            $second = Polylang_Detector_Fixture::status();
+
+            $this->assertSame($first, $second);
+            $this->assertSame('0.0.0', $first['version']);
+            $this->assertSame(
+                array('Polylang 0.0.0 is installed but not active. Activate Polylang, then return to Migrate to Tolka.'),
+                $first['errors']
+            );
+            $this->assertErrorsAreFinishedSentences($first['errors']);
+
+            $thrown_first = Polylang_Detector_Read_Throws_Fixture::status();
+            $thrown_second = Polylang_Detector_Read_Throws_Fixture::status();
+            $this->assertSame($thrown_first, $thrown_second);
+            $this->assertFalse($thrown_first['active']);
+            $this->assertErrorsAreFinishedSentences($thrown_first['errors']);
+
+            trigger_error('after status', E_USER_WARNING);
+            $this->assertSame(array('outer'), $seen);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
     public function test_plugin_header_with_no_version_line(): void
     {
         $root = $this->temp_dir();
@@ -1273,6 +1378,17 @@ class Polylang_Detector_Test extends TestCase
         file_put_contents($path, $contents);
 
         return $path;
+    }
+
+    private function assertErrorsAreFinishedSentences(array $errors): void
+    {
+        $this->assertNotEmpty($errors);
+        foreach ($errors as $index => $error) {
+            $this->assertIsInt($index);
+            $this->assertIsString($error);
+            $this->assertNotSame('', $error);
+            $this->assertMatchesRegularExpression('/\.$/', $error);
+        }
     }
 
     private function polylang_api_stub(): string
