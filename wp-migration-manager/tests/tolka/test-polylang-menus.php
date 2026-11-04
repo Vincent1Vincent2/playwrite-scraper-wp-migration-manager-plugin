@@ -1933,6 +1933,73 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(1, array_count_values($this->locations($second))['primary']);
     }
 
+    public function test_sv_title_decodes_swedish_entities_once_and_drops_null_bytes(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'en',
+            'languages' => array('en', 'sv'),
+            'menus' => array(8 => 'Meny'),
+            'term_languages' => array(8 => 'sv'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('sv' => 8),
+                    ),
+                ),
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => 30,
+                        'parent' => '10',
+                        'title' => "R&amp;auml;k\0sm&ouml;rg&aring;s",
+                        'url' => "https://example.com/r%C3%A4tt\0",
+                        'object' => 'custom',
+                        'object_id' => 4,
+                        'position' => 2,
+                    ),
+                    array(
+                        'id' => 31,
+                        'parent' => '10',
+                        'title' => "&#214;\0l",
+                        'url' => "https://example.com/\0öl",
+                        'object' => 'custom',
+                        'object_id' => 5,
+                        'position' => 3,
+                    ),
+                    array(
+                        'id' => 10,
+                        'parent' => '0',
+                        'title' => 'Mat',
+                        'url' => 'https://example.com/mat',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 9,
+                    ),
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $items = $this->location($second, 'primary')['translations']['sv']['items'];
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(array('Mat'), array($items[0]['title']));
+        $this->assertSame('R&auml;ksmörgås', $items[0]['children'][0]['title']);
+        $this->assertSame('https://example.com/r%C3%A4tt', $items[0]['children'][0]['url']);
+        $this->assertSame(10, $items[0]['children'][0]['parent']);
+        $this->assertStringNotContainsString("\0", $items[0]['children'][0]['title']);
+        $this->assertStringNotContainsString("\0", $items[0]['children'][0]['url']);
+        $this->assertSame('Öl', $items[0]['children'][1]['title']);
+        $this->assertSame('https://example.com/öl', $items[0]['children'][1]['url']);
+        $this->assertSame(10, $items[0]['children'][1]['parent']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
+    }
+
     public function test_sv_siblings_follow_position_and_keep_swedish_classes(): void
     {
         $fixture = $this->fixture(array(
@@ -2197,6 +2264,119 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(array('meny-öl', 'sen'), $items[0]['children'][1]['classes']);
         $this->assertSame(array(), $second['errors']);
         $this->assertSame(1, $counts['primary']);
+    }
+
+    public function test_database_sv_title_decodes_swedish_entities_once(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->menus = array(
+            array(
+                'id' => 13,
+                'name' => 'Meny',
+                'slug' => 'meny',
+            ),
+        );
+        $database->term_languages = array(
+            13 => 'pll_sv',
+        );
+        $database->term_translations = array();
+        $database->menu_posts = array(
+            13 => array(
+                array(
+                    'id' => 41,
+                    'title' => "R&amp;auml;k\0sm&ouml;rg&aring;s",
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 2,
+                ),
+                array(
+                    'id' => 42,
+                    'title' => "&#214;\0l",
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 3,
+                ),
+                array(
+                    'id' => 40,
+                    'title' => 'Mat',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 9,
+                ),
+            ),
+        );
+        $database->meta[41] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '4',
+            '_menu_item_menu_item_parent' => '40',
+            '_menu_item_url' => "https://example.com/r%C3%A4tt\0",
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[42] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '5',
+            '_menu_item_menu_item_parent' => '40',
+            '_menu_item_url' => "https://example.com/\0öl",
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[40] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '1',
+            '_menu_item_menu_item_parent' => '0',
+            '_menu_item_url' => 'https://example.com/mat',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'en',
+            'nav_menus' => array(
+                'flavor' => array(
+                    'primary' => array('sv' => 13),
+                ),
+            ),
+        ));
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $menus = new Polylang_Menus();
+            $first = $menus->export();
+            $second = $menus->export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $items = $this->location($second, 'primary')['translations']['sv']['items'];
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame('Mat', $items[0]['title']);
+        $this->assertSame('R&auml;ksmörgås', $items[0]['children'][0]['title']);
+        $this->assertSame('https://example.com/r%C3%A4tt', $items[0]['children'][0]['url']);
+        $this->assertSame(40, $items[0]['children'][0]['parent']);
+        $this->assertStringNotContainsString("\0", $items[0]['children'][0]['title']);
+        $this->assertStringNotContainsString("\0", $items[0]['children'][0]['url']);
+        $this->assertSame('Öl', $items[0]['children'][1]['title']);
+        $this->assertSame('https://example.com/öl', $items[0]['children'][1]['url']);
+        $this->assertSame(40, $items[0]['children'][1]['parent']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
     }
 
     public function test_nested_item_stays_under_its_parent_for_a_lowercased_default(): void
