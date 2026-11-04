@@ -1141,6 +1141,39 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(1, $second['items']);
     }
 
+    public function test_a_category_description_is_not_read_as_a_menu_or_a_group(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $menuMarkup = '<div class="nav_menu">åäö</div>';
+        $storedMap = 'a:1:{s:2:"en";i:99;}';
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(8, 'Nyheter', 'nyheter', 'category', 'sv', 0, $storedMap),
+            $this->term(9, 'Menytext', 'menytext', 'category', 'sv', 0, $menuMarkup),
+            $this->term(70, 'Main', 'main', 'nav_menu', 'sv', 0, $menuMarkup),
+            $this->term(71, 'Footer', 'footer', 'nav_menu', 'sv', 0, $storedMap),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $result = $exporter->export();
+
+        $this->assertSame(array('term:8', 'term:9'), $this->groupIds($result['items']));
+        $this->assertSame($storedMap, $this->itemByGroup($result['items'], 'term:8')['translations']['sv']['description']);
+        $this->assertSame($menuMarkup, $this->itemByGroup($result['items'], 'term:9')['translations']['sv']['description']);
+        $this->assertArrayNotHasKey('en', $this->itemByGroup($result['items'], 'term:8')['translations']);
+        $this->assertNotContains('term:99', $this->groupIds($result['items']));
+        $this->assertNotContains('term:70', $this->groupIds($result['items']));
+        $this->assertNotContains('term:71', $this->groupIds($result['items']));
+        foreach ($result['items'] as $item) {
+            $this->assertSame('category', $item['taxonomy']);
+        }
+    }
+
     public function test_links_rebuild_a_group_when_its_description_is_invalid(): void
     {
         if (!$this->canUseDatabaseStub()) {
