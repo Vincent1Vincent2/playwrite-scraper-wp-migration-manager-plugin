@@ -10,6 +10,7 @@ bootstrap.php and any other PHP file in that directory are not test cases.
 Missing Tolka classes are skipped by the test that needs them.
 Two missing classes are two skips, each naming its class, and the run still succeeds.
 A skip sentence names the missing class and does not include a path from outside the plugin.
+The overhead-cap example runs without the estimate class and uses 35, 25, 8, 6, and 0.7.
 -->
 <phpunit bootstrap="tests/tolka/bootstrap.php" colors="true">
     <testsuites>

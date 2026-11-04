@@ -238,7 +238,32 @@ trait Tolka_Contract_Tests
      */
     public function test_reference_formula_matches_worked_examples()
     {
+        $per_language = 35;
+        $switcher_ms = 25;
+        $per_script = 8;
+        $tolka_per_language = 6;
+        $ratio = 0.7;
         $benchmarks = $this->coefficients();
+
+        $this->assertSame($per_language, $benchmarks['polylang_extra_ms_per_language']);
+        $this->assertSame($switcher_ms, $benchmarks['polylang_switcher_ms']);
+        $this->assertSame($per_script, $benchmarks['polylang_extra_ms_per_script']);
+        $this->assertSame($tolka_per_language, $benchmarks['tolka_ms_per_language']);
+        $this->assertSame($ratio, $benchmarks['max_overhead_ratio']);
+
+        $languages = 8;
+        $scripts = 20;
+        $current = 100;
+        $raw = ($languages * $per_language) + $switcher_ms + ($scripts * $per_script);
+        $cap = (int) floor($current * $ratio);
+        $overhead = (int) min($raw, $cap);
+        $tolka = (int) max(1, $current - $overhead + min($languages * $tolka_per_language, $overhead));
+
+        $this->assertSame(465, $raw);
+        $this->assertSame(70, $cap);
+        $this->assertSame(70, $overhead);
+        $this->assertSame(78, $tolka);
+        $this->assert_close(22.0, round(($current - $tolka) / $current * 100, 1), 'Overhead cap percent');
         $under = $this->expected_projection(
             array('ok' => true, 'total_ms' => 1000),
             array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 1),
@@ -1797,6 +1822,41 @@ class Harness_Test extends Tolka_Test_Case
                 @rmdir($support);
             }
         }
+    }
+
+    /**
+     * The overhead-cap example runs even when Speed_Estimate has not been added.
+     */
+    public function test_overhead_cap_example_still_runs_when_estimate_is_absent()
+    {
+        $binary = $this->phpunit_binary();
+
+        if ($binary === null) {
+            $this->markTestSkipped('PHPUnit could not be found for a subprocess, so this check was skipped.');
+        }
+
+        $cache = sys_get_temp_dir() . '/wmm-tolka-cap-' . getmypid();
+        $version_output = array();
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary) . ' --version 2>&1', $version_output);
+        $extra = '';
+
+        if (preg_match('/PHPUnit (\d+)/', implode(' ', $version_output), $version_match) && (int) $version_match[1] >= 10) {
+            $extra = ' --cache-directory ' . escapeshellarg($cache);
+        }
+
+        $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary)
+            . ' -c ' . escapeshellarg(WMM_TOLKA_PLUGIN_DIR . '/phpunit.xml.dist')
+            . ' --do-not-cache-result' . $extra
+            . ' --filter ' . escapeshellarg('test_reference_formula_matches_worked_examples$');
+        $output = array();
+        $status = 1;
+        exec($command . ' 2>&1', $output, $status);
+        $text = implode("\n", $output);
+
+        $this->assertSame(0, $status, $text);
+        $this->assertMatchesRegularExpression('/OK \(1 test/', $text);
+        $this->assertDoesNotMatchRegularExpression('/Skipped:\s+[1-9]/', $text);
+        $this->assertStringNotContainsString('FAILURES', $text);
     }
 
     /**
