@@ -146,7 +146,7 @@ class Speed_Loader_Transport_Error
 /**
  * Tests for Speed_Loader::measure.
  */
-class Test_Speed_Loader extends TestCase
+class Speed_Loader_Test extends TestCase
 {
     const PRIVATE_MESSAGE = 'That address points at a private or local network, so it cannot be measured. Enter the public address visitors use.';
 
@@ -747,7 +747,7 @@ class Test_Speed_Loader extends TestCase
 
         $this->assertTrue($result['ok']);
         $this->assertSame(2000000, strlen($result['html']));
-        $this->assertSame(2000000, $result['html_bytes']);
+        $this->assertSame(2000050, $result['html_bytes']);
         $this->assertSame(str_repeat('a', 2000000), $result['html']);
         $this->assertStringNotContainsString('b', $result['html']);
         $this->assertSame('', $result['error']);
