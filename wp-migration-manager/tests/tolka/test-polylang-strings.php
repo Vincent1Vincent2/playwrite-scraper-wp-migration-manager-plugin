@@ -64,6 +64,20 @@ class WMM_Tolka_Strings_Probe extends Polylang_Strings
     public $pll_records = null;
 
     /**
+     * Language terms returned by get_terms().
+     *
+     * @var array|null
+     */
+    public $wp_language_terms = null;
+
+    /**
+     * String catalogues returned by get_term_meta(), keyed by term id.
+     *
+     * @var array|null
+     */
+    public $wp_term_meta = null;
+
+    /**
      * @param array $snapshot Already-read rows.
      * @return array
      */
@@ -163,6 +177,49 @@ class WMM_Tolka_Strings_Probe extends Polylang_Strings
         }
 
         return parent::pll_language_records();
+    }
+
+    /**
+     * @return array|null
+     */
+    protected function wordpress_language_terms()
+    {
+        if (is_array($this->wp_language_terms)) {
+            return $this->wp_language_terms;
+        }
+
+        return parent::wordpress_language_terms();
+    }
+
+    /**
+     * @return bool
+     */
+    protected function wordpress_term_meta_available()
+    {
+        if (is_array($this->wp_term_meta)) {
+            return true;
+        }
+
+        return parent::wordpress_term_meta_available();
+    }
+
+    /**
+     * @param int    $term_id Term id.
+     * @param string $key     Meta key.
+     * @return mixed|null
+     */
+    protected function wordpress_term_meta($term_id, $key)
+    {
+        if (is_array($this->wp_term_meta) && $key === '_pll_strings_translations') {
+            $term_id = (int) $term_id;
+            if (array_key_exists($term_id, $this->wp_term_meta)) {
+                return $this->wp_term_meta[$term_id];
+            }
+
+            return '';
+        }
+
+        return parent::wordpress_term_meta($term_id, $key);
     }
 }
 
@@ -2661,6 +2718,33 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         );
         $result = $this->probe($db, array(), true)->export();
 
+        $this->assertSame('Hej', $result['items'][0]['translations']['sv']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_term_meta_is_read_from_wordpress_when_the_query_fails()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_languages = true;
+        $db->fail_term_meta = true;
+        $probe = $this->probe($db, array(), true);
+        $probe->pll_list_exists = true;
+        $probe->wp_language_terms = array(
+            (object) array('slug' => 'en', 'name' => 'English', 'term_id' => 10),
+            (object) array('slug' => 'sv', 'name' => 'Svenska', 'term_id' => 11),
+        );
+        $probe->wp_term_meta = array(
+            11 => array(array('Hello', 'Hej')),
+        );
+        $result = $probe->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Hello', $result['items'][0]['string']);
+        $this->assertSame(array('en', 'sv'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('', $result['items'][0]['translations']['en']);
         $this->assertSame('Hej', $result['items'][0]['translations']['sv']);
         $this->assertSame(array(), $result['errors']);
     }
