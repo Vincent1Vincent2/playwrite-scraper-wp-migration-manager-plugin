@@ -1146,6 +1146,47 @@ PHP
         $this->assertSame('nb_NO', $by_slug['no']['locale']);
     }
 
+    public function test_a_failed_api_and_database_tell_the_owner_nothing_was_changed()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    throw new RuntimeException('Polylang is not ready.');
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return null;
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return '';
+    }
+};
+PHP
+        );
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            'Polylang languages could not be read. Nothing was changed. Preview the migration again.',
+            $result['errors'][0]
+        );
+    }
+
     public function test_api_failure_still_reads_stored_languages()
     {
         $result = $this->export_isolated(<<<'PHP'
