@@ -460,7 +460,7 @@ class Test_Speed_Estimate extends TestCase
             $this->assertSame(909, $estimate['tolka_ms'], 'flag ' . var_export($flag, true));
         }
 
-        foreach (array(false, 0, 0.0, '0', 'false', 'no', '', 'off') as $flag) {
+        foreach (array(false, 0, 0.0, '0', 'false', 'no', '', 'off', null, array(), new \stdClass()) as $flag) {
             $metrics = $off;
             $metrics['has_polylang_switcher'] = $flag;
             $estimate = Speed_Estimate::project($measurement, $metrics, self::contractBenchmarks());
@@ -733,6 +733,16 @@ class Test_Speed_Estimate extends TestCase
         $this->assertUnavailable(
             $missing,
             'A Tolka speed estimate is not available. The measured load time is missing.'
+        );
+
+        $blank = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => '   '),
+            $metrics,
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $blank,
+            'A Tolka speed estimate is not available. The measured load time is not a usable number.'
         );
 
         $unusable = Speed_Estimate::project(
