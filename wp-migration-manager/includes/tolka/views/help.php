@@ -32,7 +32,7 @@ if (!defined('ABSPATH')) {
         <li class="wmm-tolka-help__step">
             <h3 class="wmm-tolka-help__step-title"><?php esc_html_e('Open Migrate to Tolka', 'migration-manager'); ?></h3>
             <p>
-                <?php esc_html_e('Open Migrate to Tolka from the WordPress admin menu. An administrator can run every step on this screen.', 'migration-manager'); ?>
+                <?php esc_html_e('Open Migrate to Tolka from the WordPress admin menu. An administrator can run every step on this screen. If you do not see Migrate to Tolka, sign in as an administrator.', 'migration-manager'); ?>
             </p>
         </li>
         <li class="wmm-tolka-help__step">
