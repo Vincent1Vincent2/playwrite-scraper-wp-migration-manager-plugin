@@ -1177,7 +1177,8 @@ class Harness_Test extends Tolka_Test_Case
     }
 
     /**
-     * An existing ABSPATH survives two loads, and the cap stays 465, 70, and 78.
+     * An existing ABSPATH survives two loads, the cap stays 465, 70, and 78,
+     * and a missing class skip names that class.
      */
     public function test_existing_abspath_is_unchanged_and_cap_stays_465_70_78()
     {
@@ -1208,7 +1209,13 @@ class Harness_Test extends Tolka_Test_Case
             . "echo 'RAW=' . \$raw . \"\\n\";\n"
             . "echo 'CAP=' . \$cap . \"\\n\";\n"
             . "echo 'TOLKA=' . \$tolka . \"\\n\";\n"
-            . "echo (is_int(\$raw) && is_int(\$cap) && is_int(\$tolka)) ? \"TYPES=int\\n\" : \"TYPES=other\\n\";\n";
+            . "echo (is_int(\$raw) && is_int(\$cap) && is_int(\$tolka)) ? \"TYPES=int\\n\" : \"TYPES=other\\n\";\n"
+            . "try {\n"
+            . "    wmm_tolka_skip_without_class('Kept_Abspath_Class');\n"
+            . "    echo \"SKIP=none\\n\";\n"
+            . "} catch (Throwable \$error) {\n"
+            . "    echo 'SKIP=' . str_replace(\"\\n\", ' ', \$error->getMessage()) . \"\\n\";\n"
+            . "}\n";
         file_put_contents($runner, $script);
 
         $output = array();
@@ -1226,6 +1233,21 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertStringNotContainsString('WARN', $text);
         $this->assertStringNotContainsString('Cannot redeclare', $text);
         $this->assertStringNotContainsString('ABSPATH=' . WMM_TOLKA_PLUGIN_DIR . '/', $text);
+
+        $skip = '';
+
+        foreach ($output as $line) {
+            if (strpos($line, 'SKIP=') === 0) {
+                $skip = substr($line, strlen('SKIP='));
+            }
+        }
+
+        $this->assertNotSame('', $skip);
+        $this->assertNotSame('none', $skip);
+        $this->assertStringContainsString('WMM\\Tolka\\Kept_Abspath_Class', $skip);
+        $this->assertStringContainsString('skipped', strtolower($skip));
+        $this->assert_finished_sentence($skip, 'kept abspath skip');
+        $this->assertStringNotContainsString($sentinel, $skip);
     }
 
     /**
