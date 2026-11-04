@@ -120,7 +120,7 @@ $wmm_tolka_speed_pending = __('Not measured yet', 'migration-manager');
 $wmm_tolka_speed_unavailable = __('Unavailable', 'migration-manager');
 $wmm_tolka_speed_basis_fallback = 'Measured page load plus coefficients from benchmarks.json';
 $wmm_tolka_speed_note_fallback = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
-$wmm_tolka_speed_scope_text = __('The speed percent is an estimate for the single page you load. It is not a result for every page on the site.', 'migration-manager');
+$wmm_tolka_speed_scope_text = __('A speed percent on this screen is only for the single page you load. It is not a result for every page on the site.', 'migration-manager');
 $wmm_tolka_speed_error_fallback = __('The speed estimate could not be completed. Check the public site URL and measure again.', 'migration-manager');
 
 $wmm_tolka_speed_view = array(
@@ -372,7 +372,6 @@ if ('empty' === $wmm_tolka_speed_view['state']) {
         <?php echo $wmm_tolka_speed_view['show_scope'] ? esc_html($wmm_tolka_speed_scope_text) : ''; ?>
     </p>
 
-    <p class="wmm-tolka-speed-basis-label"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>><?php esc_html_e('Basis', 'migration-manager'); ?></p>
     <p class="wmm-tolka-speed-basis wmm-tolka-value" id="wmm-tolka-basis" data-wmm-tolka="basis" data-field="basis"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>>
         <?php echo esc_html($wmm_tolka_speed_view['basis']); ?>
     </p>

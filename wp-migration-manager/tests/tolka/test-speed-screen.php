@@ -244,7 +244,6 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             $this->text($html, 'wmm-tolka-speed-savings')
         );
         $this->assertStringContainsString('single page', $this->text($html, 'wmm-tolka-speed-scope'));
-        $this->assertSame('Basis', $this->text_by_class($html, 'wmm-tolka-speed-basis-label'));
         $this->assertSame(
             'Measured page load plus coefficients from benchmarks.json.',
             $this->text($html, 'wmm-tolka-basis')
@@ -452,19 +451,4 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         return $count;
     }
 
-    /**
-     * Text of the first element with a class.
-     *
-     * @param string $html  Markup.
-     * @param string $class Class name.
-     * @return string
-     */
-    private function text_by_class($html, $class)
-    {
-        $xpath = new DOMXPath($this->document($html));
-        $nodes = $xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " ' . $class . ' ")]');
-        $this->assertGreaterThan(0, $nodes->length, $class);
-
-        return trim(preg_replace('/\s+/', ' ', $nodes->item(0)->textContent));
-    }
 }
