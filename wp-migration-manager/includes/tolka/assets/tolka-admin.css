@@ -686,6 +686,16 @@
     background: var(--wmm-tolka-surface);
 }
 
+#wmm-tolka-preview-result:has(> .wmm-tolka-empty:only-child),
+#wmm-tolka-report:has(> .wmm-tolka-empty:only-child) {
+    margin-top: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
 #wmm-tolka-report h2,
 #wmm-tolka-report h3,
 #wmm-tolka-preview-result h2,
@@ -843,17 +853,17 @@ table.wmm-tolka-summary {
     font-weight: 600;
 }
 
-#wmm-tolka-preview-result table,
-#wmm-tolka-report table {
+#wmm-tolka-preview-result table:not(.widefat),
+#wmm-tolka-report table:not(.widefat) {
     width: 100%;
     margin: 8px 0 0;
     border-collapse: collapse;
 }
 
-#wmm-tolka-preview-result th,
-#wmm-tolka-preview-result td,
-#wmm-tolka-report th,
-#wmm-tolka-report td {
+#wmm-tolka-preview-result table:not(.widefat) th,
+#wmm-tolka-preview-result table:not(.widefat) td,
+#wmm-tolka-report table:not(.widefat) th,
+#wmm-tolka-report table:not(.widefat) td {
     padding: 8px 10px;
     border-bottom: 1px solid #e2e4e7;
     text-align: start;
@@ -861,8 +871,8 @@ table.wmm-tolka-summary {
     overflow-wrap: anywhere;
 }
 
-#wmm-tolka-preview-result th,
-#wmm-tolka-report th {
+#wmm-tolka-preview-result table:not(.widefat) th,
+#wmm-tolka-report table:not(.widefat) th {
     color: var(--wmm-tolka-muted);
     font-size: 11px;
     font-weight: 700;
@@ -870,8 +880,8 @@ table.wmm-tolka-summary {
     text-transform: uppercase;
 }
 
-#wmm-tolka-preview-result tbody tr:nth-child(even),
-#wmm-tolka-report tbody tr:nth-child(even) {
+#wmm-tolka-preview-result table:not(.widefat) tbody tr:nth-child(even),
+#wmm-tolka-report table:not(.widefat) tbody tr:nth-child(even) {
     background: var(--wmm-tolka-soft);
 }
 
@@ -1277,6 +1287,20 @@ p.wmm-tolka-speed-tolka {
     margin: 0 0 10px;
     max-width: 68ch;
     color: var(--wmm-tolka-body);
+}
+
+.wmm-tolka-preview-notes,
+.wmm-tolka-report-extra {
+    margin: 0 0 14px;
+}
+
+.wmm-tolka-preview-notes .wmm-tolka-error,
+.wmm-tolka-report-extra .wmm-tolka-error {
+    margin-top: 0;
+}
+
+.wmm-tolka-preview-samples {
+    margin-top: 4px;
 }
 
 .wmm-tolka-section {
