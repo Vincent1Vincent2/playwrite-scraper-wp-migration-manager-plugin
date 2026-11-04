@@ -133,6 +133,39 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertLessThanOrEqual($after, $stamp);
     }
 
+    public function test_gmt_offset_zero_is_kept_and_a_blank_timestamp_is_replaced()
+    {
+        $kept = '2024-05-06T07:08:09+00:00';
+        $result = Tolka_Writer::write(array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => $kept,
+            'posts' => array(),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame($kept, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']);
+        $this->assertSame(0, (new DateTimeImmutable($kept))->getOffset());
+
+        $before = time();
+        $replaced = Tolka_Writer::write(array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => '',
+        ));
+        $after = time();
+        $stamp = $replaced['ok'] ? strtotime($GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']) : false;
+
+        $this->assertTrue($replaced['ok']);
+        $this->assertTrue(Tolka_Schema::is_gmt_timestamp($GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']));
+        $this->assertGreaterThanOrEqual($before, $stamp);
+        $this->assertLessThanOrEqual($after, $stamp);
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
     public function test_writer_stores_gmt_timestamp_and_leaves_polylang_option()
     {
         $polylang = $GLOBALS['wmm_tolka_schema_driver']['polylang_option'];
