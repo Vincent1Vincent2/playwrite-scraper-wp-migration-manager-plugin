@@ -495,14 +495,36 @@ class Polylang_Languages
             }
 
             $index = $known[$slug];
-            $current = $this->string_value($this->read_field($primary[$index], 'description'));
-            $incoming = $this->string_value($this->read_field($term, 'description'));
-            if ($current === '' && $incoming !== '') {
+            if (!$this->description_has_language_data($primary[$index]) && $this->description_has_language_data($term)) {
                 $primary[$index] = $term;
             }
         }
 
         return $primary;
+    }
+
+    /**
+     * Whether a term description includes a locale or flag code.
+     *
+     * An empty serialized array does not count. The stored row can replace it.
+     *
+     * @param mixed $term Term row.
+     * @return bool
+     */
+    private function description_has_language_data($term)
+    {
+        $data = $this->decode_stored_array($this->read_field($term, 'description'));
+        if (isset($data['locale']) && is_string($data['locale']) && trim($data['locale']) !== '') {
+            return true;
+        }
+        if (isset($data['flag_code']) && is_string($data['flag_code']) && trim($data['flag_code']) !== '') {
+            return true;
+        }
+        if (isset($data['flag']) && is_string($data['flag']) && trim($data['flag']) !== '') {
+            return true;
+        }
+
+        return false;
     }
 
     /**

@@ -1055,6 +1055,67 @@ PHP
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_empty_serialized_description_is_replaced_by_the_stored_row()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function get_terms($args = array())
+{
+    if (!is_array($args) || !isset($args['taxonomy'])) {
+        return array();
+    }
+    if ($args['taxonomy'] === 'language') {
+        return array((object) array(
+            'term_id' => 4,
+            'name' => 'English',
+            'slug' => 'en',
+            'term_group' => 0,
+            'description' => 'a:0:{}',
+            'count' => 0,
+        ));
+    }
+    return array();
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return array((object) array(
+                'term_id' => 4,
+                'name' => 'English',
+                'slug' => 'en',
+                'term_group' => 0,
+                'description' => 'a:2:{s:6:"locale";s:5:"en_GB";s:9:"flag_code";s:2:"gb";}',
+                'count' => 0,
+            ));
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return 'a:1:{s:12:"default_lang";s:2:"en";}';
+    }
+};
+PHP
+        );
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('en_GB', $result['items'][0]['locale']);
+        $this->assertSame('gb', $result['items'][0]['flag']);
+        $this->assertSame(4, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_filtered_term_query_still_keeps_languages_with_no_posts()
     {
         $result = $this->export_isolated(<<<'PHP'
