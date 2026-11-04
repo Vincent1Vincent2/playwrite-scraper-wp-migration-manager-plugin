@@ -486,6 +486,125 @@ class Polylang_Posts_Test extends TestCase
         }
     }
 
+    public function test_post_with_no_translation_is_its_own_group()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->languages = array(12 => 'en');
+        $fake->posts_rows = array(
+            12 => $this->db_post(12, 'publish', 'Only English', 'only-english', 'post', 'Standalone', 'No other language yet.'),
+            13 => $this->db_post(13, 'publish', 'No language', 'no-language'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('post:12'), $this->groups($result));
+        $item = $result['items'][0];
+        $this->assertSame('post', $item['type']);
+        $this->assertSame(array('en'), array_keys($item['translations']));
+        $this->assertSame(12, $item['translations']['en']['id']);
+        $this->assertSame('Only English', $item['translations']['en']['title']);
+        $this->assertSame('only-english', $item['translations']['en']['slug']);
+        $this->assertSame('publish', $item['translations']['en']['status']);
+        $this->assertSame('Standalone', $item['translations']['en']['excerpt']);
+        $this->assertSame('No other language yet.', $item['translations']['en']['content']);
+    }
+
+    public function test_draft_is_exported_with_its_status_and_content()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 20,
+                'description' => serialize(array('en' => 30, 'sv' => 31)),
+            ),
+        );
+        $fake->languages = array(30 => 'en', 31 => 'sv');
+        $fake->posts_rows = array(
+            30 => $this->db_post(30, 'publish', 'Published', 'published', 'page', '', 'Live page'),
+            31 => $this->db_post(31, 'draft', '', '', 'page', 'Kort', 'Utkastet'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('post:30'), $this->groups($result));
+        $draft = $result['items'][0]['translations']['sv'];
+        $this->assertSame(31, $draft['id']);
+        $this->assertSame('', $draft['title']);
+        $this->assertSame('', $draft['slug']);
+        $this->assertSame('draft', $draft['status']);
+        $this->assertSame('Kort', $draft['excerpt']);
+        $this->assertSame('Utkastet', $draft['content']);
+        $this->assertSame('publish', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('page', $result['items'][0]['type']);
+    }
+
+    public function test_polylang_missing_returns_no_posts_and_an_error()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->posts_rows = array(
+            1 => $this->db_post(1, 'publish', 'Ordinary', 'ordinary'),
+            2 => $this->db_post(2, 'draft', 'Unfinished', 'unfinished'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array('items', 'errors'), array_keys($result));
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            array('Polylang is not active. Post translations were not exported.'),
+            $result['errors']
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Ordinary', $encoded);
+        $this->assertStringNotContainsString('Unfinished', $encoded);
+    }
+
+    public function test_revision_is_left_out()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 21,
+                'description' => serialize(array('en' => 40, 'de' => 41)),
+            ),
+            array(
+                'term_taxonomy_id' => 22,
+                'description' => serialize(array('en' => 42)),
+            ),
+        );
+        $fake->languages = array(40 => 'en', 41 => 'de', 42 => 'en');
+        $fake->posts_rows = array(
+            40 => $this->db_post(40, 'publish', 'Live', 'live', 'post', '', 'Current text'),
+            41 => $this->db_post(41, 'inherit', 'Live autosave', '40-autosave-v1', 'revision', '', 'Older text'),
+            42 => $this->db_post(42, 'inherit', 'Orphan autosave', '42-revision-v1', 'revision'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array('post:40'), $this->groups($result));
+        $this->assertSame(array('en'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('Current text', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame('publish', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame(
+            array('Post 41 is a revision, so it was left out of translation group post:40.'),
+            $result['errors']
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Older text', $encoded);
+        $this->assertStringNotContainsString('Orphan autosave', $encoded);
+    }
+
     public function test_inactive_polylang_returns_an_empty_list_and_a_sentence()
     {
         $this->skip_when_wordpress_or_polylang_is_loaded();
