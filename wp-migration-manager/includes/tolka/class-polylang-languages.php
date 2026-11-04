@@ -1339,7 +1339,10 @@ class Polylang_Languages
     {
         $kept = array();
         foreach ($items as $item) {
-            $slug = is_array($item) && isset($item['slug']) ? $item['slug'] : '';
+            if (!is_array($item)) {
+                continue;
+            }
+            $slug = isset($item['slug']) ? $item['slug'] : '';
             if ($this->is_internal_language_slug($slug)) {
                 $this->saw_internal_language = true;
                 continue;
