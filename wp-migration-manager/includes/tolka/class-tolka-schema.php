@@ -207,8 +207,8 @@ class Tolka_Schema
      * Make text safe to store in a WordPress option or meta value.
      *
      * Null bytes are removed so MySQL does not cut the value short. Bytes
-     * that are not UTF-8 are removed. Ordinary text, including accents and
-     * HTML, is kept.
+     * that are not UTF-8 are removed. HTML tags, entities, and comments in
+     * post content, titles, and strings are kept.
      *
      * @param mixed $value Raw text.
      * @return string
