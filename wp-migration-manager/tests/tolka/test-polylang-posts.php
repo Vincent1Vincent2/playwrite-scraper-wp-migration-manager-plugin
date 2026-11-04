@@ -2426,6 +2426,97 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('Utkast', $result['items'][1]['translations']['sv']['content']);
     }
 
+    public function test_api_folds_SV_and_sv_and_names_the_default_language_post()
+    {
+        if (!function_exists('shell_exec')) {
+            $this->markTestSkipped('shell_exec is not available.');
+        }
+        $class = var_export(dirname(__DIR__, 2) . '/includes/tolka/class-polylang-posts.php', true);
+        $calls = tempnam(sys_get_temp_dir(), 'tolka-sv-calls');
+        file_put_contents($calls, '');
+        $calls_export = var_export($calls, true);
+        $script = tempnam(sys_get_temp_dir(), 'tolka-sv');
+        file_put_contents($script, <<<PHP
+<?php
+define('ABSPATH', '/tmp/tolka-posts/');
+function pll_get_post_translations(\$id) {
+    file_put_contents({$calls_export}, 'api:' . (int) \$id . "\\n", FILE_APPEND);
+    return array('SV' => 50, 'EN' => 8, 'sv' => 2);
+}
+function pll_get_post_language(\$id, \$field = 'slug') {
+    if ((int) \$id === 50) {
+        return 'SV';
+    }
+    if ((int) \$id === 8) {
+        return 'EN';
+    }
+    if ((int) \$id === 2) {
+        return 'sv';
+    }
+    return false;
+}
+function pll_default_language() {
+    return 'SV';
+}
+function get_posts(\$args) {
+    static \$calls = 0;
+    \$calls++;
+    if (\$calls === 1) {
+        return array(50, 8, 2);
+    }
+    return array();
+}
+function get_post(\$id) {
+    file_put_contents({$calls_export}, (int) \$id . "\\n", FILE_APPEND);
+    \$posts = array(
+        50 => array('ID' => 50, 'post_type' => 'page', 'post_title' => 'Fågel', 'post_name' => 'fågel-öl', 'post_status' => 'future', 'post_excerpt' => '', 'post_content' => '<p>ä ö å</p>'),
+        8 => array('ID' => 8, 'post_type' => 'post', 'post_title' => 'Bird', 'post_name' => 'bird', 'post_status' => 'draft', 'post_excerpt' => '', 'post_content' => ''),
+        2 => array('ID' => 2, 'post_type' => 'post', 'post_title' => 'Earlier', 'post_name' => 'earlier', 'post_status' => 'publish', 'post_excerpt' => '', 'post_content' => 'Not first'),
+    );
+    \$id = (int) \$id;
+    if (!isset(\$posts[\$id])) {
+        return null;
+    }
+    return (object) \$posts[\$id];
+}
+require {$class};
+\$result = (new WMM\\Tolka\\Polylang_Posts())->export();
+echo '__JSON__' . json_encode(\$result);
+PHP
+        );
+        $output = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script));
+        $called = (string) file_get_contents($calls);
+        @unlink($script);
+        @unlink($calls);
+        $json = '';
+        if (is_string($output) && strpos($output, '__JSON__') !== false) {
+            $json = substr($output, strpos($output, '__JSON__') + 8);
+        }
+        $result = json_decode($json, true);
+        $this->assertIsArray($result, is_string($output) ? $output : 'no output');
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:50', $result['items'][0]['group']);
+        $this->assertSame('page', $result['items'][0]['type']);
+        $this->assertSame(array('sv', 'en'), array_keys($result['items'][0]['translations']));
+        $this->assertSame(50, $result['items'][0]['translations']['sv']['id']);
+        $this->assertSame('future', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Fågel', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('fågel-öl', $result['items'][0]['translations']['sv']['slug']);
+        $this->assertSame('<p>ä ö å</p>', $result['items'][0]['translations']['sv']['content']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame(
+            array('Language sv is listed more than once in this translation group. Post 50 was kept.'),
+            $result['errors']
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Not first', $encoded);
+        $this->assertStringContainsString("api:50\n", $called);
+        $this->assertStringNotContainsString('api:2', $called);
+        $this->assertStringNotContainsString('api:8', $called);
+    }
+
     public function test_post_objects_from_get_posts_still_export_a_draft()
     {
         if (!function_exists('shell_exec')) {
