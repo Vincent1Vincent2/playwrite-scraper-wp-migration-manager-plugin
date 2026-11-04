@@ -4,7 +4,8 @@
  * Tolka migration package schema.
  *
  * Turns exporter envelopes into one plain package. Polylang data is not read
- * or changed.
+ * or changed. Text is stored without null bytes or invalid UTF-8 so the
+ * database does not cut the package short.
  *
  * @package MigrationManager
  */
@@ -104,13 +105,16 @@ class Tolka_Schema
      */
     private static function snapshot($value, array &$seen, $depth)
     {
-        if ($depth > 12) {
+        if ($depth > 32) {
             return null;
         }
 
         if (is_array($value)) {
             $copy = array();
             foreach ($value as $key => $item) {
+                if (is_string($key)) {
+                    $key = self::text($key);
+                }
                 $copy[$key] = self::snapshot($item, $seen, $depth + 1);
             }
             return $copy;
@@ -125,10 +129,52 @@ class Tolka_Schema
             return self::snapshot(get_object_vars($value), $seen, $depth + 1);
         }
 
-        if (is_string($value) || is_int($value) || is_float($value) || is_bool($value) || $value === null) {
+        if (is_string($value)) {
+            return self::text($value);
+        }
+
+        if (is_int($value) || is_float($value) || is_bool($value) || $value === null) {
             return $value;
         }
 
         return null;
+    }
+
+    /**
+     * Copy a package into plain data that can be stored in the database.
+     *
+     * @param array $value Package or section value.
+     * @return array
+     */
+    public static function for_storage(array $value)
+    {
+        $seen = array();
+        $copy = self::snapshot($value, $seen, 0);
+
+        return is_array($copy) ? $copy : array();
+    }
+
+    /**
+     * Make text safe to store in a WordPress option or meta value.
+     *
+     * Null bytes are removed so MySQL does not cut the value short. Bytes
+     * that are not UTF-8 are removed. Ordinary text, including accents and
+     * HTML, is kept.
+     *
+     * @param mixed $value Raw text.
+     * @return string
+     */
+    public static function text($value)
+    {
+        $text = str_replace("\0", '', (string) $value);
+
+        if (function_exists('iconv')) {
+            $clean = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+
+        return $text;
     }
 }
