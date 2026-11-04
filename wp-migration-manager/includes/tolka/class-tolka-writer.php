@@ -813,21 +813,26 @@ class Tolka_Writer
         }
 
         $parts = self::as_envelopes($input);
+        $generated = array_key_exists('generated_at', $input) ? $input['generated_at'] : null;
         if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
-            return Tolka_Schema::package($parts);
+            $package = Tolka_Schema::package($parts);
+        } else {
+            $package = array(
+                'format' => 'tolka-migration',
+                'version' => 1,
+                'generated_at' => self::gmt_timestamp(),
+            );
+
+            foreach (self::sections() as $section) {
+                $package[$section] = array();
+                if (isset($parts[$section]['items']) && is_array($parts[$section]['items'])) {
+                    $package[$section] = $parts[$section]['items'];
+                }
+            }
         }
 
-        $package = array(
-            'format' => 'tolka-migration',
-            'version' => 1,
-            'generated_at' => self::gmt_timestamp(),
-        );
-
-        foreach (self::sections() as $section) {
-            $package[$section] = array();
-            if (isset($parts[$section]['items']) && is_array($parts[$section]['items'])) {
-                $package[$section] = $parts[$section]['items'];
-            }
+        if ($generated !== null) {
+            $package['generated_at'] = $generated;
         }
 
         return $package;
@@ -1363,14 +1368,24 @@ class Tolka_Writer
         unset($package['format'], $package['version'], $package['generated_at']);
 
         if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
-            return Tolka_Schema::header($generated) + $package;
+            $header = Tolka_Schema::header($generated);
+        } else {
+            $header = array(
+                'format' => 'tolka-migration',
+                'version' => 1,
+                'generated_at' => self::gmt_timestamp(),
+            );
         }
 
-        return array(
-            'format' => 'tolka-migration',
-            'version' => 1,
-            'generated_at' => self::gmt_timestamp(),
-        ) + $package;
+        // Strings are already in $package. The header is applied last so a
+        // string row cannot replace the version or the Zulu timestamp.
+        $header['format'] = 'tolka-migration';
+        $header['version'] = 1;
+        if (!isset($header['generated_at']) || !is_string($header['generated_at']) || substr($header['generated_at'], -1) !== 'Z') {
+            $header['generated_at'] = self::gmt_timestamp();
+        }
+
+        return $header + $package;
     }
 
     /**
