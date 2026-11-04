@@ -1261,6 +1261,44 @@ echo json_encode(array("clean" => $clean, "failed" => $failed));
         ));
     }
 
+    public function test_update_option_true_does_not_add_a_save_error()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+function update_option($option, $value, $autoload = null) {
+    $GLOBALS["wmm_saved_option"] = $option;
+    $GLOBALS["wmm_saved_report"] = $value;
+    return true;
+}
+require ' . var_export($class, true) . ';
+$report = \\WMM\\Tolka\\Migration_Report::format(array(
+    "ok" => true,
+    "counts" => array("languages" => 2),
+    "write" => array("ok" => true),
+));
+echo json_encode(array(
+    "report" => $report,
+    "option" => $GLOBALS["wmm_saved_option"],
+    "stored" => $GLOBALS["wmm_saved_report"],
+));
+';
+        $tmp = tempnam(sys_get_temp_dir(), 'wmm-report');
+        file_put_contents($tmp, $script);
+        $output = array();
+        $exit = 0;
+        exec('php ' . escapeshellarg($tmp) . ' 2>&1', $output, $exit);
+        unlink($tmp);
+
+        $this->assertSame(0, $exit, implode("\n", $output));
+        $decoded = json_decode(implode("\n", $output), true);
+        $this->assertSame('wmm_tolka_last_report', $decoded['option']);
+        $this->assertSame(array(), $decoded['report']['errors']);
+        $this->assertStringNotContainsString('could not be saved', $decoded['report']['summary']);
+        $this->assertSame('The migration is complete.', $decoded['report']['title']);
+        $this->assertSame($decoded['report'], $decoded['stored']);
+    }
+
     public function test_stores_the_report_when_wordpress_options_exist()
     {
         if (!function_exists('update_option') || !function_exists('get_option')) {
