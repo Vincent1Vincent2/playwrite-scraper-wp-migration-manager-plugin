@@ -73,6 +73,18 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0.7, Speed_Estimate::benchmarks()['max_overhead_ratio']);
         $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
         $this->assertSame(self::PROVENANCE_NOTE, Speed_Estimate::benchmarks()['provenance_note']);
+
+        $mutated = Speed_Estimate::benchmarks();
+        $mutated['polylang_extra_ms_per_language'] = 999;
+        $using_mutated = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $mutated
+        );
+        // raw = 999, cap = floor(1000 * 0.7) = 700, tolka = 1000 - 700 + 6 = 306.
+        $this->assertSame(306, $using_mutated['tolka_ms']);
+        $this->assertSame(69.4, $using_mutated['faster_percent']);
+        $this->assertSame(35, Speed_Estimate::benchmarks()['polylang_extra_ms_per_language']);
     }
 
     public function test_class_has_no_strict_types_and_uses_the_tolka_namespace()
