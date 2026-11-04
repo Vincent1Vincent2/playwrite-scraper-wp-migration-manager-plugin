@@ -1344,6 +1344,9 @@ class Polylang_Languages
                 $this->saw_internal_language = true;
                 continue;
             }
+            if (is_array($item) && isset($item['name']) && $this->is_internal_language_slug($this->normalized_slug($item['name']))) {
+                $item['name'] = $slug;
+            }
             $kept[] = $item;
         }
 
