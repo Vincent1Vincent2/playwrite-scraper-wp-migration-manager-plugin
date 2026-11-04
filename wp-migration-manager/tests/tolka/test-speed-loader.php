@@ -786,6 +786,41 @@ class Test_Speed_Loader extends TestCase
         $this->assertStringNotContainsString('secret', (string) json_encode($result));
     }
 
+    public function test_curl_uses_the_addresses_already_checked()
+    {
+        $method = new \ReflectionMethod(Speed_Loader::class, 'curl_resolve_entries');
+        $method->setAccessible(true);
+
+        $this->assertSame(
+            array('example.com:443:1.1.1.1'),
+            $method->invoke(null, 'https://example.com/path', array('1.1.1.1'))
+        );
+        $this->assertSame(
+            array('example.com:80:8.8.8.8'),
+            $method->invoke(null, 'http://example.com/', array('8.8.8.8'))
+        );
+        $this->assertSame(
+            array('example.com:8443:1.1.1.1'),
+            $method->invoke(null, 'https://example.com:8443/path', array('1.1.1.1'))
+        );
+        $this->assertSame(
+            array('example.com:443:[2606:4700:4700::1111]'),
+            $method->invoke(null, 'https://example.com/', array('2606:4700:4700::1111'))
+        );
+        $this->assertSame(
+            array('example.com:443:1.1.1.1'),
+            $method->invoke(null, 'https://example.com/', array('1.1.1.1', '10.0.0.1', '127.0.0.1', ''))
+        );
+        $this->assertSame(
+            array(),
+            $method->invoke(null, 'https://1.1.1.1/', array('1.1.1.1'))
+        );
+        $this->assertSame(
+            array(),
+            $method->invoke(null, 'https://[2606:4700:4700::1111]/', array('2606:4700:4700::1111'))
+        );
+    }
+
     public function test_missing_http_api_is_a_finished_error()
     {
         if (function_exists('wp_remote_get')) {

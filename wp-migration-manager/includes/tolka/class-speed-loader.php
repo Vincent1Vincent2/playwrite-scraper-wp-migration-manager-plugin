@@ -44,6 +44,23 @@ class Speed_Loader
     const USER_AGENT = 'WMM-Tolka-Speed/1.0';
 
     /**
+     * Public addresses found for the host being measured.
+     *
+     * The curl transport is asked to use these addresses so a later DNS
+     * answer cannot point the same request at a private network.
+     *
+     * @var string[]
+     */
+    private static $pinned_ips = array();
+
+    /**
+     * CURLOPT_RESOLVE entries for the request currently in flight.
+     *
+     * @var string[]
+     */
+    private static $curl_resolve = array();
+
+    /**
      * Time one public page load.
      *
      * The same keys are always returned. On failure ok is false, html is
@@ -56,6 +73,8 @@ class Speed_Loader
      */
     public static function measure(string $url): array
     {
+        self::$pinned_ips = array();
+        self::$curl_resolve = array();
         $checked = self::parse_public_url($url);
         $shown = $checked['url'] !== '' ? $checked['url'] : trim($url);
         $result = self::blank($shown);
@@ -97,9 +116,9 @@ class Speed_Loader
                 $landed = self::parse_public_url($final);
                 if ($landed['error'] !== '') {
                     $message = self::text('The site redirected to an address that cannot be measured.');
-                if ($landed['reason'] === 'private' || $landed['reason'] === 'private-dns') {
-                    $message = self::text('The site redirected to a private or local address, so it cannot be measured. Enter the public address visitors use.');
-                }
+                    if ($landed['reason'] === 'private' || $landed['reason'] === 'private-dns') {
+                        $message = self::text('The site redirected to a private or local address, so it cannot be measured. Enter the public address visitors use.');
+                    }
                     return self::fail($result, $message, $code);
                 }
                 if ($landed['url'] !== '') {
@@ -159,7 +178,95 @@ class Speed_Loader
             return null;
         }
 
-        return wp_remote_get($url, self::request_args());
+        $pinned = self::curl_resolve_entries($url, self::$pinned_ips);
+        if ($pinned === array() || !function_exists('add_action') || !function_exists('remove_action')) {
+            return wp_remote_get($url, self::request_args());
+        }
+
+        self::$curl_resolve = $pinned;
+        add_action('http_api_curl', array(__CLASS__, 'pin_resolved_addresses'), 10, 3);
+        try {
+            return wp_remote_get($url, self::request_args());
+        } finally {
+            remove_action('http_api_curl', array(__CLASS__, 'pin_resolved_addresses'), 10);
+            self::$curl_resolve = array();
+        }
+    }
+
+    /**
+     * Point curl at the addresses already checked for this host.
+     *
+     * WordPress calls this while the measurement request is running.
+     * The hook is removed before the method returns.
+     *
+     * @param resource|\CurlHandle $handle Curl handle.
+     * @param array                $args   Request arguments.
+     * @param string               $url    Request URL.
+     */
+    public static function pin_resolved_addresses($handle, $args, $url)
+    {
+        unset($args, $url);
+        if (self::$curl_resolve === array() || !function_exists('curl_setopt') || !defined('CURLOPT_RESOLVE')) {
+            return;
+        }
+
+        $is_curl = is_resource($handle);
+        if (!$is_curl && class_exists('CurlHandle', false) && $handle instanceof \CurlHandle) {
+            $is_curl = true;
+        }
+        if (!$is_curl) {
+            return;
+        }
+
+        curl_setopt($handle, CURLOPT_RESOLVE, self::$curl_resolve);
+    }
+
+    /**
+     * Build curl CURLOPT_RESOLVE rows for a URL and a list of addresses.
+     *
+     * Literal IP hosts are left alone. Private addresses are never included.
+     *
+     * @param string   $url Request URL.
+     * @param string[] $ips Addresses from DNS.
+     * @return string[]
+     */
+    private static function curl_resolve_entries($url, array $ips)
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts) || !isset($parts['host']) || (string) $parts['host'] === '') {
+            return array();
+        }
+
+        $host = (string) $parts['host'];
+        if (strlen($host) >= 2 && $host[0] === '[' && substr($host, -1) === ']') {
+            $host = substr($host, 1, -1);
+        }
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return array();
+        }
+
+        $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : 'http';
+        $port = isset($parts['port']) ? (int) $parts['port'] : ($scheme === 'https' ? 443 : 80);
+        if ($port < 1 || $port > 65535) {
+            return array();
+        }
+
+        $entries = array();
+        foreach ($ips as $ip) {
+            if (!is_string($ip) || $ip === '' || self::ip_is_blocked($ip)) {
+                continue;
+            }
+            if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+                continue;
+            }
+            if (strpos($ip, ':') !== false) {
+                $entries[] = $host . ':' . $port . ':[' . $ip . ']';
+            } else {
+                $entries[] = $host . ':' . $port . ':' . $ip;
+            }
+        }
+
+        return $entries;
     }
 
     /**
@@ -410,13 +517,19 @@ class Speed_Loader
 
         if ($saw_name) {
             $ips = static::resolve_ips($name_for_dns);
+            $safe = array();
             if (is_array($ips)) {
                 foreach ($ips as $ip) {
-                    if (is_string($ip) && $ip !== '' && self::ip_is_blocked($ip)) {
+                    if (!is_string($ip) || $ip === '') {
+                        continue;
+                    }
+                    if (self::ip_is_blocked($ip)) {
                         return 'private-dns';
                     }
+                    $safe[] = $ip;
                 }
             }
+            self::$pinned_ips = $safe;
             return '';
         }
 
