@@ -1971,6 +1971,7 @@ function wmm_tolka_fallback_copy()
         'timeoutMeasure' => __('The speed check took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutPreview' => __('The preview took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutRun' => __('The migration took too long to answer. Reload this screen before trying again. Polylang data was not deleted.', 'migration-manager'),
+        'homeUrl' => wmm_tolka_home_url(),
     );
 }
 
@@ -1998,6 +1999,20 @@ function wmm_tolka_fallback_script()
         }
         return fallback;
     }
+
+    function fillEmptyUrl() {
+        var input = document.getElementById("wmm-tolka-url");
+        var home = text("homeUrl", "").replace(/^\s+|\s+$/g, "");
+        if (!input || home === "") {
+            return;
+        }
+        var current = input.value ? String(input.value).replace(/^\s+|\s+$/g, "") : "";
+        if (current === "") {
+            input.value = home;
+        }
+    }
+
+    fillEmptyUrl();
 
     if (!window.fetch || !window.URLSearchParams || !config.ajaxUrl) {
         jobs.forEach(function (job) {

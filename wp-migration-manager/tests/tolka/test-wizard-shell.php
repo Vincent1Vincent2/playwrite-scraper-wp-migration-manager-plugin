@@ -1338,6 +1338,41 @@ namespace WMM\Tolka {
             $this->assertStringNotContainsString("\n", $input);
         }
 
+        public function test_empty_screen_url_is_filled_from_the_home_address()
+        {
+            $this->requireStubs();
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            $view = $directory . 'wizard.php';
+            file_put_contents($view, '<div id="wmm-tolka-wizard"><input id="wmm-tolka-url" value=""></div>');
+            clearstatcache();
+            $GLOBALS['wmm_tolka_test_home'] = 'https://public.example.test/"><script>alert(1)</script>';
+
+            try {
+                $html = $this->render();
+                $this->assertSame(1, substr_count($html, 'id="wmm-tolka-url"'));
+                $this->assertStringContainsString('value=""', $html);
+                $this->assertStringContainsString('homeUrl', $html);
+                $this->assertStringContainsString('\u003Cscript\u003E', $html);
+                $this->assertStringNotContainsString('<script>alert(1)</script>', $html);
+                $data = \wmm_tolka_script_data();
+                $this->assertArrayNotHasKey('homeUrl', $data);
+
+                $this->assertSame(1, preg_match('/<script id="wmm-tolka-fallback">(.*?)<\/script>/s', $html, $script_match));
+                $filled = $this->runFallbackUrlFill($script_match[1], '   ', 'https://public.example.test/kept');
+                $this->assertSame('https://public.example.test/kept', $filled);
+                $kept = $this->runFallbackUrlFill($script_match[1], 'https://already.example/path', 'https://public.example.test/kept');
+                $this->assertSame('https://already.example/path', $kept);
+            } finally {
+                unlink($view);
+                clearstatcache();
+            }
+        }
+
         public function test_permission_failure_does_not_render_the_wizard()
         {
             $this->requireStubs();
@@ -1831,6 +1866,29 @@ PHP
 
             file_put_contents($path, $contents);
             clearstatcache(true, $path);
+        }
+
+        /**
+         * Run the address-fill fallback outside the browser.
+         *
+         * @param string $script  Inline script from the wizard page.
+         * @param string $current Current field value.
+         * @param string $home    Site home URL.
+         * @return string|null
+         */
+        private function runFallbackUrlFill($script, $current, $home)
+        {
+            $runner = tempnam(sys_get_temp_dir(), 'wmm-fill-');
+            $harness = 'var input = { value: ' . json_encode($current) . ', getAttribute: function () { return null; }, setAttribute: function () {}, addEventListener: function () {} };';
+            $harness .= 'var other = { value: "", getAttribute: function () { return null; }, setAttribute: function () {}, addEventListener: function () {}, disabled: false };';
+            $harness .= 'var document = { getElementById: function (id) { return id === "wmm-tolka-url" ? input : other; } };';
+            $harness .= 'var window = { wmmTolkaCopy: { homeUrl: ' . json_encode($home) . ' }, wmmTolka: {}, document: document };';
+            $harness .= "\n" . $script . "\nprocess.stdout.write(String(input.value));";
+            file_put_contents($runner, $harness);
+            $output = shell_exec('node ' . escapeshellarg($runner) . ' 2>&1');
+            unlink($runner);
+
+            return $output;
         }
 
         private function requireStubs()
