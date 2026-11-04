@@ -719,7 +719,41 @@ class Tolka_Writer
             return Tolka_Schema::for_storage($package);
         }
 
-        return $package;
+        return self::strip_null_bytes($package, 0);
+    }
+
+    /**
+     * Remove null bytes from text without removing HTML.
+     *
+     * Used when the schema class is not loaded. The schema snapshot does the
+     * same cleanup, and also drops bytes that are not UTF-8.
+     *
+     * @param mixed $value Value to copy.
+     * @param int   $depth Current nesting depth.
+     * @return mixed
+     */
+    private static function strip_null_bytes($value, $depth)
+    {
+        if ($depth > 32) {
+            return null;
+        }
+
+        if (is_array($value)) {
+            $copy = array();
+            foreach ($value as $key => $item) {
+                if (is_string($key)) {
+                    $key = str_replace("\0", '', $key);
+                }
+                $copy[$key] = self::strip_null_bytes($item, $depth + 1);
+            }
+            return $copy;
+        }
+
+        if (is_string($value)) {
+            return str_replace("\0", '', $value);
+        }
+
+        return $value;
     }
 
     /**
