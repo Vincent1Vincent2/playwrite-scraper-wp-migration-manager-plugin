@@ -138,9 +138,19 @@ class Polylang_Media
         $clean_items = array();
         if (is_array($items)) {
             foreach ($items as $item) {
-                if (is_array($item)) {
-                    $clean_items[] = $item;
+                if (!is_array($item)) {
+                    continue;
                 }
+                $attachment_id = isset($item['attachment_id']) ? (int) $item['attachment_id'] : 0;
+                if ($attachment_id <= 0) {
+                    continue;
+                }
+                $clean_items[] = $this->finalize_item(
+                    $attachment_id,
+                    isset($item['file']) ? $item['file'] : '',
+                    (isset($item['alt']) && is_array($item['alt'])) ? $item['alt'] : array(),
+                    (isset($item['title']) && is_array($item['title'])) ? $item['title'] : array()
+                );
             }
         }
 
@@ -287,9 +297,13 @@ class Polylang_Media
             try {
                 $map = $this->api_translation_map($id);
                 if ($map !== array() && !$this->map_has_id($map, $id)) {
-                    $lang = $this->api_post_language($id);
-                    if ($lang !== '' && !isset($map[$lang])) {
-                        $map[$lang] = $id;
+                    if (!$this->is_exportable_attachment($id)) {
+                        $claimed[$id] = true;
+                    } else {
+                        $lang = $this->api_post_language($id);
+                        if ($lang !== '' && !isset($map[$lang])) {
+                            $map[$lang] = $id;
+                        }
                     }
                 }
             } catch (\Throwable $e) {
@@ -899,11 +913,11 @@ class Polylang_Media
             }
             $normalized = $this->order_map($normalized);
             $attachment_id = $this->canonical_attachment_id($normalized, $default_lang);
-            $items[] = array(
-                'attachment_id' => $attachment_id,
-                'file' => $this->file_from_records($normalized, $attachment_id, $records),
-                'alt' => $this->string_map($normalized, $records, 'alt'),
-                'title' => $this->string_map($normalized, $records, 'title'),
+            $items[] = $this->finalize_item(
+                $attachment_id,
+                $this->file_from_records($normalized, $attachment_id, $records),
+                $this->string_map($normalized, $records, 'alt'),
+                $this->string_map($normalized, $records, 'title')
             );
         }
 
@@ -1018,11 +1032,68 @@ class Polylang_Media
             $title[$lang] = $this->record_string($records, $id, 'title');
         }
 
+        return $this->finalize_item(
+            $id,
+            $this->record_string($records, $id, 'file'),
+            $alt,
+            $title
+        );
+    }
+
+    /**
+     * Every exported row has the same four fields and string maps.
+     *
+     * Alt and title always use the same language keys, even when one of the
+     * stored values is missing.
+     *
+     * @param int $attachment_id
+     * @param string $file
+     * @param array $alt
+     * @param array $title
+     * @return array
+     */
+    private function finalize_item($attachment_id, $file, $alt, $title)
+    {
+        $slugs = array();
+        if (is_array($alt)) {
+            foreach (array_keys($alt) as $lang) {
+                $slug = $this->language_slug($lang);
+                if ($slug !== '') {
+                    $slugs[$slug] = $slug;
+                }
+            }
+        }
+        if (is_array($title)) {
+            foreach (array_keys($title) as $lang) {
+                $slug = $this->language_slug($lang);
+                if ($slug !== '') {
+                    $slugs[$slug] = $slug;
+                }
+            }
+        }
+        $slugs = $this->order_map($slugs);
+
+        $clean_alt = array();
+        $clean_title = array();
+        foreach ($slugs as $slug) {
+            $clean_alt[$slug] = (is_array($alt) && array_key_exists($slug, $alt))
+                ? $this->string_value($alt[$slug])
+                : '';
+            $clean_title[$slug] = (is_array($title) && array_key_exists($slug, $title))
+                ? $this->string_value($title[$slug])
+                : '';
+        }
+
+        $attachment_id = (int) $attachment_id;
+        if ($attachment_id < 0) {
+            $attachment_id = 0;
+        }
+
         return array(
-            'attachment_id' => $id,
-            'file' => $this->portable_file($this->record_string($records, $id, 'file')),
-            'alt' => $alt,
-            'title' => $title,
+            'attachment_id' => $attachment_id,
+            'file' => $this->portable_file(is_string($file) ? $file : $this->string_value($file)),
+            'alt' => $clean_alt,
+            'title' => $clean_title,
         );
     }
 

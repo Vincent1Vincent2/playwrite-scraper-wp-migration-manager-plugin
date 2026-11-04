@@ -113,6 +113,94 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame(array('en', 'fr'), array_keys($result['items'][0]['title']));
     }
 
+    public function test_two_language_group_keeps_a_language_when_its_text_is_missing()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => '10'),
+                'members' => array(
+                    10 => 'en',
+                    11 => 'fr',
+                ),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => null, 'title' => 0),
+            11 => array('file' => '', 'alt' => array('Port'), 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 10, '2024/05/hero.jpg', array(
+            'en' => '',
+            'fr' => 'Port',
+        ), array(
+            'en' => '0',
+            'fr' => 'Visuel',
+        ));
+    }
+
+    public function test_export_envelope_keeps_only_real_media_items()
+    {
+        $result = $this->call('envelope', array(
+            array(
+                array(
+                    'attachment_id' => 0,
+                    'file' => 'skip.jpg',
+                    'alt' => array('en' => 'Skip'),
+                    'title' => array('en' => 'Skip'),
+                ),
+                array(
+                    'attachment_id' => 5,
+                    'file' => 'keep.jpg',
+                    'alt' => array('en' => 'Keep'),
+                    'title' => array('fr' => 'Garder'),
+                    'extra' => 'not part of the package',
+                ),
+                'not-an-item',
+            ),
+            array('', 'Media could not be read from this site. Nothing was changed.'),
+        ));
+
+        $this->assertSame(array('items', 'errors'), array_keys($result));
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 5, 'keep.jpg', array(
+            'en' => 'Keep',
+            'fr' => '',
+        ), array(
+            'en' => '',
+            'fr' => 'Garder',
+        ));
+        $this->assertArrayNotHasKey('extra', $result['items'][0]);
+        $this->assertSame(array(
+            'Media could not be read from this site. Nothing was changed.',
+        ), $result['errors']);
+    }
+
+    public function test_untranslated_attachment_is_not_folded_into_a_translation_group()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(
+                    10 => 'en',
+                    11 => 'fr',
+                ),
+            ),
+        ), array(
+            array('id' => 42, 'lang' => 'de'),
+        ), array(10, 11, 42), array('en', 'fr', 'de'), 'en', array(
+            10 => array('file' => 'hero.jpg', 'alt' => 'EN', 'title' => 'EN'),
+            11 => array('file' => 'hero.jpg', 'alt' => 'FR', 'title' => 'FR'),
+            42 => array('file' => 'scan.pdf', 'alt' => 'Plan', 'title' => 'Plan'),
+        ));
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame(42, $result['items'][1]['attachment_id']);
+        $this->assertSame(array('en', 'fr'), array_keys($result['items'][0]['alt']));
+        $this->assertSame(array('de' => 'Plan'), $result['items'][1]['title']);
+        $this->assertArrayNotHasKey('en', $result['items'][1]['alt']);
+    }
+
     public function test_translation_group_uses_the_default_language_attachment_and_shared_file()
     {
         $result = $this->itemsFrom(array(
