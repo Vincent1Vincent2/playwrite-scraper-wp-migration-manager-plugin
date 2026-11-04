@@ -634,6 +634,10 @@ namespace WMM\Tolka {
             $this->assertStringNotContainsString('No migration has been run from this screen yet.', $html);
             $this->assertSame(3, substr_count($html, ' disabled '));
             $this->assertStringContainsString('Polylang cannot be checked on this install yet.', $html);
+            $this->assertMatchesRegularExpression(
+                '/id="wmm-tolka-polylang-status"[^>]*>\s*<p>Polylang cannot be checked on this install yet\.<\/p>/',
+                $html
+            );
             $this->assertStringContainsString('includes/tolka/data/benchmarks.json', $html);
             $this->assertStringContainsString('id="wmm-tolka-measure-note"', $html);
             $this->assertStringContainsString('aria-describedby="wmm-tolka-measure-note"', $html);
@@ -1311,7 +1315,10 @@ PHP
             $GLOBALS['wmm_tolka_detector_errors'] = array('<b>bad</b>', 'Stored rows were unreadable.', array('skip'));
 
             $html = $this->render();
-            $this->assertStringContainsString('Polylang 3.6 is active on this site.', $html);
+            $this->assertMatchesRegularExpression(
+                '/id="wmm-tolka-polylang-status"[^>]*>\s*<p>Polylang 3\.6 is active on this site\.<\/p>/',
+                $html
+            );
             $this->assertStringContainsString('>bad<', $html);
             $this->assertStringContainsString('Stored rows were unreadable.', $html);
             $this->assertStringNotContainsString('3.6<script>', $html);
@@ -1321,13 +1328,56 @@ PHP
             $GLOBALS['wmm_tolka_detector_version'] = '';
             $GLOBALS['wmm_tolka_detector_errors'] = array();
             $html = $this->render();
-            $this->assertStringContainsString('Polylang is not active on this site.', $html);
-            $this->assertStringContainsString('will not delete Polylang data.', $html);
+            $this->assertMatchesRegularExpression(
+                '/id="wmm-tolka-polylang-status"[^>]*>\s*<p>Polylang is not active on this site\.<\/p>/',
+                $html
+            );
+
+            $GLOBALS['wmm_tolka_detector_errors'] = array("Stack trace:\n#0 /tmp/plugin.php(12): explode()");
+            $html = $this->render();
+            $this->assertStringNotContainsString('Stack trace', $html);
+            $this->assertStringNotContainsString('#0 ', $html);
+            $this->assertMatchesRegularExpression(
+                '/id="wmm-tolka-polylang-status"[^>]*>\s*<p>Polylang is not active on this site\.<\/p>/',
+                $html
+            );
+
+            $GLOBALS['wmm_tolka_detector_active'] = 1;
+            $GLOBALS['wmm_tolka_detector_version'] = '';
+            $html = $this->render();
+            $this->assertMatchesRegularExpression(
+                '/id="wmm-tolka-polylang-status"[^>]*>\s*<p>Polylang is active on this site\.<\/p>/',
+                $html
+            );
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+            $view = $directory . 'wizard.php';
+            file_put_contents($view, '<div id="wmm-tolka-wizard">SCREEN_MARKER</div>');
+            clearstatcache();
+
+            try {
+                $html = $this->render();
+                $this->assertStringContainsString('SCREEN_MARKER', $html);
+                $this->assertMatchesRegularExpression(
+                    '/id="wmm-tolka-polylang-status"[^>]*>\s*<p>Polylang is active on this site\.<\/p>/',
+                    $html
+                );
+            } finally {
+                unlink($view);
+                clearstatcache();
+            }
 
             $GLOBALS['wmm_tolka_detector_throw'] = true;
             $html = $this->render();
-            $this->assertStringContainsString('Polylang status could not be read.', $html);
+            $this->assertMatchesRegularExpression(
+                '/id="wmm-tolka-polylang-status"[^>]*>\s*<p>Polylang status could not be read\.<\/p>/',
+                $html
+            );
             $this->assertStringNotContainsString('detector-boom', $html);
+            $this->assertDoesNotMatchRegularExpression('/stack trace|#\d+\s/i', $html);
         }
 
         public function test_installed_partials_replace_fallback_copy()
