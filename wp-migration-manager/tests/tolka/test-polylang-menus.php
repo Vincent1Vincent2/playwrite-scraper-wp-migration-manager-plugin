@@ -1580,15 +1580,118 @@ class Polylang_Menus_Test extends TestCase
         ));
 
         $result = $fixture->run();
+        $again = $fixture->run();
         $primary = $this->location($result, 'primary');
 
+        $this->assertSame($this->locations($result), $this->locations($again));
         $this->assertSame(array('unknown'), array_keys($primary['translations']));
         $this->assertSame(8, $primary['translations']['unknown']['menu_id']);
         $this->assertSame('Plain', $primary['translations']['unknown']['name']);
-        $this->assertSame(
-            array('A menu has no Polylang language, so it was exported under "unknown".'),
-            $result['errors']
-        );
+        $this->assertSame(array(), $result['errors']);
+        $this->assertStringNotContainsString('unknown', implode("\n", $result['errors']));
+        $counts = array_count_values($this->locations($again));
+        $this->assertSame(1, $counts['primary']);
+    }
+
+    public function test_menu_without_a_language_uses_the_default_language(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'sv',
+            'languages' => array('sv', 'en'),
+            'registered' => array(
+                'primary' => 'Primary',
+            ),
+            'menus' => array(
+                8 => 'Plain',
+                9 => 'Extra',
+            ),
+            'theme_locations' => array(
+                'primary' => 8,
+            ),
+            'navigations' => array(
+                array(
+                    'id' => 40,
+                    'name' => 'Sidhuvud',
+                    'slug' => 'sidhuvud',
+                    'language' => '',
+                    'content' => '<!-- wp:navigation-link {"label":"Hem","url":"https://example.com/sv/"} /-->',
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $primary = $this->location($second, 'primary')['translations'];
+        $extra = $this->location($second, '');
+        $navigation = $this->location($second, 'navigation:sidhuvud')['translations'];
+        $joined = implode("\n", $second['errors']);
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(8, $primary['sv']['menu_id']);
+        $this->assertSame('Plain', $primary['sv']['name']);
+        $this->assertArrayNotHasKey('unknown', $primary);
+        $this->assertSame(9, $extra['translations']['sv']['menu_id']);
+        $this->assertSame('Extra', $extra['translations']['sv']['name']);
+        $this->assertSame(40, $navigation['sv']['menu_id']);
+        $this->assertSame('Hem', $navigation['sv']['items'][0]['title']);
+        $this->assertArrayNotHasKey('unknown', $navigation);
+        $this->assertStringNotContainsString('no Polylang language', $joined);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
+        $this->assertSame(1, array_count_values($this->locations($second))['navigation:sidhuvud']);
+    }
+
+    public function test_menu_without_a_language_is_kept_when_the_default_slot_is_taken(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'en',
+            'languages' => array('en'),
+            'registered' => array(
+                'primary' => 'Primary',
+            ),
+            'menus' => array(
+                10 => 'Main',
+                8 => 'Plain',
+            ),
+            'term_languages' => array(
+                10 => 'en',
+            ),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 10),
+                    ),
+                ),
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Kontakt',
+                        'url' => '',
+                        'object' => 'page',
+                        'object_id' => 4,
+                    ),
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $plain = $this->location($second, '');
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(10, $this->location($second, 'primary')['translations']['en']['menu_id']);
+        $this->assertSame(8, $plain['translations']['en']['menu_id']);
+        $this->assertSame('Plain', $plain['translations']['en']['name']);
+        $this->assertSame('Kontakt', $plain['translations']['en']['items'][0]['title']);
+        $this->assertSame('', $plain['translations']['en']['items'][0]['url']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
     }
 
     public function test_option_table_is_read_when_wordpress_functions_are_missing(): void
