@@ -152,18 +152,12 @@
 
       var url = els.url ? String(els.url.value || "").trim() : "";
       if (!url) {
-        if (els.url) {
-          els.url.setAttribute("aria-invalid", "true");
-        }
-        showError(els.speed, "Enter a public site URL, then measure again.");
+        rejectMeasure("Enter a public site URL, then measure again.");
         return;
       }
       var invalid = validateUrl(url);
       if (invalid) {
-        if (els.url) {
-          els.url.setAttribute("aria-invalid", "true");
-        }
-        showError(els.speed, invalid);
+        rejectMeasure(invalid);
         return;
       }
       if (els.url) {
@@ -184,7 +178,7 @@
         "Measuring the public page. This can take a few seconds.",
         function () {
           if (!String(url || "").trim()) {
-            showError(els.speed, "Enter a public site URL, then measure again.");
+            rejectMeasure("Enter a public site URL, then measure again.");
             return;
           }
           return post(
@@ -201,6 +195,13 @@
           });
         }
       );
+    }
+
+    function rejectMeasure(message) {
+      if (els.url) {
+        els.url.setAttribute("aria-invalid", "true");
+      }
+      showMeasureRejection(els.speed, message);
     }
 
     function onPreview(event) {
@@ -316,23 +317,48 @@
       .then(
         function () {},
         function (err) {
-          showError(
-            container,
-            err && err.message
-              ? err.message
-              : "The request failed. Try again."
-          );
+          try {
+            showError(
+              container,
+              err && err.message
+                ? err.message
+                : "The request failed. Try again."
+            );
+          } catch (ignore) {
+            /* The buttons still have to accept another click. */
+          }
         }
       )
       .then(release, release);
 
     function release() {
-      requestInFlight = false;
-      setBusy(button, false);
-      if (container) {
-        container.removeAttribute("aria-busy");
+      try {
+        requestInFlight = false;
+        enableActions();
+        if (container) {
+          container.removeAttribute("aria-busy");
+        }
+      } catch (ignore) {
+        requestInFlight = false;
+        enableActions();
       }
     }
+  }
+
+  function enableActions() {
+    requestInFlight = false;
+    actionButtons().forEach(function (button) {
+      if (!button) {
+        return;
+      }
+      button.disabled = false;
+      button.removeAttribute("disabled");
+      button.removeAttribute("data-wmm-tolka-pending");
+      button.removeAttribute("data-wmm-tolka-peer-disabled");
+      button.classList.remove("wmm-tolka-is-busy");
+      button.setAttribute("aria-busy", "false");
+      restoreButtonLabel(button);
+    });
   }
 
   function setBusy(button, busy, busyLabel) {
@@ -797,6 +823,17 @@
 
     removeGenerated(container);
 
+    var wroteIds = writeSpeedIds(container, {
+      current: currentText,
+      currentMs: estimate.current_ms,
+      tolka: tolkaText,
+      tolkaMs: estimate.tolka_ms,
+      faster: faster,
+      percent: estimate.faster_percent,
+      basis: basis,
+      note: note,
+      provenance: estimate.provenance || "",
+    });
     if (
       fillSpeedPanel(
         container,
@@ -807,8 +844,20 @@
         faster,
         basis,
         note
-      )
+      ) ||
+      wroteIds
     ) {
+      writeSpeedIds(container, {
+        current: currentText,
+        currentMs: estimate.current_ms,
+        tolka: tolkaText,
+        tolkaMs: estimate.tolka_ms,
+        faster: faster,
+        percent: estimate.faster_percent,
+        basis: basis,
+        note: note,
+        provenance: estimate.provenance || "",
+      });
       return;
     }
 
@@ -1003,6 +1052,72 @@
     }
     setText(slots.scope, SPEED_SCOPE);
     reveal(slots.scope);
+  }
+
+  function writeSpeedIds(container, values) {
+    var any = false;
+    function put(id, text, after) {
+      var node = speedNode(container, id);
+      if (!node) {
+        return;
+      }
+      any = true;
+      setText(node, text == null ? "" : text);
+      if (after) {
+        after(node);
+      }
+    }
+    put("wmm-tolka-current-load", values.current, function (node) {
+      setMs(node, values.currentMs);
+      reveal(node);
+    });
+    put("wmm-tolka-tolka-load", values.tolka, function (node) {
+      setMs(node, values.tolkaMs);
+      reveal(node);
+    });
+    put("wmm-tolka-faster", values.faster || "", function (node) {
+      if (values.percent != null && values.percent !== "" && isFinite(Number(values.percent))) {
+        node.setAttribute("data-faster-percent", Number(values.percent).toFixed(1));
+      }
+      reveal(node);
+    });
+    put("wmm-tolka-basis", values.basis ? finishSentence(values.basis) : "", function (node) {
+      if (values.basis) {
+        reveal(node);
+      }
+    });
+    put("wmm-tolka-provenance-note", values.note || "", function (node) {
+      if (values.provenance) {
+        node.setAttribute("data-provenance", values.provenance);
+      }
+      if (values.note) {
+        reveal(node);
+        var parent = node.parentNode;
+        if (
+          parent &&
+          parent.classList &&
+          (parent.classList.contains("wmm-tolka-provenance") ||
+            parent.classList.contains("wmm-tolka-provenance-note"))
+        ) {
+          reveal(parent);
+        }
+      }
+    });
+    return any;
+  }
+
+  function speedNode(container, id) {
+    if (!container || typeof document === "undefined" || !document.getElementById) {
+      return null;
+    }
+    var node = document.getElementById(id);
+    if (!node) {
+      return null;
+    }
+    if (node === container || (container.contains && container.contains(node))) {
+      return node;
+    }
+    return null;
   }
 
   function fillSpeedPanel(container, estimate, metrics, currentText, tolkaText, faster, basis, note) {
@@ -2065,6 +2180,26 @@
     container.classList.remove("wmm-tolka-has-result");
   }
 
+  function showMeasureRejection(container, message) {
+    if (container && hasSpeedAnchor(container)) {
+      var slots = collectSpeedSlots(container);
+      var text = normalizeMessages(message).join(" ");
+      if (slots.error) {
+        setText(slots.error, text);
+        var errorBox = errorWrapper(slots.error);
+        reveal(errorBox);
+        errorBox.setAttribute("role", "alert");
+        errorBox.classList.add("notice", "notice-error");
+        return;
+      }
+      var alert = markGenerated(el("p", "wmm-tolka-error", text));
+      alert.setAttribute("role", "alert");
+      container.insertBefore(alert, container.firstChild);
+      return;
+    }
+    showError(container, message);
+  }
+
   function showError(container, message) {
     if (!container) {
       return;
@@ -2169,7 +2304,7 @@
     if (!container || container.id !== "wmm-tolka-speed") {
       return {};
     }
-    return {
+    var slots = {
       panel: findSlot(container, ".wmm-tolka-speed-panel"),
       summary: speedSlot(container, [
         "[data-field='summary']",
@@ -2211,9 +2346,34 @@
       scope: speedSlot(container, ["[data-field='scope']", "#wmm-tolka-speed-scope"]),
       basisLabel: findSlot(container, ".wmm-tolka-speed-basis-label"),
     };
+    var current = speedNode(container, "wmm-tolka-current-load");
+    var tolka = speedNode(container, "wmm-tolka-tolka-load");
+    var faster = speedNode(container, "wmm-tolka-faster");
+    var basis = speedNode(container, "wmm-tolka-basis");
+    var note = speedNode(container, "wmm-tolka-provenance-note");
+    if (current) {
+      slots.current = current;
+    }
+    if (tolka) {
+      slots.tolka = tolka;
+    }
+    if (faster) {
+      slots.faster = faster;
+    }
+    if (basis) {
+      slots.basis = basis;
+    }
+    if (note) {
+      slots.provenance = note;
+    }
+    return slots;
   }
 
   function speedValue(container, field, id, className, extras) {
+    var named = speedNode(container, id);
+    if (named) {
+      return named;
+    }
     var selectors = ["[data-field='" + field + "']", "#" + id].concat(extras || []);
     var direct = speedSlot(container, selectors);
     if (direct) {
