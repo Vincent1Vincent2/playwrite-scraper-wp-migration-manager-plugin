@@ -265,6 +265,52 @@ HTML;
         $this->assertSame(2, $result['language_count']);
     }
 
+    public function test_two_hreflangs_plus_x_default_are_two_languages_not_three()
+    {
+        $html = '<link rel="alternate" hreflang="en" href="/"><link rel="alternate" hreflang="sv" href="/sv/"><link rel="alternate" hreflang="x-default" href="/">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(2, $result['hreflang_count']);
+        $this->assertSame(2, $result['language_count']);
+
+        $cased = $this->analyze('<a href=/en/ hreflang=EN></a><a href=/sv/ hreflang=sv></a><a href=/ hreflang=X-Default></a>');
+        $this->assertSame(2, $cased['hreflang_count']);
+        $this->assertSame(2, $cased['language_count']);
+
+        $first = $this->analyze('<link hreflang="x-default" href="/"><link hreflang="en" href="/en/"><link hreflang="sv" href="/sv/">');
+        $this->assertSame(2, $first['hreflang_count']);
+        $this->assertSame(2, $first['language_count']);
+
+        $three = $this->analyze('<link hreflang="en" href="/"><link hreflang="sv" href="/sv/"><link hreflang="de" href="/de/"><link hreflang="x-default" href="/">');
+        $this->assertSame(3, $three['hreflang_count']);
+        $this->assertSame(3, $three['language_count']);
+
+        $fallback = $this->analyze('<link hreflang="en" href="/"><link hreflang="sv" href="/sv/"><noscript><link hreflang="de" href="/de/"></noscript><link hreflang="x-default" href="/">');
+        $this->assertSame(2, $fallback['hreflang_count']);
+        $this->assertSame(2, $fallback['language_count']);
+    }
+
+    public function test_body_switcher_and_noscript_switcher_count_as_one()
+    {
+        $html = '<nav class="pll-switcher"></nav><noscript><div class="lang-item"></div></noscript>';
+        $result = $this->analyze($html);
+
+        $this->assertTrue($result['has_polylang_switcher']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(2, $result['language_count']);
+
+        $repeated = $this->analyze('<nav class="lang-item"></nav><nav class="lang-item"></nav><noscript><div class="pll-switcher"></div></noscript>');
+        $this->assertTrue($repeated['has_polylang_switcher']);
+        $this->assertSame(2, $repeated['language_count']);
+
+        $combined = '<link rel="alternate" hreflang="en" href="/"><link rel="alternate" hreflang="sv" href="/sv/"><link rel="alternate" hreflang="x-default" href="/"><nav class="lang-item"></nav><noscript><ul class="pll-switcher polylang pll-parent-menu-item"></ul></noscript>';
+        $both = $this->analyze($combined);
+
+        $this->assertSame(2, $both['hreflang_count']);
+        $this->assertSame(2, $both['language_count']);
+        $this->assertTrue($both['has_polylang_switcher']);
+    }
+
     public function test_hreflang_x_default_does_not_increase_language_count()
     {
         $languages = '<link rel="alternate" hreflang="en" href="/"><link rel="alternate" hreflang="sv" href="/sv/">';
