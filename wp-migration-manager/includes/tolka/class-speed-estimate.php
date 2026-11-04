@@ -68,7 +68,10 @@ class Speed_Estimate
      */
     public static function benchmarks()
     {
-        return self::read_benchmarks(__DIR__ . '/data/benchmarks.json');
+        $path = __DIR__ . '/data/benchmarks.json';
+        clearstatcache(true, $path);
+
+        return self::read_benchmarks($path);
     }
 
     /**

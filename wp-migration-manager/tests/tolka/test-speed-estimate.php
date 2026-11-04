@@ -1066,6 +1066,22 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('', $estimate['faster_label']);
         $this->assertStringNotContainsString('SECRET_PAGE_MARKUP', (string) json_encode($estimate));
         $this->assertArrayNotHasKey('polylang_extra_ms_per_language', $estimate['coefficients']);
+
+        $blank = self::contractBenchmarks();
+        $blank['polylang_switcher_ms'] = '   ';
+        $blank_estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $blank
+        );
+        $this->assertUnavailable(
+            $blank_estimate,
+            'A Tolka speed estimate is not available. The benchmark file has a value that is not a number for language switcher milliseconds (polylang_switcher_ms).'
+        );
+        $this->assertSame(0.0, $blank_estimate['faster_percent']);
+        $this->assertSame('', $blank_estimate['faster_label']);
+        $this->assertNotSame(11.9, $blank_estimate['faster_percent']);
+        $this->assertNotSame(881, $blank_estimate['tolka_ms']);
     }
 
     public function test_non_numeric_script_count_does_not_invent_a_percent()
@@ -1127,6 +1143,18 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('', $comma['faster_label']);
         $this->assertNotSame(14.4, $comma['faster_percent']);
         $this->assertNotSame(43.2, $comma['faster_percent']);
+
+        $overflow = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => '1e309'),
+            self::contractBenchmarks()
+        );
+        $this->assertUnavailable(
+            $overflow,
+            'A Tolka speed estimate is not available. The script count is not a usable number.'
+        );
+        $this->assertSame(0.0, $overflow['faster_percent']);
+        $this->assertSame('', $overflow['faster_label']);
     }
 
     public function test_benchmarks_returns_nothing_when_the_file_cannot_be_read()
