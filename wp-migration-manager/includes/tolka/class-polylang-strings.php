@@ -133,15 +133,23 @@ class Polylang_Strings
             }
             foreach ($decoded as $pair) {
                 $known = isset($by_source[$pair['source']]) ? $by_source[$pair['source']] : array();
+                $pair_context = isset($pair['context']) && is_string($pair['context']) ? $pair['context'] : '';
+                $applied = false;
                 if ($known) {
                     foreach ($known as $key) {
                         $position = $index[$key];
+                        if ($pair_context !== '' && $items[$position]['context'] !== $pair_context) {
+                            continue;
+                        }
                         $items[$position]['translations'][$slug] = $pair['translation'];
+                        $applied = true;
                     }
+                }
+                if ($applied) {
                     continue;
                 }
                 $name = isset($pair['name']) && is_string($pair['name']) ? $pair['name'] : '';
-                $context = isset($pair['context']) && is_string($pair['context']) ? $pair['context'] : '';
+                $context = $pair_context;
                 $this->add_item(
                     $items,
                     $index,

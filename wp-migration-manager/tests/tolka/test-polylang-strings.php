@@ -633,6 +633,61 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     }
 
     /**
+     * A stored row that names its group fills only that group.
+     *
+     * @return void
+     */
+    public function test_a_context_specific_translation_does_not_fill_the_other_context()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Footer'),
+            ),
+            'mo' => array(
+                'fr' => array(array(
+                    'singular' => 'Open daily',
+                    'translations' => array('Ouvert'),
+                    'context' => 'Widget',
+                    'name' => 'Hours',
+                )),
+            ),
+        ));
+
+        $by_context = array();
+        foreach ($result['items'] as $item) {
+            $by_context[$item['context']] = $item['translations']['fr'];
+        }
+        $this->assertCount(2, $by_context);
+        $this->assertSame('Ouvert', $by_context['Widget']);
+        $this->assertSame('', $by_context['Footer']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * A name without text is not a string, and it is not the nameless blank row.
+     *
+     * @return void
+     */
+    public function test_a_named_row_with_no_text_is_left_out()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => '', 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Open daily', $result['items'][0]['string']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
      * @return void
      */
     public function test_a_row_with_no_name_and_no_text_is_left_out()
