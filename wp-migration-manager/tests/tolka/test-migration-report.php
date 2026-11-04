@@ -284,7 +284,7 @@ class Test_Migration_Report extends TestCase
         $this->assertFalse($report['ok']);
         $this->assertSame('The migration finished with problems.', $report['title']);
         $this->assertSame(
-            'Your Polylang content is packaged for Tolka: 2 languages and 3 posts. No terms, strings, menus, or media items were found. The package is saved on this site. One menu had no items. Review the problems below, then run the migration again if you want to retry. Polylang data was left in place.',
+            'The migration finished with problems. Your Polylang content is packaged for Tolka: 2 languages and 3 posts. No terms, strings, menus, or media items were found. The package is saved on this site. One menu had no items. Review the problems below, then run the migration again if you want to retry. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
@@ -1321,6 +1321,7 @@ echo json_encode($report);
         $this->assertFalse($report['ok']);
         $this->assert_partial_title($report);
         $this->assertNotSame('The migration is complete.', $report['title']);
+        $this->assertStringStartsWith('The migration finished with problems.', $report['summary']);
         $this->assertStringNotContainsString('The migration is complete', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
@@ -1359,6 +1360,7 @@ echo json_encode($report);
         $this->assertFalse($report['ok']);
         $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertNotSame('The migration finished with problems.', $report['title']);
+        $this->assertStringNotContainsString('The migration finished with problems.', $report['summary']);
         $this->assertStringContainsString('Nothing was stored.', $report['summary']);
         $this->assert_section_order($report);
         $this->assertSame('3', $this->line($report, 'Posts'));
@@ -1701,6 +1703,7 @@ echo json_encode(array(
             $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
             $this->assertStringNotContainsString('complete', strtolower($report['title']));
             $this->assertStringNotContainsString('could not be saved', $report['title']);
+            $this->assertStringStartsWith('The migration finished with problems.', $report['summary']);
             $this->assertStringNotContainsString('could not be saved', $report['summary']);
             $this->assertSame(array(), $report['errors']);
             $this->assert_section_order($report);
@@ -1808,6 +1811,68 @@ echo json_encode(array(
         $this->assertSame('0', $this->line($second, 'Menus'));
         $this->assertSame('0', $this->line($second, 'Media'));
         $this->assert_section_order($second);
+    }
+
+    public function test_partial_finish_keeps_its_title_when_the_report_is_not_stored()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+function update_option($option, $value, $autoload = null) {
+    return false;
+}
+function get_option($option, $default = false) {
+    return array("ok" => false, "title" => "old");
+}
+require ' . var_export($class, true) . ';
+$report = \\WMM\\Tolka\\Migration_Report::format(array(
+    "ok" => true,
+    "counts" => array(
+        "languages" => 1,
+        "posts" => 2,
+        "terms" => 0,
+        "strings" => 4,
+        "menus" => 0,
+        "media" => 5,
+    ),
+    "write" => array(
+        "ok" => true,
+        "errors" => array("media" => array("One file could not be stored")),
+    ),
+));
+echo json_encode($report);
+';
+        $report = $this->run_report_script($script);
+        $this->assertFalse($report['ok']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
+        $this->assertStringNotContainsString('complete', strtolower($report['title']));
+        $this->assertStringNotContainsString('could not be saved', $report['title']);
+        $this->assertStringStartsWith('The migration finished with problems.', $report['summary']);
+        $this->assertStringContainsString('The report could not be saved.', $report['summary']);
+        $this->assertSame(array('The report could not be saved.'), $report['errors']);
+        $this->assert_section_order($report);
+        $this->assert_sections_are_contiguous($report);
+        $this->assertSame('1', $this->line($report, 'Languages'));
+        $this->assertSame('2', $this->line($report, 'Posts'));
+        $this->assertSame('0', $this->line($report, 'Terms'));
+        $this->assertSame('4', $this->line($report, 'Strings'));
+        $this->assertSame('0', $this->line($report, 'Menus'));
+        $this->assertSame('5', $this->line($report, 'Media'));
+
+        $media_at = null;
+        $report_at = null;
+        foreach ($report['lines'] as $index => $line) {
+            if ($line['label'] === 'Media') {
+                $media_at = $index;
+            }
+            if ($line['label'] === 'Report') {
+                $report_at = $index;
+            }
+        }
+        $this->assertNotNull($media_at);
+        $this->assertNotNull($report_at);
+        $this->assertGreaterThan($media_at, $report_at);
     }
 
     public function test_update_option_false_adds_an_error_only_when_the_value_is_not_stored()
