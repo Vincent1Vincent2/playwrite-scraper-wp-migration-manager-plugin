@@ -463,6 +463,13 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('Door', $this->call('string_value', array($this->call('unserialize_meta', array(serialize('Door'))))));
     }
 
+    public function test_object_meta_is_not_exported()
+    {
+        $this->assertSame('', $this->call('unserialize_meta', array('O:8:"stdClass":0:{}')));
+        $this->assertSame('', $this->call('unserialize_meta', array('C:11:"ArrayObject":0:{}')));
+        $this->assertSame('O: the origin', $this->call('unserialize_meta', array('O: the origin')));
+    }
+
     public function test_titles_keep_unicode_and_drop_invalid_bytes()
     {
         $this->assertSame('Café 港', $this->call('string_value', array('Café 港')));

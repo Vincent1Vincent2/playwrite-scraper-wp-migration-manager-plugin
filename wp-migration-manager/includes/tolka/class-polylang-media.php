@@ -1901,6 +1901,9 @@ class Polylang_Media
         if (!is_string($value)) {
             return $value;
         }
+        if (preg_match('/^(O|C):\d+:/', $value) === 1) {
+            return '';
+        }
         if (function_exists('maybe_unserialize')) {
             return maybe_unserialize($value);
         }
