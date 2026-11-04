@@ -604,6 +604,56 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(8, $floatParent['translations']['en']['parent']);
     }
 
+    public function test_the_same_instance_can_export_twice(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(2, 'Child', 'child', 'category', 'en', 1),
+            $this->term(3, 'Root', 'root', 'category', 'en'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $method = new \ReflectionMethod(Polylang_Terms::class, 'export');
+        $this->assertFalse($method->isStatic());
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertSame(1, $this->itemByGroup($second['items'], 'term:2')['translations']['en']['parent']);
+        $this->assertSame(0, $this->itemByGroup($second['items'], 'term:3')['translations']['en']['parent']);
+    }
+
+    public function test_a_missing_parent_on_one_translation_is_zero(): void
+    {
+        $exporter = new Polylang_Terms(function () {
+            return array(
+                'state' => 'ok',
+                'default_lang' => 'en',
+                'groups' => array(
+                    array(
+                        'taxonomy' => 'category',
+                        'translations' => array(
+                            'en' => array('id' => 2, 'name' => 'Child', 'slug' => 'child', 'parent' => 1),
+                            'sv' => array('id' => 3, 'name' => 'Root', 'slug' => 'root'),
+                        ),
+                    ),
+                ),
+            );
+        });
+
+        $result = $exporter->export();
+
+        $this->assertSame(1, $result['items'][0]['translations']['en']['parent']);
+        $this->assertSame(0, $result['items'][0]['translations']['sv']['parent']);
+    }
+
     public function test_a_term_with_no_translation_is_exported_on_its_own(): void
     {
         if (!$this->canUseDatabaseStub()) {

@@ -187,6 +187,19 @@ class Polylang_Terms
             $errors[] = $this->failureSentence();
         }
 
+        foreach ($items as $index => $item) {
+            if (!isset($item['translations']) || !is_array($item['translations'])) {
+                continue;
+            }
+            foreach ($item['translations'] as $lang => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
+                $items[$index]['translations'][$lang] = $row;
+            }
+        }
+
         usort($items, function ($left, $right) {
             return $this->compareItems($left, $right);
         });
