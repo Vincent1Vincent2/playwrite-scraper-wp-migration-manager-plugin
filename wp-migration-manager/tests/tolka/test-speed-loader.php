@@ -894,6 +894,10 @@ class Speed_Loader_Test extends TestCase
             $method->invoke(null, 'https://example.com/', array('1.1.1.1', '10.0.0.1', '127.0.0.1', ''))
         );
         $this->assertSame(
+            array('example.com:443:1.1.1.1'),
+            $method->invoke(null, 'https://example.com/', array('1.1.1.1', '2606:4700:4700::1111'))
+        );
+        $this->assertSame(
             array(),
             $method->invoke(null, 'https://1.1.1.1/', array('1.1.1.1'))
         );

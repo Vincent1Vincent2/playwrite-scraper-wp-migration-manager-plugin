@@ -257,7 +257,8 @@ class Speed_Loader
             return array();
         }
 
-        $entries = array();
+        $ipv4 = array();
+        $ipv6 = array();
         foreach ($ips as $ip) {
             if (!is_string($ip) || $ip === '' || self::ip_is_blocked($ip)) {
                 continue;
@@ -266,13 +267,20 @@ class Speed_Loader
                 continue;
             }
             if (strpos($ip, ':') !== false) {
-                $entries[] = $host . ':' . $port . ':[' . $ip . ']';
+                $ipv6[] = $host . ':' . $port . ':[' . $ip . ']';
             } else {
-                $entries[] = $host . ':' . $port . ':' . $ip;
+                $ipv4[] = $host . ':' . $port . ':' . $ip;
             }
         }
 
-        return $entries;
+        // Curl treats an unreachable IPv6 pin as a failed connection and does
+        // not fall back to IPv4. Keep the checked IPv4 addresses when the
+        // name has any, and use IPv6 only for an IPv6-only answer.
+        if ($ipv4 !== array()) {
+            return $ipv4;
+        }
+
+        return $ipv6;
     }
 
     /**
