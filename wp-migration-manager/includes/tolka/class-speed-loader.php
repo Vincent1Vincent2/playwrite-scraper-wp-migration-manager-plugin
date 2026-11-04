@@ -109,16 +109,16 @@ class Speed_Loader
             if ($final_scheme !== '' && $final_scheme !== 'http' && $final_scheme !== 'https') {
                 return self::fail(
                     $result,
-                    self::text('The site redirected to an address that cannot be measured.'),
+                    self::text('The site redirected to an address that is not a public http or https page.'),
                     $code
                 );
             }
             if ($final_scheme === 'http' || $final_scheme === 'https') {
                 $landed = self::parse_public_url($final);
                 if ($landed['error'] !== '') {
-                    $message = self::text('The site redirected to an address that cannot be measured.');
+                    $message = self::text('The site redirected to an address that is not a public http or https page.');
                     if ($landed['reason'] === 'private' || $landed['reason'] === 'private-dns') {
-                        $message = self::text('The site redirected to a private or local address, so it cannot be measured. Enter the public address visitors use.');
+                        $message = self::text('The site redirected to a private or local address. Enter the public address visitors use.');
                     }
                     return self::fail($result, $message, $code);
                 }
@@ -1218,13 +1218,13 @@ class Speed_Loader
             case 'long':
                 return self::text('That address is too long to measure. Use the site\'s public home page.');
             case 'scheme':
-                return self::text('Only a public http or https address can be measured.');
+                return self::text('Only a public http or https address can be used.');
             case 'host':
-                return self::text('That address has no host name, so it cannot be measured.');
+                return self::text('That address has no host name.');
             case 'private':
-                return self::text('That address points at a private or local network, so it cannot be measured. Enter the public address visitors use.');
+                return self::text('That address is on a private or local network. Enter the public address visitors use.');
             case 'private-dns':
-                return self::text('That address resolves to a private or local network, so it cannot be measured. Enter the public address visitors use.');
+                return self::text('That address resolves to a private or local network. Enter the public address visitors use.');
             default:
                 return self::text('That address could not be read. Use a full http or https URL.');
         }
@@ -1284,7 +1284,7 @@ class Speed_Loader
             || strpos($text, 'curl error 47') !== false
             || (strpos($text, 'redirect') !== false && strpos($text, 'maximum') !== false)
         ) {
-            return self::text('The site redirected too many times, so the load time could not be measured.');
+            return self::text('The site redirected too many times.');
         }
         if (
             strpos($text, 'ssl') !== false
@@ -1292,7 +1292,7 @@ class Speed_Loader
             || strpos($text, 'curl error 60') !== false
             || strpos($text, 'curl error 51') !== false
         ) {
-            return self::text('The site\'s certificate could not be verified, so the page was not loaded.');
+            return self::text('The site\'s certificate could not be verified.');
         }
         if (
             strpos($text, 'could not resolve') !== false
@@ -1311,10 +1311,10 @@ class Speed_Loader
             return self::text('The site refused the connection. Check the address and try again.');
         }
         if (strpos($text, 'blocked requests through http') !== false) {
-            return self::text('WordPress is blocking requests to other sites, so the page could not be loaded.');
+            return self::text('WordPress is blocking requests to other sites.');
         }
         if (strpos($text, 'a valid url was not provided') !== false) {
-            return self::text('Only a public http or https address can be measured.');
+            return self::text('Only a public http or https address can be used.');
         }
 
         return self::text('The site could not be reached. Check the address and try again.');
@@ -1330,39 +1330,39 @@ class Speed_Loader
     {
         $code = (int) $code;
         if ($code === 401) {
-            return self::text('The site asked for a login, so the public page could not be measured.');
+            return self::text('The site asked for a login.');
         }
         if ($code === 403) {
-            return self::text('The site refused access to that page, so the load time could not be measured.');
+            return self::text('The site refused access to that page.');
         }
         if ($code === 404) {
-            return self::text('That page was not found, so the load time could not be measured.');
+            return self::text('That page was not found.');
         }
         if ($code >= 300 && $code <= 399) {
-            $template = 'The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.';
+            $template = 'The site redirected (HTTP %d) and did not return a page.';
             if (function_exists('__')) {
                 $template = __(
-                    'The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.',
+                    'The site redirected (HTTP %d) and did not return a page.',
                     'migration-manager'
                 );
             }
             return sprintf($template, $code);
         }
         if ($code >= 500 && $code <= 599) {
-            $template = 'The site reported an error (HTTP %d), so the load time could not be measured.';
+            $template = 'The site reported an error (HTTP %d).';
             if (function_exists('__')) {
                 $template = __(
-                    'The site reported an error (HTTP %d), so the load time could not be measured.',
+                    'The site reported an error (HTTP %d).',
                     'migration-manager'
                 );
             }
             return sprintf($template, $code);
         }
 
-        $template = 'The site returned HTTP %d, so the load time could not be measured.';
+        $template = 'The site returned HTTP %d.';
         if (function_exists('__')) {
             $template = __(
-                'The site returned HTTP %d, so the load time could not be measured.',
+                'The site returned HTTP %d.',
                 'migration-manager'
             );
         }
