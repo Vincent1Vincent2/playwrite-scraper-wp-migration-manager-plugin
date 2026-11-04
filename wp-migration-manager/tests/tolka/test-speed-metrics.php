@@ -438,6 +438,53 @@ HTML;
         $this->assertSame(2, $result['stylesheet_count']);
     }
 
+    public function test_unquoted_root_relative_stylesheet_counts()
+    {
+        $cases = array(
+            '<link rel=stylesheet href=/style.css>',
+            '<link href=/style.css rel=stylesheet>',
+            '<link href = /style.css rel = stylesheet>',
+            '<link href=/style.css?ver=1 rel=stylesheet>',
+        );
+
+        foreach ($cases as $html) {
+            $result = $this->analyze($html);
+
+            $this->assertSame(1, $result['stylesheet_count'], $html);
+            $this->assertSame(1, $result['language_count'], $html);
+            $this->assertFalse($result['truncated'], $html);
+        }
+
+        $without_rel = $this->analyze('<link href=/style.css>');
+        $this->assertSame(0, $without_rel['stylesheet_count']);
+
+        $tag = '<link href=/style.css rel=stylesheet>';
+        $capped = str_repeat(' ', 2000000 - strlen($tag)) . $tag;
+        $this->assertSame(2000000, strlen($capped));
+        $capped_result = $this->analyze($capped);
+        $this->assertTrue($capped_result['truncated']);
+        $this->assertSame(1, $capped_result['stylesheet_count']);
+    }
+
+    public function test_img_inside_an_html_comment_does_not_count_and_a_later_img_does()
+    {
+        $result = $this->analyze('<!-- <img src="/hidden.png"> --><img src="/shown.png">');
+        $this->assertSame(1, $result['image_count']);
+
+        $around = $this->analyze('<img src="/first.png"><!-- <img src="/hidden.png"><img src="/also-hidden.png"> --><img src="/second.png">');
+        $this->assertSame(2, $around['image_count']);
+
+        $unquoted = $this->analyze("<!--\n<img src=/hidden.png>\n-->\n<img src=/shown.png>");
+        $this->assertSame(1, $unquoted['image_count']);
+
+        $tight = $this->analyze('<!--<img src=/hidden.png>--><img src=/shown.png>');
+        $this->assertSame(1, $tight['image_count']);
+
+        $commented_sheet = $this->analyze('<!-- <link href=/style.css rel=stylesheet> --><link href=/style.css rel=stylesheet><img src="/shown.png">');
+        $this->assertSame(1, $commented_sheet['stylesheet_count']);
+        $this->assertSame(1, $commented_sheet['image_count']);
+    }
+
     public function test_unquoted_root_relative_url_does_not_hide_later_attributes()
     {
         $html = '<link href=/style.css rel=stylesheet><script src=/theme.js></script><a href=/sv/ hreflang=sv></a><a href=/ hreflang=x-default></a>';
