@@ -4,8 +4,8 @@
  * Export Polylang languages for Migrate to Tolka.
  *
  * Reads the Polylang API when it is loaded. Otherwise reads the language
- * taxonomy, the post and term translation groups, and the polylang option.
- * Polylang data is never deleted or updated.
+ * taxonomy, term_language, the post and term translation groups, and the
+ * polylang option. Polylang data is never deleted or updated.
  *
  * @package MigrationManager
  */
@@ -596,7 +596,7 @@ class Polylang_Languages
             return ($left_group < $right_group) ? -1 : 1;
         }
 
-        $by_name = strcmp(
+        $by_name = strcasecmp(
             $this->plain_name($this->read_field($left, 'name')),
             $this->plain_name($this->read_field($right, 'name'))
         );
@@ -605,8 +605,8 @@ class Polylang_Languages
         }
 
         return strcmp(
-            $this->string_value($this->read_field($left, 'slug')),
-            $this->string_value($this->read_field($right, 'slug'))
+            $this->normalized_slug($this->read_field($left, 'slug')),
+            $this->normalized_slug($this->read_field($right, 'slug'))
         );
     }
 
@@ -883,6 +883,22 @@ class Polylang_Languages
     }
 
     /**
+     * ASCII slug in lowercase. Other slugs are trimmed and otherwise kept.
+     *
+     * @param mixed $slug Raw slug.
+     * @return string
+     */
+    private function normalized_slug($slug)
+    {
+        $slug = $this->string_value($slug);
+        if (preg_match('/^[A-Za-z0-9_-]+$/', $slug) === 1) {
+            return strtolower($slug);
+        }
+
+        return $slug;
+    }
+
+    /**
      * Build one language item with the contract fields.
      *
      * An empty name uses the slug so the preview is not a blank row.
@@ -897,10 +913,7 @@ class Polylang_Languages
      */
     private function make_item($slug, $name, $locale, $is_default, $term_id, $flag)
     {
-        $slug = $this->string_value($slug);
-        if (preg_match('/^[A-Za-z0-9_-]+$/', $slug) === 1) {
-            $slug = strtolower($slug);
-        }
+        $slug = $this->normalized_slug($slug);
         $name = $this->plain_name($name);
         if ($name === '') {
             $name = $slug;
