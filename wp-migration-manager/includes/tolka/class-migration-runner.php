@@ -54,9 +54,10 @@ class Migration_Runner
     /**
      * Counts, a sample of at most 20 items per section, errors, and missing classes.
      *
-     * Also returns a finished `message`, a `state` of missing, incomplete,
-     * error, empty, or ready, and per section: status, message, labels,
-     * error_count, and how many items were left out of the sample. Does not write.
+     * Also returns a finished `message`, `detail` (the first error, or an
+     * empty string), a `state` of missing, incomplete, error, empty, or ready,
+     * and per section: status, message, labels, error_count, and how many
+     * items were left out of the sample. Does not write.
      *
      * @return array
      */
@@ -65,15 +66,17 @@ class Migration_Runner
         $view = self::view(static::collect());
 
         $state = self::preview_state($view);
+        $errors = self::cap_list($view['errors']);
 
         return array(
             'counts' => $view['counts'],
             'sample' => $view['sample'],
-            'errors' => self::cap_list($view['errors']),
+            'errors' => $errors,
             'missing' => $view['missing'],
             'sections' => $view['sections'],
             'state' => $state,
             'message' => self::preview_message($view, $state),
+            'detail' => self::first_error($errors),
         );
     }
 
@@ -83,7 +86,8 @@ class Migration_Runner
      * `ok` is true only when the writer returns ok true, no errors were
      * recorded, and no class was missing. `write` is the writer return value,
      * or null when the writer was not called or did not return an array.
-     * `state` is saved, empty, partial, failed, or blocked.
+     * `state` is saved, empty, partial, failed, or blocked. `detail` is the
+     * first error sentence, or an empty string when there is nothing to fix.
      *
      * @return array
      */
@@ -117,17 +121,19 @@ class Migration_Runner
         $had_errors = !empty($blocking) || !empty($view['errors']);
         $saved = is_array($write) && isset($write['ok']) && $write['ok'] === true;
         $ok = $saved && !$had_errors && empty($missing);
+        $errors = self::merge_errors($blocking, $view['errors']);
 
         return array(
             'ok' => $ok,
             'counts' => $view['counts'],
             'write' => $write,
-            'errors' => self::merge_errors($blocking, $view['errors']),
+            'errors' => $errors,
             'missing' => $missing,
             'sample' => $view['sample'],
             'sections' => $view['sections'],
             'state' => self::run_state($ok, $saved, $attempted, $view['counts']),
             'message' => self::run_message($ok, $saved, $attempted, $view),
+            'detail' => self::first_error($errors),
         );
     }
 
@@ -383,6 +389,7 @@ class Migration_Runner
                 } elseif ($count > 1) {
                     $message .= ' ' . sprintf(self::line($meta['found_many']), $count);
                 }
+                $message = self::with_sample_note($message, $count);
             } elseif ($count === 0) {
                 $status = 'empty';
                 $message = self::line($meta['empty']);
@@ -391,13 +398,10 @@ class Migration_Runner
                 $message = self::line($meta['one']);
             } else {
                 $status = 'ready';
-                $message = sprintf(self::line($meta['many']), $count);
-                if ($count > self::SAMPLE_LIMIT) {
-                    $message .= ' ' . sprintf(
-                        self::line('The preview shows the first %d.'),
-                        self::SAMPLE_LIMIT
-                    );
-                }
+                $message = self::with_sample_note(
+                    sprintf(self::line($meta['many']), $count),
+                    $count
+                );
             }
 
             $counts[$section] = $count;
@@ -409,6 +413,7 @@ class Migration_Runner
                 'message' => $message,
                 'labels' => $labels,
                 'more' => max(0, $count - count($presented)),
+                'more_label' => self::more_label(max(0, $count - count($presented))),
                 'error_count' => count($section_errors),
             );
             foreach ($section_errors as $error) {
@@ -546,6 +551,51 @@ class Migration_Runner
             return self::line('The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.');
         }
         return self::line('The migration did not run. Nothing was written, and existing Polylang data was not changed.');
+    }
+
+    /**
+     * The first sentence a screen can show under the headline.
+     *
+     * @param array $errors
+     * @return string
+     */
+    private static function first_error($errors)
+    {
+        if (!is_array($errors) || empty($errors) || !is_string($errors[0])) {
+            return '';
+        }
+        return $errors[0];
+    }
+
+    /**
+     * @param string $message
+     * @param int    $count
+     * @return string
+     */
+    private static function with_sample_note($message, $count)
+    {
+        if ($count > self::SAMPLE_LIMIT) {
+            $message .= ' ' . sprintf(
+                self::line('The preview shows the first %d.'),
+                self::SAMPLE_LIMIT
+            );
+        }
+        return $message;
+    }
+
+    /**
+     * @param int $more
+     * @return string
+     */
+    private static function more_label($more)
+    {
+        if ($more === 1) {
+            return self::line('1 more is not shown.');
+        }
+        if ($more > 1) {
+            return sprintf(self::line('%d more are not shown.'), $more);
+        }
+        return '';
     }
 
     /**
