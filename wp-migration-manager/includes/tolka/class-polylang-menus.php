@@ -62,12 +62,13 @@ class Polylang_Menus
     /**
      * Export every theme location and any menus that are not assigned.
      *
+     * Call this on an instance: `(new Polylang_Menus())->export()`.
+     *
      * @return array{items: array<int, array>, errors: string[]}
      */
-    public static function export()
+    public function export()
     {
-        $exporter = new static();
-        return $exporter->collect();
+        return $this->collect();
     }
 
     /**
