@@ -1654,6 +1654,76 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_null_bytes_inside_html_do_not_drop_the_tags()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:21',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 21,
+                            'title' => "See\0 <a href=\"https://example.com/a\0b\">Link</a>",
+                            'content' => "<div data-x=\"a\0b\">Hi\0</div>",
+                        ),
+                    ),
+                ),
+            ),
+            'terms' => array(
+                array(
+                    'group' => 'term:6',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 6,
+                            'name' => "News\0 <em>desk</em>",
+                            'slug' => "news\0-desk",
+                            'description' => "<p>About\0</p>",
+                        ),
+                    ),
+                ),
+            ),
+            'menus' => array(
+                array(
+                    'location' => 'primary',
+                    'translations' => array(
+                        'en' => array(
+                            'menu_id' => 30,
+                            'name' => "Main\0",
+                            'items' => array(
+                                array(
+                                    'title' => "Home\0 <span>page</span>",
+                                    'url' => "https://example.com/\0home",
+                                    'object' => 'page',
+                                    'object_id' => 21,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $post = $stored['posts'][0]['translations']['en'];
+        $term = $stored['terms'][0]['translations']['en'];
+        $item = $stored['menus'][0]['translations']['en']['items'][0];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('See <a href="https://example.com/ab">Link</a>', $post['title']);
+        $this->assertSame('<div data-x="ab">Hi</div>', $post['content']);
+        $this->assertSame('News <em>desk</em>', $term['name']);
+        $this->assertSame('news-desk', $term['slug']);
+        $this->assertSame('<p>About</p>', $term['description']);
+        $this->assertSame('Main', $stored['menus'][0]['translations']['en']['name']);
+        $this->assertSame('Home <span>page</span>', $item['title']);
+        $this->assertSame('https://example.com/home', $item['url']);
+        $this->assertSame(false, strpos(serialize($stored), "\0"));
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
     public function test_html_cleanup_leaves_polylang_rows_in_place()
     {
         $polylang = array(
