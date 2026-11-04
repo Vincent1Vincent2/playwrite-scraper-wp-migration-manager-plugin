@@ -1837,6 +1837,17 @@ namespace {
             $this->assertSame($sections, array_keys($partial['counts']));
             $this->assertCount(1, $partial['languages']['items']);
             $this->assertSame(array(), $partial['posts']['items']);
+
+            $this->reset_doubles();
+            Migration_Runner_Test_Double::$map = $map;
+            \WMM\Tolka\RunnerTest\Schema::$throw = true;
+            \WMM\Tolka\RunnerTest\Writer::$throw = true;
+            $thrown = Migration_Runner_Test_Double::run();
+            $this->assertFalse($thrown['ok']);
+            $this->assertNull($thrown['write']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame($sections, array_keys($thrown['counts']));
+            $this->assertStringNotContainsString('Migration finished', $thrown['message']);
         }
 
         public function test_throwing_constructor_names_the_section_and_continues()
