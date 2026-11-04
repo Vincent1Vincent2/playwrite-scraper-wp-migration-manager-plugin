@@ -451,6 +451,73 @@ class Test_Migration_Report extends TestCase
         );
     }
 
+    public function test_section_count_lines_stay_in_contract_order()
+    {
+        $report = Migration_Report::format(array(
+            'counts' => array(
+                'media' => 4,
+                'languages' => 1,
+            ),
+        ));
+
+        $labels = array();
+        foreach ($report['lines'] as $line) {
+            if (in_array($line['label'], array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'), true)) {
+                $labels[] = $line['label'];
+            }
+        }
+
+        $this->assertSame(
+            array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'),
+            $labels
+        );
+        $this->assertSame('1 language', $this->line($report, 'Languages'));
+        $this->assertSame('0 posts', $this->line($report, 'Posts'));
+        $this->assertSame('4 media items', $this->line($report, 'Media'));
+    }
+
+    public function test_menu_and_media_samples_use_visible_names()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'menus' => 1,
+                'media' => 1,
+            ),
+            'write' => array('ok' => true),
+            'sample' => array(
+                'menus' => array(
+                    array(
+                        'location' => 'primary',
+                        'translations' => array(
+                            'en' => array(
+                                'menu_id' => 3,
+                                'items' => array(
+                                    array(
+                                        'title' => 'Contact',
+                                        'url' => '/contact',
+                                        'object' => 'page',
+                                        'object_id' => 9,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                'media' => array(
+                    array(
+                        'attachment_id' => 12,
+                        'title' => array('en' => 'Shop photo'),
+                        'alt' => array('en' => 'Storefront', 'sv' => 'Butik'),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame('Contact', $this->line($report, 'Example menu'));
+        $this->assertSame('Shop photo (en)', $this->line($report, 'Example file'));
+    }
+
     public function test_saved_counts_that_differ_are_explained()
     {
         $report = Migration_Report::format(array(

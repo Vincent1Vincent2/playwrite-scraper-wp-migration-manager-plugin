@@ -1021,6 +1021,13 @@ class Migration_Report
             }
         }
 
+        if ($section === 'menus') {
+            $from_items = self::menu_item_name($item);
+            if ($from_items !== '') {
+                return $from_items;
+            }
+        }
+
         $fields = array(
             'languages' => array('name', 'slug'),
             'posts' => array('title', 'slug'),
@@ -1040,7 +1047,87 @@ class Migration_Report
             }
         }
 
+        if ($section === 'media') {
+            foreach (array('title', 'alt') as $map_key) {
+                if (!isset($item[$map_key]) || !is_array($item[$map_key])) {
+                    continue;
+                }
+                $from_map = self::language_map_name($item[$map_key]);
+                if ($from_map !== '') {
+                    return $from_map;
+                }
+            }
+        }
+
         return self::translation_names($section, $item);
+    }
+
+    /**
+     * First menu link title, including titles nested under a language.
+     *
+     * @param array $item Menu sample.
+     * @return string
+     */
+    private static function menu_item_name(array $item)
+    {
+        $lists = array();
+        if (isset($item['items']) && is_array($item['items'])) {
+            $lists[] = $item['items'];
+        }
+        if (isset($item['translations']) && is_array($item['translations'])) {
+            foreach ($item['translations'] as $translated) {
+                if (is_array($translated) && isset($translated['items']) && is_array($translated['items'])) {
+                    $lists[] = $translated['items'];
+                }
+            }
+        }
+
+        foreach ($lists as $list) {
+            foreach ($list as $entry) {
+                if (!is_array($entry) || !isset($entry['title']) || !is_string($entry['title'])) {
+                    continue;
+                }
+                $name = self::present_name('menus', $entry['title']);
+                if ($name !== '') {
+                    return $name;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array $map Language slug to string.
+     * @return string
+     */
+    private static function language_map_name(array $map)
+    {
+        $bits = array();
+        foreach ($map as $lang => $value) {
+            if (!is_string($value)) {
+                continue;
+            }
+            $name = self::present_name('media', $value);
+            if ($name === '') {
+                continue;
+            }
+            $slug = is_string($lang) ? trim($lang) : '';
+            if ($slug !== '' && preg_match('/^[A-Za-z0-9_-]{2,12}$/', $slug)) {
+                $bits[] = $name . ' (' . $slug . ')';
+            } else {
+                $bits[] = $name;
+            }
+            if (count($bits) >= 3) {
+                break;
+            }
+        }
+
+        if (empty($bits)) {
+            return '';
+        }
+
+        return self::excerpt(implode(', ', $bits), 120);
     }
 
     /**
