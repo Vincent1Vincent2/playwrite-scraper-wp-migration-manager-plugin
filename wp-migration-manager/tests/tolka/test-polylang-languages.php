@@ -839,6 +839,26 @@ PHP
         $this->assertSame(9, $by_slug['no']['term_id']);
     }
 
+    public function test_a_language_term_wins_over_its_twin_row()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+        ), 'en');
+        $db->term_language_rows = array(
+            $this->language_term(21, 'E', 'en', 'de_DE', 'de', 0, 0),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertSame(4, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_term_language_rows_fill_a_missing_language_term()
     {
         $db = new Polylang_Languages_Test_Db();
@@ -1805,6 +1825,56 @@ PHP
         $this->assertSame('en_GB', $result['items'][0]['locale']);
         $this->assertSame('gb', $result['items'][0]['flag']);
         $this->assertSame(4, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
+    public function test_an_empty_term_query_still_reads_stored_languages()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function get_terms($args = array())
+{
+    return array();
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false && strpos($query, "'term_language'") === false) {
+            return array((object) array(
+                'term_id' => 9,
+                'name' => 'Norsk',
+                'slug' => 'no',
+                'term_group' => 0,
+                'description' => 'a:2:{s:6:"locale";s:5:"nb_NO";s:9:"flag_code";s:2:"no";}',
+                'count' => 0,
+            ));
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return 'a:1:{s:12:"default_lang";s:2:"no";}';
+    }
+};
+PHP
+        );
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('no', $result['items'][0]['slug']);
+        $this->assertSame('Norsk', $result['items'][0]['name']);
+        $this->assertSame('nb_NO', $result['items'][0]['locale']);
+        $this->assertSame(9, $result['items'][0]['term_id']);
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
