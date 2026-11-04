@@ -1138,7 +1138,7 @@ class Polylang_Languages
     private function string_value($value)
     {
         if (is_string($value)) {
-            return trim($value);
+            return trim(str_replace("\0", '', $value));
         }
         if (is_int($value) || is_float($value)) {
             return trim((string) $value);

@@ -880,6 +880,19 @@ PHP
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_null_bytes_are_removed_from_language_fields()
+    {
+        $english = $this->language_term(4, "Eng\0lish", "e\0n", 'en_US', 'us', 0, 1);
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_a_blank_slug_is_left_out_of_the_list()
     {
         $blank = $this->language_term(3, 'Blank', '   ', 'en_US', 'us', 0, 0);
