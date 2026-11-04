@@ -954,7 +954,11 @@ class Migration_Runner
         if ($method->isStatic()) {
             return $method->invoke(null);
         }
-        $object = (new \ReflectionClass($class))->newInstance();
+        try {
+            $object = (new \ReflectionClass($class))->newInstance();
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('constructor failed: ' . self::safe_exception($e));
+        }
         return $method->invoke($object);
     }
 
