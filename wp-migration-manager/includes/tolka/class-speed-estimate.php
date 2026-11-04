@@ -253,6 +253,9 @@ class Speed_Estimate
         $url = self::public_url(isset($measurement['url']) ? $measurement['url'] : '');
         $detail = self::plain_detail(isset($measurement['error']) ? $measurement['error'] : '');
         $has_detail = $detail !== '' && preg_match('/[\p{L}\p{N}]/u', $detail) === 1;
+        if ($url !== '' && $has_detail && strpos($detail, $url) !== false) {
+            $url = '';
+        }
 
         if (!$has_detail) {
             if ($url === '') {
