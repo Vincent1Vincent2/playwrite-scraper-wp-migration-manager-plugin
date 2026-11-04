@@ -373,7 +373,7 @@ class Speed_Estimate
         }
 
         if ($benchmarks === array()) {
-            return self::translate('The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.');
+            return self::translate('The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.');
         }
 
         $sentences = array();

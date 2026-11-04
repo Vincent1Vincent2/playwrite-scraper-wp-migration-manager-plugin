@@ -975,7 +975,7 @@ class Test_Speed_Estimate extends TestCase
         $empty = Speed_Estimate::project($measurement, $metrics, array());
         $this->assertUnavailable(
             $empty,
-            'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.'
+            'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.'
         );
 
         $only_id = Speed_Estimate::project($measurement, $metrics, array('id' => 'tolka-lab'));
@@ -1229,7 +1229,7 @@ class Test_Speed_Estimate extends TestCase
             );
             $this->assertUnavailable(
                 $estimate,
-                'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.'
+                'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.'
             );
             $this->assertSame(0, $estimate['current_ms']);
             $this->assertSame(0, $estimate['tolka_ms']);
@@ -1338,8 +1338,8 @@ class Test_Speed_Estimate extends TestCase
         $text = implode("\n", $output);
         $this->assertSame(0, $exit_code, $text);
         $this->assertSame(
-            "TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.\n"
-            . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.' . "\n"
+            "TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.\n"
+            . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.' . "\n"
             . "Measured page load plus coefficients from benchmarks.json\n"
             . "\n"
             . "0\n"
