@@ -1349,10 +1349,26 @@ class Polylang_Languages
                 }
                 continue;
             }
-            if (isset($item['name']) && $this->is_internal_language_slug($this->normalized_slug($item['name']))) {
-                $item['name'] = $slug;
+            if (!isset($item['name']) || !is_string($item['name']) || $item['name'] === '' || $this->is_internal_language_slug($this->normalized_slug($item['name']))) {
+                $name = $slug;
+            } else {
+                $name = $item['name'];
             }
-            $kept[] = $item;
+            $locale = isset($item['locale']) && is_string($item['locale']) ? $item['locale'] : '';
+            $is_default = isset($item['is_default']) && $item['is_default'] === true;
+            $term_id = isset($item['term_id']) ? $this->int_value($item['term_id']) : 0;
+            if ($term_id < 0) {
+                $term_id = 0;
+            }
+            $flag = isset($item['flag']) && is_string($item['flag']) ? $item['flag'] : '';
+            $kept[] = array(
+                'slug' => $slug,
+                'name' => $name,
+                'locale' => $locale,
+                'is_default' => $is_default,
+                'term_id' => $term_id,
+                'flag' => $flag,
+            );
         }
 
         return $kept;
