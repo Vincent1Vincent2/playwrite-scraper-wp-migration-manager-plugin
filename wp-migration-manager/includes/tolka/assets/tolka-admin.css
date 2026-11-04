@@ -1391,6 +1391,19 @@ p.wmm-tolka-speed-tolka {
     overflow-wrap: break-word;
 }
 
+#wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster:not([data-faster-percent]),
+#wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster[data-faster-percent=""] {
+    color: var(--wmm-tolka-muted);
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.35;
+}
+
+#wmm-tolka-speed #wmm-tolka-faster[data-faster-percent^="-"] {
+    color: var(--wmm-tolka-danger);
+}
+
 #wmm-tolka-provenance-note[hidden],
 .wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
 .wmm-tolka-provenance-note:has(#wmm-tolka-provenance-note[hidden]) {
