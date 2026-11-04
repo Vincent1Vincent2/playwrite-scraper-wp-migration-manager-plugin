@@ -849,6 +849,64 @@ class Polylang_Posts_Test extends TestCase
         ), $item['translations']['sv']);
     }
 
+    public function test_private_post_is_exported_and_trash_stays_in_the_group()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 80,
+                'description' => serialize(array('sv' => 4, 'de' => 12, 'en' => 30)),
+            ),
+            array(
+                'term_taxonomy_id' => 81,
+                'description' => serialize(array('sv' => 9, 'en' => 18)),
+            ),
+        );
+        $fake->languages = array(4 => 'sv', 12 => 'de', 30 => 'en', 9 => 'sv', 18 => 'en', 2 => 'sv');
+        $fake->posts_rows = array(
+            4 => $this->db_post(4, 'trash', 'Borttagen fågel', 'fagel', 'post', '', '<p>ä ö å</p>'),
+            12 => $this->db_post(12, 'publish', 'Hallo', 'hallo', 'post', '', 'Live'),
+            30 => $this->db_post(30, 'private', 'Hemligt', 'hemligt', 'post', '', ''),
+            9 => $this->db_post(9, 'future', 'Snart', 'snart', 'page', '', 'Imorgon'),
+            18 => $this->db_post(18, 'trash', 'Papperskorg', 'papperskorg', 'page', '', 'Borta'),
+            2 => $this->db_post(2, 'private', 'Ö', 'o', 'post', '', ''),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array('post:2', 'post:18', 'post:30'), $this->groups($second));
+        $this->assertCount(3, $second['items']);
+
+        $private_group = $second['items'][2];
+        $this->assertSame('post:30', $private_group['group']);
+        $this->assertSame('private', $private_group['translations']['en']['status']);
+        $this->assertSame('', $private_group['translations']['en']['content']);
+        $this->assertSame('Hemligt', $private_group['translations']['en']['title']);
+        $this->assertSame('trash', $private_group['translations']['sv']['status']);
+        $this->assertSame('Borttagen fågel', $private_group['translations']['sv']['title']);
+        $this->assertSame('<p>ä ö å</p>', $private_group['translations']['sv']['content']);
+        $this->assertSame(4, $private_group['translations']['sv']['id']);
+        $this->assertSame('publish', $private_group['translations']['de']['status']);
+        $this->assertSame(array(), $second['errors']);
+
+        $trash_group = $second['items'][1];
+        $this->assertSame('post:18', $trash_group['group']);
+        $this->assertSame('page', $trash_group['type']);
+        $this->assertSame('trash', $trash_group['translations']['en']['status']);
+        $this->assertSame('Borta', $trash_group['translations']['en']['content']);
+        $this->assertSame('future', $trash_group['translations']['sv']['status']);
+
+        $alone = $second['items'][0];
+        $this->assertSame('post:2', $alone['group']);
+        $this->assertSame('private', $alone['translations']['sv']['status']);
+        $this->assertSame('Ö', $alone['translations']['sv']['title']);
+        $this->assertSame('', $alone['translations']['sv']['content']);
+    }
+
     public function test_pending_future_private_and_trash_keep_their_status()
     {
         $exporter = new Polylang_Posts_Fixture();
@@ -1512,6 +1570,7 @@ class Polylang_Posts_Test extends TestCase
         $this->assertContains('pending', $statuses);
         $this->assertContains('future', $statuses);
         $this->assertContains('private', $statuses);
+        $this->assertContains('trash', $statuses);
         $this->assertNotContains('auto-draft', $statuses);
     }
 
@@ -2309,6 +2368,7 @@ class Polylang_Posts_Test extends TestCase
         $this->assertContains('pending', $args['post_status']);
         $this->assertContains('future', $args['post_status']);
         $this->assertContains('private', $args['post_status']);
+        $this->assertContains('trash', $args['post_status']);
         $this->assertNotContains('auto-draft', $args['post_status']);
         $this->assertTrue($args['suppress_filters']);
         $this->assertSame('', $args['lang']);

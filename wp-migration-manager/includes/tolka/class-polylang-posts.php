@@ -12,6 +12,7 @@
  *   translations language slug => id, title, slug, status, excerpt, content
  *
  * Drafts, pending posts, private posts, and scheduled posts are included.
+ * A trashed translation stays in its group with status trash.
  * A post that has a language but no other translation is its own group.
  *
  * @package MigrationManager
@@ -1025,6 +1026,7 @@ class Polylang_Posts
         if (isset($record['status']) && $record['status'] === 'auto-draft') {
             return 'an automatic draft';
         }
+        // private and trash are real posts. They stay in the group with that status.
         return '';
     }
 
