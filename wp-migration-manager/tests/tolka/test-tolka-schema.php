@@ -835,6 +835,95 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
     }
 
+    public function test_a_later_migration_updates_tags_and_leaves_omitted_posts()
+    {
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10] = array(
+            '_wmm_tolka_lang' => 'sv',
+            '_wmm_tolka_group' => 'post:10',
+            '_edit_lock' => 'keep',
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][11] = array(
+            '_wmm_tolka_lang' => 'en',
+            '_wmm_tolka_group' => 'post:11',
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4] = array(
+            '_wmm_tolka_lang' => 'en',
+            '_wmm_tolka_group' => 'term:4',
+            'description_note' => 'keep',
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:10',
+                    'translations' => array('en' => 10),
+                ),
+            ),
+            'terms' => array(
+                array(
+                    'group' => 'term:8',
+                    'translations' => array('sv' => 8),
+                ),
+            ),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]['_wmm_tolka_lang']);
+        $this->assertSame('post:10', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]['_wmm_tolka_group']);
+        $this->assertSame('keep', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]['_edit_lock']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][11]['_wmm_tolka_lang']);
+        $this->assertSame('post:11', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][11]['_wmm_tolka_group']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_lang']);
+        $this->assertSame('keep', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['description_note']);
+        $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][8]['_wmm_tolka_lang']);
+        $this->assertSame('term:8', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][8]['_wmm_tolka_group']);
+        $this->assertFunctionsStayInsideTolka();
+    }
+
+    public function test_ok_is_false_only_when_a_sentence_explains_why()
+    {
+        $cases = array(
+            Tolka_Schema::package(array()),
+            array(
+                'posts' => array(
+                    array(
+                        'group' => 'post:1',
+                        'type' => 'post',
+                        'translations' => array(
+                            'en' => array(
+                                'id' => 1,
+                                'title' => 'Hello',
+                                'slug' => 'hello',
+                                'status' => 'publish',
+                                'excerpt' => '',
+                                'content' => 'Body',
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            array(
+                'version' => 9,
+                'posts' => array(
+                    array(
+                        'group' => 'post:1',
+                        'translations' => array('en' => 1),
+                    ),
+                ),
+            ),
+            array('posts' => 'nope'),
+        );
+
+        foreach ($cases as $package) {
+            $result = Tolka_Writer::write($package);
+            $this->assertSame($result['errors'] === array(), $result['ok']);
+            foreach ($result['errors'] as $error) {
+                $this->assertMatchesRegularExpression('/^[A-Z].*\.$/', $error);
+                $this->assertStringContainsString('Nothing was deleted, and your Polylang content is still in place.', $error);
+            }
+        }
+    }
+
     public function test_database_unsafe_text_is_removed_before_save()
     {
         $package = Tolka_Schema::package(array(

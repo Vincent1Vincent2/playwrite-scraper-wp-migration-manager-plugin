@@ -4,7 +4,9 @@
  * Tolka migration writer.
  *
  * Saves the Tolka package and tags translated posts and terms. Polylang
- * options, terms, and meta are left in place.
+ * options, terms, and meta are left in place. A later run updates Tolka
+ * tags that are still in the package and does not remove tags from posts
+ * or terms that were left out.
  *
  * @package MigrationManager
  */
