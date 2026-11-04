@@ -783,7 +783,6 @@ namespace WMM\Tolka {
                 array('nonce' => 'good-nonce', 'url' => '   '),
                 array('nonce' => 'good-nonce', 'url' => "\n\t"),
                 array('nonce' => 'good-nonce', 'url' => array('https://public.example.test/')),
-                array('nonce' => 'good-nonce', 'url' => 'javascript:alert(1)'),
                 array('nonce' => 'good-nonce', 'url' => 'not a url'),
             );
 
@@ -817,6 +816,98 @@ namespace WMM\Tolka {
             });
             $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success']);
             $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls']);
+        }
+
+        public function test_long_and_scriptable_measure_urls_are_rejected()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+
+            $prefix = 'https://public.example.test/';
+            $exact = $prefix . str_repeat('a', 2000 - strlen($prefix));
+            $this->assertSame(2000, strlen($exact));
+            $too_long = $exact . 'UNIQUE-TAIL-NOT-IN-ERROR';
+
+            $GLOBALS['wmm_tolka_measure_calls'] = 0;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => '  ' . $exact . '  ',
+            );
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success']);
+            $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls']);
+
+            $GLOBALS['wmm_tolka_measure_calls'] = 0;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => $too_long,
+            );
+            unset($GLOBALS['wmm_tolka_test_json']);
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $output = ob_get_clean();
+            $payload = $GLOBALS['wmm_tolka_test_json'];
+            $encoded = json_encode($payload);
+
+            $this->assertSame('', $output);
+            $this->assertFalse($payload['success']);
+            $this->assertStringContainsString('2000 characters', $payload['data']['message']);
+            $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+            $this->assertLessThan(300, strlen($payload['data']['message']));
+            $this->assertStringNotContainsString($too_long, $encoded);
+            $this->assertStringNotContainsString('UNIQUE-TAIL-NOT-IN-ERROR', $encoded);
+            $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $encoded);
+            $this->assertSame(0, $GLOBALS['wmm_tolka_measure_calls']);
+            $this->assertNoSpeedPercent($payload);
+
+            $blocked = array(
+                'javascript:alert(UNIQUEJS)',
+                ' javascript:alert(UNIQUEJS)',
+                "java\nscript:alert(UNIQUEJS)",
+                'Javascript:alert(UNIQUEJS)',
+                'javascript&#58;alert(UNIQUEJS)',
+                'data:text/html,<script>secret-html</script>UNIQUEHTML',
+                ' DATA:text/html,UNIQUEHTML',
+                'data :text/html,UNIQUEHTML',
+            );
+
+            foreach ($blocked as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+
+                ob_start();
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $output = ob_get_clean();
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+                $encoded = json_encode($payload);
+
+                $this->assertSame('', $output);
+                $this->assertFalse($payload['success']);
+                $this->assertStringContainsString('javascript: and data:', $payload['data']['message']);
+                $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+                $this->assertLessThan(300, strlen($payload['data']['message']));
+                $this->assertStringNotContainsString($url, $encoded);
+                $this->assertStringNotContainsString('UNIQUE-TAIL-NOT-IN-ERROR', $encoded);
+                $this->assertStringNotContainsString('UNIQUEJS', $encoded);
+                $this->assertStringNotContainsString('UNIQUEHTML', $encoded);
+                $this->assertStringNotContainsString('secret-html', $encoded);
+                $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $encoded);
+                $this->assertSame(0, $GLOBALS['wmm_tolka_measure_calls']);
+                $this->assertNoSpeedPercent($payload);
+            }
         }
 
         public function test_measure_url_with_userinfo_does_not_call_speed_loader()

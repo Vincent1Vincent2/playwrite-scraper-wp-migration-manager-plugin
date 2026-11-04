@@ -532,11 +532,71 @@ function wmm_tolka_strip_html_keys($value)
 }
 
 /**
- * Whether a URL carries a username or password in its authority.
+ * Character length of a measure URL.
+ *
+ * @param string $url URL to measure.
+ * @return int
+ */
+function wmm_tolka_url_length($url)
+{
+    if (function_exists('mb_strlen')) {
+        $chars = mb_strlen($url);
+        if (is_int($chars)) {
+            return $chars;
+        }
+    }
+
+    return strlen($url);
+}
+
+/**
+ * Whether a measure URL is longer than the allowed 2000 characters.
+ *
+ * @param string $url URL to measure.
+ * @return bool
+ */
+function wmm_tolka_url_is_too_long($url)
+{
+    return wmm_tolka_url_length($url) > 2000;
+}
+
+/**
+ * Scheme of a URL, ignoring whitespace, control characters, and HTML entities.
+ *
+ * @param string $url URL to inspect.
+ * @return string
+ */
+function wmm_tolka_url_scheme($url)
+{
+    $decoded = html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    if (!is_string($decoded) || $decoded === '') {
+        $decoded = $url;
+    }
+
+    $stripped = preg_replace('/[\x00-\x20\x7F]+/', '', $decoded);
+    if (!is_string($stripped) || $stripped === '') {
+        $stripped = $decoded;
+    }
+
+    if (!preg_match('~^([a-z][a-z0-9+.-]*):~i', $stripped, $matches)) {
+        return '';
+    }
+
+    return strtolower($matches[1]);
+}
+
+/**
+ * Whether a URL uses the javascript: or data: scheme.
  *
  * @param string $url URL to inspect.
  * @return bool
  */
+function wmm_tolka_url_is_blocked_scheme($url)
+{
+    $scheme = wmm_tolka_url_scheme($url);
+
+    return $scheme === 'javascript' || $scheme === 'data';
+}
 function wmm_tolka_url_has_userinfo($url)
 {
     if (!is_string($url) || $url === '') {
@@ -569,13 +629,13 @@ function wmm_tolka_posted_url()
 
     $url = trim(wp_unslash($_POST['url']));
 
-    if ($url === '' || wmm_tolka_url_has_userinfo($url)) {
+    if ($url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url)) {
         return '';
     }
 
     $url = esc_url_raw($url);
 
-    if (!is_string($url) || $url === '' || wmm_tolka_url_has_userinfo($url)) {
+    if (!is_string($url) || $url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url)) {
         return '';
     }
 
@@ -605,8 +665,18 @@ function wmm_tolka_ajax_measure()
         $raw_url = trim(wp_unslash($_POST['url']));
     }
 
+    if ($raw_url !== '' && wmm_tolka_url_is_too_long($raw_url)) {
+        wmm_tolka_json_error(__('That address is longer than 2000 characters, so it was not measured. Nothing was changed.', 'migration-manager'));
+        return;
+    }
+
     if ($raw_url !== '' && wmm_tolka_url_has_userinfo($raw_url)) {
         wmm_tolka_json_error(__('That address includes a username or password, so it was not measured. Nothing was changed.', 'migration-manager'));
+        return;
+    }
+
+    if ($raw_url !== '' && wmm_tolka_url_is_blocked_scheme($raw_url)) {
+        wmm_tolka_json_error(__('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'));
         return;
     }
 
