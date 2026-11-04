@@ -941,7 +941,7 @@ class Polylang_Languages
         }
 
         $value = trim($value);
-        if ($value === '') {
+        if ($value === '' || strlen($value) > 100000) {
             return array();
         }
 

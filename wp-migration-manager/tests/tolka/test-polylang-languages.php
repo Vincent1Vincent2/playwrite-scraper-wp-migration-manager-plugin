@@ -357,6 +357,22 @@ PHP
         $this->assertArrayNotHasKey('de', $by_slug);
     }
 
+    public function test_a_huge_description_is_ignored()
+    {
+        $english = $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 1);
+        $english->description = 'a:' . str_repeat('x', 100001);
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertSame('', $result['items'][0]['locale']);
+        $this->assertSame('', $result['items'][0]['flag']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_broken_rows_do_not_throw()
     {
         $db = new Polylang_Languages_Test_Db();
