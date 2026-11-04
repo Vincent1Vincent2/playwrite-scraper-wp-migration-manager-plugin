@@ -831,6 +831,7 @@
     }
     container.appendChild(result);
     markResult(container);
+    focusResult(container);
   }
 
   function provenanceText(estimate) {
@@ -938,6 +939,7 @@
       slots.panel.classList.remove("wmm-tolka-is-busy");
     }
     markResult(container);
+    focusResult(container);
     return true;
   }
 
@@ -982,6 +984,7 @@
     }
     container.classList.add("wmm-tolka-has-error");
     container.classList.remove("wmm-tolka-has-result");
+    focusResult(container);
     return true;
   }
 
@@ -1183,6 +1186,7 @@
       if (errors.length || missing.length) {
         container.classList.add("wmm-tolka-has-error");
       }
+      focusResult(container);
     } catch (err) {
       showError(
         container,
@@ -1341,11 +1345,18 @@
     if (text(item.string)) {
       bits.push(clip(text(item.string), 80));
     }
-    var langs = mapEntries(item.translations).map(function (entry) {
-      return entry.lang;
+    var translations = mapEntries(item.translations).map(function (entry) {
+      var translated = field(entry.value, "string");
+      if (!entry.lang) {
+        return clip(translated, 40);
+      }
+      if (!translated || translated === entry.lang) {
+        return entry.lang;
+      }
+      return entry.lang + ": " + clip(translated, 40);
     });
-    if (langs.length) {
-      bits.push(langs.join(", "));
+    if (translations.length) {
+      bits.push(translations.join(", "));
     }
     return bits.join(" · ");
   }
@@ -1356,10 +1367,23 @@
       var name = field(entry.value, "name") || entry.lang || "Menu";
       var label =
         entry.lang && name !== entry.lang ? entry.lang + ": " + name : String(name);
-      var items =
-        entry.value && Array.isArray(entry.value.items) ? entry.value.items.length : null;
-      if (items != null) {
-        label += " (" + items + (items === 1 ? " item" : " items") + ")";
+      var menuItems =
+        entry.value && Array.isArray(entry.value.items) ? entry.value.items : null;
+      if (menuItems) {
+        label += " (" + menuItems.length + (menuItems.length === 1 ? " item" : " items") + ")";
+        var titles = [];
+        menuItems.forEach(function (menuItem) {
+          if (titles.length >= 3 || !menuItem) {
+            return;
+          }
+          var title = text(menuItem.title) || text(menuItem.url);
+          if (title) {
+            titles.push(clip(title, 40));
+          }
+        });
+        if (titles.length) {
+          label += ": " + titles.join(", ");
+        }
       }
       return label;
     });
@@ -1478,6 +1502,7 @@
       container.appendChild(root);
       container.classList.toggle("wmm-tolka-has-error", report.ok !== true || errors.length > 0);
       container.classList.add("wmm-tolka-has-result");
+      focusResult(container);
     } catch (err) {
       showError(
         container,
@@ -1586,20 +1611,23 @@
   }
 
   function reportClosing(ok, summary) {
-    var blob = String(summary || "").toLowerCase();
-    if (ok) {
-      if (blob.indexOf("polylang") !== -1) {
-        return "";
-      }
-      return "Polylang data stays in place.";
-    }
-    if (
-      blob.indexOf("not removed") !== -1 ||
-      blob.indexOf("stays in place") !== -1
-    ) {
+    if (mentionsKeptData(summary)) {
       return "";
     }
+    if (ok) {
+      return "Polylang data stays in place.";
+    }
     return "Polylang data was not removed.";
+  }
+
+  function mentionsKeptData(value) {
+    var blob = String(value || "").toLowerCase();
+    return (
+      blob.indexOf("not removed") !== -1 ||
+      blob.indexOf("not deleted") !== -1 ||
+      blob.indexOf("stays in place") !== -1 ||
+      blob.indexOf("left in place") !== -1
+    );
   }
 
   function failureWithKeptData(message) {
@@ -1608,12 +1636,8 @@
       .map(function (item) {
         return item == null ? "" : String(item);
       })
-      .join(" ")
-      .toLowerCase();
-    if (
-      joined.indexOf("not removed") === -1 &&
-      joined.indexOf("stays in place") === -1
-    ) {
+      .join(" ");
+    if (!mentionsKeptData(joined)) {
       messages.push("Polylang data was not removed.");
     }
     return messages;
@@ -1651,6 +1675,21 @@
     });
     container.classList.add("wmm-tolka-has-error");
     container.classList.remove("wmm-tolka-has-result");
+    focusResult(container);
+  }
+
+  function focusResult(container) {
+    if (!container || typeof container.focus !== "function") {
+      return;
+    }
+    if (!container.hasAttribute("tabindex")) {
+      return;
+    }
+    try {
+      container.focus({ preventScroll: false });
+    } catch (err) {
+      container.focus();
+    }
   }
 
   function normalizeMessages(message) {
