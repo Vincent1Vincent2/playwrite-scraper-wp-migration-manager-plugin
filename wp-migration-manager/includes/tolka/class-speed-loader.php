@@ -416,7 +416,9 @@ class Speed_Loader
     }
 
     /**
-     * Guarantee the public timing field is a non-negative integer.
+     * Guarantee public counts are non-negative integers and HTML stays capped.
+     *
+     * A failed result, including a timeout, keeps html empty and html_bytes at 0.
      *
      * @param array $result Measurement.
      * @return array
@@ -429,16 +431,24 @@ class Speed_Loader
         $result['status_code'] = self::non_negative_ms(
             array_key_exists('status_code', $result) ? $result['status_code'] : 0
         );
-        $result['html_bytes'] = self::non_negative_ms(
-            array_key_exists('html_bytes', $result) ? $result['html_bytes'] : 0
-        );
         $result['ttfb_ms'] = null;
+
+        $ok = isset($result['ok']) && $result['ok'] === true;
+        if (!$ok) {
+            $result['ok'] = false;
+            $result['html'] = '';
+            $result['html_bytes'] = 0;
+            return $result;
+        }
+
         if (!isset($result['html']) || !is_string($result['html'])) {
             $result['html'] = '';
         }
         if (strlen($result['html']) > self::MAX_HTML_BYTES) {
             $result['html'] = substr($result['html'], 0, self::MAX_HTML_BYTES);
         }
+        $bytes = array_key_exists('html_bytes', $result) ? $result['html_bytes'] : strlen($result['html']);
+        $result['html_bytes'] = self::non_negative_ms($bytes);
 
         return $result;
     }

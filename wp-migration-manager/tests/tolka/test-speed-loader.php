@@ -204,6 +204,25 @@ class Speed_Loader_Header_Bag
 }
 
 /**
+ * Timeout that also carries a page body. The body must not be returned.
+ */
+class Speed_Loader_Timeout_With_Body
+{
+    /**
+     * @var string
+     */
+    public $body = '<html>secret timeout page</html>';
+
+    /**
+     * @return string
+     */
+    public function get_error_message()
+    {
+        return 'cURL error 28: Operation timed out after 15000 milliseconds';
+    }
+}
+
+/**
  * Transport failure identified by a timeout error code and an empty message.
  */
 class Speed_Loader_Timeout_Code
@@ -938,6 +957,72 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame('<html>ok</html>', $page['html']);
     }
 
+    public function test_html_bytes_is_a_non_negative_integer()
+    {
+        $method = new \ReflectionMethod(Speed_Loader::class, 'finish');
+        $method->setAccessible(true);
+
+        $failed = $method->invoke(null, array(
+            'ok' => false,
+            'url' => 'https://example.com/',
+            'status_code' => 0,
+            'total_ms' => -3,
+            'ttfb_ms' => 9,
+            'html_bytes' => -20,
+            'html' => '<html>secret</html>',
+            'error' => self::TIMEOUT_MESSAGE,
+        ));
+        $this->assertFalse($failed['ok']);
+        $this->assertSame('', $failed['html']);
+        $this->assertSame(0, $failed['html_bytes']);
+        $this->assertIsInt($failed['html_bytes']);
+        $this->assertSame(0, $failed['total_ms']);
+        $this->assertIsInt($failed['total_ms']);
+        $this->assertNull($failed['ttfb_ms']);
+
+        $counted = $method->invoke(null, array(
+            'ok' => true,
+            'url' => 'https://example.com/',
+            'status_code' => 200,
+            'total_ms' => 1.6,
+            'ttfb_ms' => 4,
+            'html_bytes' => 12.2,
+            'html' => '<html>ok</html>',
+            'error' => '',
+        ));
+        $this->assertSame(2, $counted['total_ms']);
+        $this->assertSame(12, $counted['html_bytes']);
+        $this->assertIsInt($counted['html_bytes']);
+        $this->assertGreaterThanOrEqual(0, $counted['html_bytes']);
+        $this->assertNull($counted['ttfb_ms']);
+
+        $oversized = $method->invoke(null, array(
+            'ok' => true,
+            'url' => 'https://example.com/',
+            'status_code' => 200,
+            'total_ms' => 4,
+            'ttfb_ms' => null,
+            'html_bytes' => -9,
+            'html' => str_repeat('a', 2000001),
+            'error' => '',
+        ));
+        $this->assertSame(2000000, strlen($oversized['html']));
+        $this->assertSame(0, $oversized['html_bytes']);
+        $this->assertIsInt($oversized['html_bytes']);
+
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = new Speed_Loader_Timeout_With_Body();
+        $timeout = $this->measureWithoutThrowing('https://example.com/');
+        $this->assertTimeoutResult($timeout);
+        $this->assertSame('', $timeout['html']);
+        $this->assertSame(0, $timeout['html_bytes']);
+        $this->assertIsInt($timeout['html_bytes']);
+        $this->assertIsInt($timeout['total_ms']);
+        $this->assertGreaterThanOrEqual(0, $timeout['total_ms']);
+        $this->assertStringNotContainsString('secret', (string) json_encode($timeout));
+    }
+
     public function test_timeout_records_the_request_time()
     {
         $this->requireHarness();
@@ -1663,6 +1748,7 @@ class Speed_Loader_Test extends TestCase
         $this->assertFalse($result['ok']);
         $this->assertSame('', $result['html']);
         $this->assertSame(0, $result['html_bytes']);
+        $this->assertIsInt($result['html_bytes']);
         $this->assertSame(0, $result['status_code']);
         $this->assertNull($result['ttfb_ms']);
         $this->assertSame(self::TIMEOUT_MESSAGE, $result['error']);
