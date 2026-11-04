@@ -351,6 +351,33 @@ HTML;
         $this->assertSame(2, $result['language_count']);
     }
 
+    public function test_menu_lang_item_counts_once_not_per_item()
+    {
+        $items = '';
+
+        for ($i = 0; $i < 5; $i++) {
+            $items .= '<li class="menu-item lang-item current"><a href="/page-' . $i . '/">Page</a></li>';
+        }
+
+        $items .= '<li class="menu-item"><a href="/de/">Deutsch</a></li>';
+        $items .= '<li class="menu-item current-menu-item"><a href="/fr/">Francais</a></li>';
+
+        $many = $this->analyze('<ul>' . $items . '</ul>');
+        $this->assertTrue($many['has_polylang_switcher']);
+        $this->assertSame(0, $many['hreflang_count']);
+        $this->assertSame(2, $many['language_count']);
+
+        $plain = $this->analyze('<ul><li class="menu-item"></li><li class="menu-item current-menu-item"></li><li class="menu-item menu-item-type-post"></li></ul>');
+        $this->assertFalse($plain['has_polylang_switcher']);
+        $this->assertSame(1, $plain['language_count']);
+
+        $page = '<link rel="alternate" hreflang="en" href="/"><link rel="alternate" hreflang="sv" href="/sv/"><link rel="alternate" hreflang="x-default" href="/"><ul>' . $items . '</ul>';
+        $result = $this->analyze($page);
+        $this->assertSame(2, $result['hreflang_count']);
+        $this->assertSame(2, $result['language_count']);
+        $this->assertTrue($result['has_polylang_switcher']);
+    }
+
     public function test_menu_item_lang_item_current_is_one_switcher()
     {
         $plain = $this->analyze('<li class="menu-item lang-item current"></li>');
