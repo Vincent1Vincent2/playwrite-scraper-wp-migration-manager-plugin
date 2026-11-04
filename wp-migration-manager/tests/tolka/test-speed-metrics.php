@@ -675,6 +675,29 @@ HTML;
         $this->assertSame(1, $only_inside_script['script_count']);
     }
 
+    public function test_greater_than_inside_an_attribute_does_not_hide_the_rest()
+    {
+        $script = $this->analyze('<script data-note="a>b"></script><nav class="lang-item"></nav><img src="/shown.png">');
+        $this->assertSame(1, $script['script_count']);
+        $this->assertSame(1, $script['image_count']);
+        $this->assertTrue($script['has_polylang_switcher']);
+        $this->assertSame(2, $script['language_count']);
+
+        $style = $this->analyze('<style data-note="a>b">x</style><link rel="stylesheet" href="/a.css"><img src="/a.png">');
+        $this->assertSame(0, $style['script_count']);
+        $this->assertSame(1, $style['stylesheet_count']);
+        $this->assertSame(1, $style['image_count']);
+        $this->assertFalse($style['has_polylang_switcher']);
+
+        $hidden = $this->analyze('<script data-note="a>b"><img src="/hidden.png"></script><img src="/shown.png">');
+        $this->assertSame(1, $hidden['script_count']);
+        $this->assertSame(1, $hidden['image_count']);
+
+        $language = $this->analyze('<a title="a>b" hreflang="sv" href="/sv/"></a>');
+        $this->assertSame(1, $language['hreflang_count']);
+        $this->assertSame(1, $language['language_count']);
+    }
+
     public function test_comment_syntax_inside_an_attribute_is_not_a_switcher()
     {
         $html = '<div class="lang<!-- x -->-item"></div><link title="<!-- note -->" rel="stylesheet" href="/theme.css">';
