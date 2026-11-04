@@ -609,6 +609,72 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     }
 
     /**
+     * A term id is not a language slug, even when it is passed as a number or a digit string.
+     *
+     * @return void
+     */
+    public function test_a_numeric_language_id_is_not_a_translation_key()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('EN', 10, '11', 12.0, 'pt-BR'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                10 => array(array('Open daily', 'From id')),
+                '11' => array(array('Open daily', 'From string id')),
+                'EN' => array(array('Open daily', 'Open')),
+                'PT-BR' => array(array('Open daily', 'Aberto')),
+            ),
+        ));
+
+        $this->assertSame(array('en', 'pt-br'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('Open', $result['items'][0]['translations']['en']);
+        $this->assertSame('Aberto', $result['items'][0]['translations']['pt-br']);
+        $this->assertArrayNotHasKey(10, $result['items'][0]['translations']);
+        $this->assertArrayNotHasKey('10', $result['items'][0]['translations']);
+        $this->assertArrayNotHasKey('11', $result['items'][0]['translations']);
+        $this->assertArrayNotHasKey(12, $result['items'][0]['translations']);
+        $this->assertNotContains('From id', $result['items'][0]['translations']);
+        $this->assertNotContains('From string id', $result['items'][0]['translations']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertExportShape($result);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 11, 'slug' => '11'),
+            array('term_id' => 20, 'slug' => 'Pt-BR'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Open daily', 'From id'))),
+            ),
+            array(
+                'term_id' => 20,
+                'meta_value' => serialize(array(array('Open daily', 'Aberto'))),
+            ),
+        );
+        $db->term_slug_rows = array(
+            array('term_id' => 11, 'slug' => '11'),
+        );
+        $exporter = $this->probe($db, array(), true);
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame(array('pt-br'), array_keys($second['items'][0]['translations']));
+        $this->assertSame('Aberto', $second['items'][0]['translations']['pt-br']);
+        $this->assertArrayNotHasKey('11', $second['items'][0]['translations']);
+        $this->assertNotContains(
+            'String translations for a language that is no longer installed were skipped.',
+            $second['errors']
+        );
+    }
+
+    /**
      * @return void
      */
     public function test_more_than_thirty_errors_keeps_the_first_thirty_and_a_count()
