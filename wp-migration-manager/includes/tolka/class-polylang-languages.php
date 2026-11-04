@@ -870,9 +870,14 @@ class Polylang_Languages
      */
     private function quiet_db($wpdb, $callback)
     {
-        $previous = null;
+        $previous_show = null;
+        $previous_suppress = null;
+        $had_suppress = is_object($wpdb) && isset($wpdb->suppress_errors);
+        if ($had_suppress) {
+            $previous_suppress = $wpdb->suppress_errors;
+        }
         if (is_object($wpdb) && method_exists($wpdb, 'hide_errors')) {
-            $previous = $wpdb->hide_errors();
+            $previous_show = $wpdb->hide_errors();
         }
 
         try {
@@ -880,7 +885,11 @@ class Polylang_Languages
         } catch (\Throwable $throwable) {
             return null;
         } finally {
-            if ($previous && method_exists($wpdb, 'show_errors')) {
+            // hide_errors() also suppresses later queries. Put that back.
+            if ($had_suppress) {
+                $wpdb->suppress_errors = $previous_suppress;
+            }
+            if ($previous_show && method_exists($wpdb, 'show_errors')) {
                 $wpdb->show_errors();
             }
         }

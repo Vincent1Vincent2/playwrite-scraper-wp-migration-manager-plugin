@@ -573,6 +573,7 @@ PHP
         $this->assertSame(array(), $result['errors']);
         $this->assertSame('en', $result['items'][0]['slug']);
         $this->assertTrue($db->show_errors);
+        $this->assertFalse($db->suppress_errors);
         $this->assertGreaterThan(0, $db->hidden_errors);
     }
 
@@ -2013,6 +2014,8 @@ class Polylang_Languages_Test_Db
 
     public $show_errors = true;
 
+    public $suppress_errors = false;
+
     public $fail_if_errors_visible = false;
 
     public $hidden_errors = 0;
@@ -2022,6 +2025,7 @@ class Polylang_Languages_Test_Db
         $this->hidden_errors++;
         $previous = $this->show_errors;
         $this->show_errors = false;
+        $this->suppress_errors = true;
 
         return $previous;
     }
