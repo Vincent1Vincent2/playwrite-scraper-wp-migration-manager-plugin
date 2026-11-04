@@ -509,8 +509,9 @@ namespace {
                 $run['errors']
             );
             $this->assertSame('blocked', $run['state']);
+            $this->assertStringNotContainsString('Migration finished', $run['message']);
             $this->assertSame(
-                'The migration did not run. Nothing was written, and existing Polylang data was not changed.',
+                'The migration did not run because none of the Polylang exporters are available. Nothing was written, and existing Polylang data was not changed.',
                 $run['message']
             );
             $this->assertNotFalse(json_encode($preview));
@@ -1782,6 +1783,60 @@ namespace {
             $this->assertSame($sections, array_keys($partial_preview['sections']));
             $this->assertSame(1, $partial_preview['counts']['posts']);
             $this->assertSame(0, $partial_preview['counts']['menus']);
+        }
+
+        public function test_run_does_not_write_when_every_exporter_is_missing()
+        {
+            $sections = array('languages', 'posts', 'terms', 'strings', 'menus', 'media');
+            $this->reset_doubles();
+            $map = array();
+            foreach ($sections as $section) {
+                $map[$section] = 'WMM\\Tolka\\RunnerTest\\Missing' . ucfirst($section);
+            }
+            Migration_Runner_Test_Double::$map = $map;
+            \WMM\Tolka\RunnerTest\Writer::$throw = true;
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertFalse($run['ok']);
+            $this->assertNull($run['write']);
+            $this->assertSame('blocked', $run['state']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertSame($sections, array_keys(\WMM\Tolka\RunnerTest\Schema::$parts));
+            foreach ($sections as $section) {
+                $this->assertArrayHasKey($section, $run);
+                $this->assertSame(array(), $run[$section]['items']);
+                $this->assertSame(0, $run['counts'][$section]);
+                $this->assertSame(array(), $run['sample'][$section]);
+                $this->assertSame('missing', $run['sections'][$section]['status']);
+                $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts[$section]['items']);
+            }
+            $this->assertCount(6, $run['missing']);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Writer', $run['missing']);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Schema', $run['missing']);
+            $this->assertStringNotContainsString('Migration finished', $run['message']);
+            $this->assertSame(
+                'The migration did not run because none of the Polylang exporters are available. Nothing was written, and existing Polylang data was not changed.',
+                $run['message']
+            );
+            $this->assertSame($run['message'], $run['detail']);
+
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+            Migration_Runner_Test_Double::$map['languages'] = 'WMM\\Tolka\\RunnerTest\\Exporter';
+            foreach (array('posts', 'terms', 'strings', 'menus', 'media') as $section) {
+                Migration_Runner_Test_Double::$map[$section] = 'WMM\\Tolka\\RunnerTest\\Missing' . ucfirst($section);
+            }
+            $partial = Migration_Runner_Test_Double::run();
+            $this->assertFalse($partial['ok']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame($sections, array_keys($partial['counts']));
+            $this->assertCount(1, $partial['languages']['items']);
+            $this->assertSame(array(), $partial['posts']['items']);
         }
 
         public function test_throwing_constructor_names_the_section_and_continues()

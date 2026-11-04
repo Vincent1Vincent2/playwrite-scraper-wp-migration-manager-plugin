@@ -104,10 +104,16 @@ class Migration_Runner
         $package = null;
         $schema_class = static::schema_class();
         $writer_class = static::writer_class();
+        $all_exporters_missing = self::all_exporters_missing($view);
         $built = self::build_package($collected, $schema_class, $package, $blocking);
         $attempted = false;
 
-        if ($built) {
+        if ($all_exporters_missing) {
+            $blocking[] = self::line('The migration did not run because none of the Polylang exporters are available. Nothing was written, and existing Polylang data was not changed.');
+            if (!$built) {
+                self::note_missing_writer($writer_class, $blocking);
+            }
+        } elseif ($built) {
             $attempted = self::write_package($package, $writer_class, $write, $blocking);
         } else {
             self::note_missing_writer($writer_class, $blocking);
@@ -616,6 +622,9 @@ class Migration_Runner
             }
             return self::line('The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.');
         }
+        if (!$attempted && self::all_exporters_missing($view)) {
+            return self::line('The migration did not run because none of the Polylang exporters are available. Nothing was written, and existing Polylang data was not changed.');
+        }
         if ($attempted) {
             $specific = self::first_error($errors);
             if ($specific !== '' && strpos($specific, 'could not be saved') !== false && stripos($specific, 'Migration finished') === false) {
@@ -678,6 +687,22 @@ class Migration_Runner
     private static function missing_labels($view)
     {
         return self::labels_for_status($view, 'missing');
+    }
+
+    /**
+     * True when every section's exporter class is missing.
+     *
+     * @param array $view
+     * @return bool
+     */
+    private static function all_exporters_missing($view)
+    {
+        foreach (self::section_keys() as $section) {
+            if (!isset($view['sections'][$section]['status']) || $view['sections'][$section]['status'] !== 'missing') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
