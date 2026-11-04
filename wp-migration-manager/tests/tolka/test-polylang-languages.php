@@ -432,6 +432,22 @@ PHP
         $this->assertSame('', $result['items'][0]['locale']);
     }
 
+    public function test_a_database_read_does_not_print_sql_errors()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 0),
+        ), 'en');
+        $db->fail_if_errors_visible = true;
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertTrue($db->show_errors);
+        $this->assertGreaterThan(0, $db->hidden_errors);
+    }
+
     public function test_database_failure_explains_the_empty_list_and_changes_nothing()
     {
         $db = new Polylang_Languages_Test_Db();
@@ -1773,6 +1789,26 @@ class Polylang_Languages_Test_Db
 
     public $language_fails = false;
 
+    public $show_errors = true;
+
+    public $fail_if_errors_visible = false;
+
+    public $hidden_errors = 0;
+
+    public function hide_errors()
+    {
+        $this->hidden_errors++;
+        $previous = $this->show_errors;
+        $this->show_errors = false;
+
+        return $previous;
+    }
+
+    public function show_errors()
+    {
+        $this->show_errors = true;
+    }
+
     public function prepare($query, $value)
     {
         $this->queries[] = $query;
@@ -1783,6 +1819,9 @@ class Polylang_Languages_Test_Db
     public function get_results($query)
     {
         $this->queries[] = $query;
+        if ($this->fail_if_errors_visible && $this->show_errors) {
+            throw new RuntimeException('database error was visible');
+        }
 
         if (strpos($query, "'term_language'") !== false) {
             return $this->term_language_rows;
@@ -1806,6 +1845,9 @@ class Polylang_Languages_Test_Db
     public function get_var($query)
     {
         $this->queries[] = $query;
+        if ($this->fail_if_errors_visible && $this->show_errors) {
+            throw new RuntimeException('database error was visible');
+        }
         return $this->option_value;
     }
 }
