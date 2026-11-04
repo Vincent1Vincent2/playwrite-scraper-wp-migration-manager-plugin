@@ -575,7 +575,7 @@ namespace {
             $this->assertSame('partial', $run['state']);
             $this->assertTrue($run['write']['ok']);
             $this->assertSame(
-                'The Tolka package was saved, but Languages, Posts, Terms, Strings, Menus, and Media could not be fully read. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Languages, Posts, Terms, Strings, Menus, and Media could not be read. Existing Polylang data was not changed.',
                 $run['message']
             );
             $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
@@ -828,8 +828,10 @@ namespace {
                 $thrown_writer['errors']
             );
             $this->assertSame('failed', $thrown_writer['state']);
+            $this->assertFalse($thrown_writer['ok']);
+            $this->assertStringNotContainsString('Migration finished', $thrown_writer['message']);
             $this->assertSame(
-                'The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.',
+                'The migration could not be saved (write blew up). Existing Polylang data was not changed.',
                 $thrown_writer['message']
             );
 
@@ -1192,7 +1194,7 @@ namespace {
                 $run['errors']
             );
             $this->assertSame(
-                'The Tolka package was saved, but Languages could not be fully read. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Languages could not be read. Existing Polylang data was not changed.',
                 $run['message']
             );
 
@@ -1204,7 +1206,7 @@ namespace {
             $this->assertFalse($posts['ok']);
             $this->assertSame('error', $posts['sections']['posts']['status']);
             $this->assertSame(
-                'Posts could not be fully read. Review the errors before migrating.',
+                'Posts could not be read. Review the errors before migrating.',
                 $posts['sections']['posts']['message']
             );
             $this->assertContains(
@@ -1214,7 +1216,7 @@ namespace {
             $this->assertSame(0, $posts['counts']['posts']);
             $this->assertSame(array(), $posts['sample']['posts']);
             $this->assertSame(
-                'The Tolka package was saved, but Posts could not be fully read. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Posts could not be read. Existing Polylang data was not changed.',
                 $posts['message']
             );
         }
@@ -1278,7 +1280,7 @@ namespace {
             $this->assertStringNotContainsString('Migration finished', $run['message']);
             $this->assertContains('Languages could not be read (export blew up).', $run['errors']);
             $this->assertSame(
-                'The Tolka package was saved, but Languages could not be fully read. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Languages could not be read. Existing Polylang data was not changed.',
                 $run['message']
             );
             $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['languages']['items']);
@@ -1320,13 +1322,10 @@ namespace {
                 $this->assertStringNotContainsString('Migration finished', $run['message']);
                 $this->assertStringNotContainsString('Migration finished', $run['detail']);
                 $this->assertSame(
-                    'The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.',
+                    'The migration could not be saved (write blew up). Existing Polylang data was not changed.',
                     $run['message']
                 );
-                $this->assertSame(
-                    'The migration could not be saved (write blew up). Existing Polylang data was not changed.',
-                    $run['detail']
-                );
+                $this->assertSame($run['message'], $run['detail']);
                 $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Writer', $run['missing']);
             }
         }
