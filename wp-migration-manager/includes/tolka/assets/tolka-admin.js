@@ -2246,20 +2246,35 @@
     if (text(item.string)) {
       bits.push(clip(text(item.string), 80));
     }
-    var translations = mapEntries(item.translations).map(function (entry) {
-      var translated = field(entry.value, "string");
+    var translations = [];
+    mapEntries(item.translations).forEach(function (entry) {
+      var translated = translationText(entry.value);
       if (!entry.lang) {
-        return clip(translated, 40);
+        if (translated) {
+          translations.push(clip(translated, 80));
+        }
+        return;
       }
-      if (!translated || translated === entry.lang) {
-        return entry.lang;
+      if (!translated) {
+        translations.push(entry.lang + ": not translated");
+        return;
       }
-      return entry.lang + ": " + clip(translated, 40);
+      translations.push(entry.lang + ": " + clip(translated, 80));
     });
     if (translations.length) {
       bits.push(translations.join(", "));
     }
     return bits.join(" · ");
+  }
+
+  function translationText(value) {
+    if (typeof value === "string" || typeof value === "number") {
+      return text(value);
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return "";
+    }
+    return text(value.translation) || text(value.string) || text(value.value);
   }
 
   function menuLine(item) {
