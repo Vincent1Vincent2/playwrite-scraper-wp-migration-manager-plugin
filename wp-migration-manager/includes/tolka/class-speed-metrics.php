@@ -113,8 +113,10 @@ class Speed_Metrics
     /**
      * Whether the body is an incomplete copy of the page.
      *
-     * An empty body is a failed or blank measurement, not a truncated page,
-     * unless the caller sets truncated itself or the cap was reached.
+     * An empty body is not truncated, even when html_bytes is large. A body
+     * of exactly 2000000 bytes is truncated. A shorter non-empty body is
+     * truncated when html_bytes is a larger whole number, or when the caller
+     * sets truncated itself.
      *
      * @param array  $measurement Measured page.
      * @param string $html HTML that was received.
