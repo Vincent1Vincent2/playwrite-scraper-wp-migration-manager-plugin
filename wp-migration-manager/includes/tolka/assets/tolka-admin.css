@@ -353,16 +353,25 @@
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28) !important;
 }
 
+button.wmm-tolka-is-busy::after,
+.wmm-tolka-button.wmm-tolka-is-busy::after,
+#wmm-tolka-measure.wmm-tolka-is-busy::after,
+#wmm-tolka-preview.wmm-tolka-is-busy::after,
+#wmm-tolka-run.wmm-tolka-is-busy::after,
 #wmm-tolka-wizard button.wmm-tolka-busy::after,
 #wmm-tolka-wizard button.wmm-tolka-is-busy::after,
 #wmm-tolka-wizard button.wmm-tolka-button--busy::after,
 #wmm-tolka-wizard button[aria-busy="true"]::after {
-    content: "";
-    display: block;
+    content: "" !important;
+    display: inline-block !important;
+    visibility: visible !important;
     flex: 0 0 auto;
-    width: 14px;
-    height: 14px;
-    margin: 0;
+    width: 14px !important;
+    min-width: 14px !important;
+    height: 14px !important;
+    min-height: 14px !important;
+    margin: 0 0 0 8px;
+    vertical-align: -2px;
     border: 2px solid currentColor;
     border-right-color: transparent;
     border-radius: 50%;
@@ -1964,19 +1973,34 @@ dl.wmm-tolka-lines dd,
     }
 
     .wmm-tolka button.wmm-tolka-busy::before,
-    .wmm-tolka button.wmm-tolka-busy::after,
     .wmm-tolka button.wmm-tolka-is-busy::before,
-    .wmm-tolka button.wmm-tolka-is-busy::after,
-    .wmm-tolka button.wmm-tolka-button--busy::before,
-    .wmm-tolka button.wmm-tolka-button--busy::after,
     .wmm-tolka button[aria-busy="true"]::before,
-    .wmm-tolka button[aria-busy="true"]::after,
     #wmm-tolka-measure[aria-busy="true"]::before,
-    #wmm-tolka-measure[aria-busy="true"]::after,
     #wmm-tolka-preview[aria-busy="true"]::before,
+    #wmm-tolka-run[aria-busy="true"]::before {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+
+    button.wmm-tolka-is-busy::after,
+    .wmm-tolka-button.wmm-tolka-is-busy::after,
+    .wmm-tolka button.wmm-tolka-busy::after,
+    .wmm-tolka button.wmm-tolka-is-busy::after,
+    .wmm-tolka button[aria-busy="true"]::after,
+    #wmm-tolka-measure.wmm-tolka-is-busy::after,
+    #wmm-tolka-preview.wmm-tolka-is-busy::after,
+    #wmm-tolka-run.wmm-tolka-is-busy::after,
+    #wmm-tolka-measure[aria-busy="true"]::after,
     #wmm-tolka-preview[aria-busy="true"]::after,
-    #wmm-tolka-run[aria-busy="true"]::before,
     #wmm-tolka-run[aria-busy="true"]::after {
+        content: "" !important;
+        display: inline-block !important;
+        visibility: visible !important;
+        width: 14px !important;
+        height: 14px !important;
+        border-style: solid !important;
+        border-width: 2px !important;
         animation: none !important;
         transition: none !important;
         transform: none !important;
