@@ -383,7 +383,9 @@ class Polylang_Menus_Test extends TestCase
                 ),
             ),
         ));
-        $this->assertSame(10, $this->location($active->run(), 'primary')['translations']['en']['menu_id']);
+        $active_result = $active->run();
+        $this->assertSame(10, $this->location($active_result, 'primary')['translations']['en']['menu_id']);
+        $this->assertNotContains('other:primary', $this->locations($active_result));
 
         $fallback = $this->fixture(array(
             'active' => true,
@@ -404,7 +406,51 @@ class Polylang_Menus_Test extends TestCase
                 ),
             ),
         ));
-        $this->assertSame(2, $this->location($fallback->run(), 'primary')['translations']['en']['menu_id']);
+        $fallback_result = $fallback->run();
+        $this->assertSame(2, $this->location($fallback_result, 'older:primary')['translations']['en']['menu_id']);
+        $this->assertSame(3, $this->location($fallback_result, 'newer:primary')['translations']['en']['menu_id']);
+        $this->assertSame('primary (older)', $this->location($fallback_result, 'older:primary')['label']);
+        $this->assertSame('primary (newer)', $this->location($fallback_result, 'newer:primary')['label']);
+    }
+
+    public function test_unpublished_links_are_reported_and_left_out(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(10 => 'Main'),
+            'skipped' => array(10 => 1),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 10),
+                    ),
+                ),
+            ),
+            'items' => array(
+                10 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Home',
+                        'url' => '/',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 1,
+                    ),
+                ),
+            ),
+        ));
+
+        $result = $fixture->run();
+
+        $this->assertSame('Home', $this->location($result, 'primary')['translations']['en']['items'][0]['title']);
+        $this->assertSame(1, $this->location($result, 'primary')['translations']['en']['link_count']);
+        $this->assertSame(
+            array('The "Main" menu (en) has 1 link that is not published. That link was left out of the export.'),
+            $result['errors']
+        );
     }
 
     public function test_theme_mod_locations_are_split_by_language(): void
@@ -660,6 +706,27 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(array('primary'), $this->locations($result));
         $this->assertSame('About us', $this->location($result, 'primary')['translations']['en']['items'][0]['children'][0]['title']);
         $this->assertSame(11, $this->location($result, 'primary')['translations']['sv']['menu_id']);
+
+        $database->skipped = array(10 => 2);
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $with_drafts = Polylang_Menus::export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $this->assertContains(
+            'The "Fish & Chips" menu (en) has 2 links that are not published. Those links were left out of the export.',
+            $with_drafts['errors']
+        );
+        $this->assertSame(
+            'Home',
+            $this->location($with_drafts, 'primary')['translations']['en']['items'][0]['title']
+        );
     }
 
     public function test_source_does_not_write_or_delete_polylang_data(): void
@@ -935,6 +1002,11 @@ class Polylang_Menus_Fixture extends Polylang_Menus
     public $items = array();
 
     /**
+     * @var array<int, int>
+     */
+    public $skipped = array();
+
+    /**
      * @return array{items: array, errors: string[]}
      */
     public function run()
@@ -1059,6 +1131,19 @@ class Polylang_Menus_Fixture extends Polylang_Menus
             return array();
         }
         return $this->items[$menu_id];
+    }
+
+    /**
+     * @param int $menu_id Menu term id.
+     * @return int
+     */
+    protected function read_skipped_item_count($menu_id)
+    {
+        $menu_id = (int) $menu_id;
+        if (isset($this->skipped[$menu_id])) {
+            return (int) $this->skipped[$menu_id];
+        }
+        return 0;
     }
 
     /**
@@ -1252,6 +1337,11 @@ class Tolka_Menus_Fake_Wpdb
     public $term_names = array();
 
     /**
+     * @var array<int, int>
+     */
+    public $skipped = array();
+
+    /**
      * @param string $query Query with placeholders.
      * @param mixed  ...$args Placeholder values.
      * @return string
@@ -1287,6 +1377,11 @@ class Tolka_Menus_Fake_Wpdb
         unset($output);
         $this->queries[] = $query;
 
+        if (strpos($query, 'COUNT(*)') !== false) {
+            $menu_id = $this->number_after($query, 'tt.term_id = ');
+            $total = isset($this->skipped[$menu_id]) ? (int) $this->skipped[$menu_id] : 0;
+            return array(array('total' => (string) $total));
+        }
         if (strpos($query, 'nav_menu_item') !== false) {
             $menu_id = $this->number_after($query, 'tt.term_id = ');
             return isset($this->menu_posts[$menu_id]) ? $this->menu_posts[$menu_id] : array();

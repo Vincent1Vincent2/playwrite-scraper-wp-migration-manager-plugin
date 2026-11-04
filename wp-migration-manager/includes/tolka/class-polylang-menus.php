@@ -416,6 +416,38 @@ class Polylang_Menus
     }
 
     /**
+     * How many links in this menu are not published and were left out.
+     *
+     * Trash and auto-drafts are ignored. The count is 0 when the database
+     * tables are not available.
+     *
+     * @param int $menu_id Menu term id.
+     * @return int
+     */
+    protected function read_skipped_item_count($menu_id)
+    {
+        $menu_id = $this->to_int($menu_id);
+        $tables = $this->tables();
+        if ($menu_id === 0 || $tables === null) {
+            return 0;
+        }
+
+        $rows = $this->db_get(
+            'SELECT COUNT(*) AS total FROM ' . $tables['posts'] . ' p'
+            . ' INNER JOIN ' . $tables['term_relationships'] . ' tr ON tr.object_id = p.ID'
+            . ' INNER JOIN ' . $tables['term_taxonomy'] . ' tt ON tt.term_taxonomy_id = tr.term_taxonomy_id'
+            . " WHERE tt.taxonomy = 'nav_menu' AND tt.term_id = %d"
+            . " AND p.post_type = 'nav_menu_item'"
+            . " AND p.post_status NOT IN ('publish', 'trash', 'auto-draft')",
+            array($menu_id)
+        );
+        if (! isset($rows[0]['total'])) {
+            return 0;
+        }
+        return $this->to_int($rows[0]['total']);
+    }
+
+    /**
      * Flat menu links for one menu. Nesting is applied by the exporter.
      *
      * @param int $menu_id Menu term id.
@@ -610,6 +642,11 @@ class Polylang_Menus
             $flat = array();
         }
         $items = $this->nest_items($flat);
+        $skipped = $this->read_skipped_item_count($menu_id);
+        if ($skipped > 0) {
+            $menu_label = $name !== null && $name !== '' ? $this->entity_text($name) : ('menu ' . $menu_id);
+            $this->warn($this->message_skipped_items($skipped, $menu_label, $language));
+        }
 
         if ($name === null && empty($items)) {
             $this->warn_missing_menu($menu_id, $location, $language);
@@ -688,11 +725,7 @@ class Polylang_Menus
         if ($theme_is_known) {
             $this->absorb_location_map($assignments, $nav[$theme]);
         } else {
-            foreach ($nav as $locations) {
-                if (is_array($locations)) {
-                    $this->absorb_location_map($assignments, $locations);
-                }
-            }
+            $this->absorb_theme_maps($assignments, $nav);
         }
 
         if (! $theme_is_known && empty($assignments)) {
@@ -704,6 +737,60 @@ class Polylang_Menus
 
         $this->expand_with_translations($assignments);
         return $assignments;
+    }
+
+    /**
+     * Keep every theme's locations when the active theme has no saved map.
+     *
+     * A location slug used by one theme stays as that slug. The same slug in
+     * two themes becomes `stylesheet:location` so neither menu is dropped.
+     *
+     * @param array<string, array<string, int>> $assignments Location => language => menu id.
+     * @param array<string, mixed>              $nav         Theme => location map.
+     * @return void
+     */
+    private function absorb_theme_maps(array &$assignments, array $nav)
+    {
+        $per_theme = array();
+        foreach ($nav as $theme_slug => $locations) {
+            if (! is_array($locations)) {
+                continue;
+            }
+            $theme_slug = $this->text($theme_slug);
+            if ($theme_slug === '') {
+                $theme_slug = 'theme';
+            }
+            if (! isset($per_theme[$theme_slug])) {
+                $per_theme[$theme_slug] = array();
+            }
+            $this->absorb_location_map($per_theme[$theme_slug], $locations);
+        }
+
+        $slug_themes = array();
+        foreach ($per_theme as $theme_slug => $map) {
+            foreach (array_keys($map) as $location) {
+                if (! isset($slug_themes[$location])) {
+                    $slug_themes[$location] = array();
+                }
+                $slug_themes[$location][] = $theme_slug;
+            }
+        }
+
+        foreach ($per_theme as $theme_slug => $map) {
+            foreach ($map as $location => $slots) {
+                $key = $location;
+                if (isset($slug_themes[$location]) && count($slug_themes[$location]) > 1) {
+                    $key = $theme_slug . ':' . $location;
+                    $base = isset($this->location_labels[$location]) && $this->location_labels[$location] !== ''
+                        ? $this->location_labels[$location]
+                        : $location;
+                    $this->location_labels[$key] = $base . ' (' . $theme_slug . ')';
+                }
+                if (! isset($assignments[$key])) {
+                    $assignments[$key] = $slots;
+                }
+            }
+        }
     }
 
     /**
@@ -1948,6 +2035,32 @@ class Polylang_Menus
             $text = __('A menu has no Polylang language, so it was exported under "unknown".', 'migration-manager');
         }
         return $text;
+    }
+
+    /**
+     * @param int    $count      Unpublished links.
+     * @param string $menu_label Menu name, or "menu {id}" when the name is missing.
+     * @param string $language   Language slug.
+     * @return string
+     */
+    private function message_skipped_items($count, $menu_label, $language)
+    {
+        $count = $this->to_int($count);
+        $menu_label = $this->text($menu_label);
+        $language = $this->text($language);
+        if ($count === 1) {
+            $text = 'The "%1$s" menu (%2$s) has 1 link that is not published. That link was left out of the export.';
+            if (function_exists('__')) {
+                $text = __('The "%1$s" menu (%2$s) has 1 link that is not published. That link was left out of the export.', 'migration-manager');
+            }
+            return sprintf($text, $menu_label, $language);
+        }
+
+        $text = 'The "%1$s" menu (%2$s) has %3$d links that are not published. Those links were left out of the export.';
+        if (function_exists('__')) {
+            $text = __('The "%1$s" menu (%2$s) has %3$d links that are not published. Those links were left out of the export.', 'migration-manager');
+        }
+        return sprintf($text, $menu_label, $language, $count);
     }
 
     /**
