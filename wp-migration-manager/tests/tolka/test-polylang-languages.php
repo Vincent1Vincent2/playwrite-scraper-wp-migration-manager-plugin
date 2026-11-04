@@ -957,6 +957,29 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_an_uppercase_internal_slug_is_not_a_language()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'EN', 'en_US', 'us', 0, 2),
+            $this->language_term(8, 'Svenska', 'SV', 'sv_SE', 'se', 1, 0),
+            $this->language_term(40, 'PLL_EN', 'PLL_EN', 'en_US', 'us', 2, 0),
+            $this->language_term(41, 'PLL_SV', 'PLL_SV', 'sv_SE', 'se', 3, 0),
+        ), 'SV');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertSame('English', $by_slug['en']['name']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+        $this->assertArrayNotHasKey('PLL_EN', $by_slug);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+        $this->assertArrayNotHasKey('PLL_SV', $by_slug);
+    }
+
     public function test_a_real_slug_may_contain_pll_after_the_language()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
