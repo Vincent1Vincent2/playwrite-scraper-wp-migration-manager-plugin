@@ -287,8 +287,11 @@ if ('error' === $wmm_tolka_speed_view['state']) {
             isset($wmm_tolka_speed_payload['error']) ? $wmm_tolka_speed_payload['error'] : ''
         );
     }
+    $wmm_tolka_speed_detail = $wmm_tolka_speed_finish($wmm_tolka_speed_detail);
     if ('' === $wmm_tolka_speed_detail) {
         $wmm_tolka_speed_view['error'] = $wmm_tolka_speed_error_fallback;
+    } elseif (preg_match('/the speed estimate could not be completed/i', $wmm_tolka_speed_detail)) {
+        $wmm_tolka_speed_view['error'] = $wmm_tolka_speed_detail;
     } else {
         $wmm_tolka_speed_view['error'] = sprintf(
             /* translators: %s: reason the speed estimate failed. */

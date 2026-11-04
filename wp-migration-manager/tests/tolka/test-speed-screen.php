@@ -297,6 +297,24 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertStringContainsString('Placeholder coefficients', $this->text($html, 'wmm-tolka-provenance-note'));
     }
 
+    public function test_failed_estimate_finishes_a_fragment_and_does_not_repeat_itself()
+    {
+        $fragment = $this->render(true, array('ok' => false, 'error' => 'Missing coefficient'));
+        $this->assertSame(
+            'The speed estimate could not be completed. Missing coefficient.',
+            $this->text($fragment, 'wmm-tolka-speed-error')
+        );
+
+        $already = $this->render(true, array(
+            'ok' => false,
+            'error' => 'The speed estimate could not be completed. Try another public URL.',
+        ));
+        $this->assertSame(
+            'The speed estimate could not be completed. Try another public URL.',
+            $this->text($already, 'wmm-tolka-speed-error')
+        );
+    }
+
     public function test_failed_estimate_without_a_reason_still_explains_the_failure()
     {
         $html = $this->render(true, array('ok' => false));
