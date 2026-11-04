@@ -166,15 +166,33 @@ class Polylang_Posts
                 $slug = '';
             }
             if (is_string($slug) && trim($slug) !== '') {
-                return trim($slug);
+                return $this->slug_for_language_key($slug);
             }
         }
 
         $option = $this->polylang_option();
+        $slug = '';
         if (is_array($option) && isset($option['default_lang']) && is_string($option['default_lang'])) {
-            return trim($option['default_lang']);
+            $slug = trim($option['default_lang']);
         }
-        return '';
+        return $this->slug_for_language_key($slug);
+    }
+
+    /**
+     * @param string $slug
+     * @return string
+     */
+    private function slug_for_language_key($slug)
+    {
+        $slug = is_string($slug) ? trim($slug) : '';
+        if ($slug === '') {
+            return '';
+        }
+        $locales = $this->locale_to_slug();
+        if (isset($locales[$slug])) {
+            return $locales[$slug];
+        }
+        return $slug;
     }
 
     /**
@@ -1249,11 +1267,11 @@ class Polylang_Posts
         if (is_array($this->locale_map)) {
             return $this->locale_map;
         }
-        $this->locale_map = array();
         $rows = $this->language_term_rows();
         if (!is_array($rows)) {
-            return $this->locale_map;
+            return array();
         }
+        $this->locale_map = array();
         foreach ($rows as $row) {
             $slug = isset($row['slug']) ? trim((string) $row['slug']) : '';
             $raw = '';

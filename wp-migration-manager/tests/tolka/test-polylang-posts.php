@@ -1183,6 +1183,35 @@ class Polylang_Posts_Test extends TestCase
         }
     }
 
+    public function test_default_language_locale_still_names_the_draft_group()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en_US'));
+        $fake->language_terms = array(
+            array(
+                'slug' => 'en',
+                'term_description' => serialize(array('locale' => 'en_US')),
+            ),
+        );
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 13,
+                'description' => serialize(array('de' => 2, 'en' => 9)),
+            ),
+        );
+        $fake->languages = array(2 => 'de', 9 => 'en');
+        $fake->posts_rows = array(
+            2 => $this->db_post(2, 'publish', 'Hallo', 'hallo'),
+            9 => $this->db_post(9, 'draft', 'Hello', 'hello'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:9', $result['items'][0]['group']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+    }
+
     public function test_locale_keys_are_rewritten_to_language_slugs_for_a_draft()
     {
         $this->skip_when_wordpress_or_polylang_is_loaded();
