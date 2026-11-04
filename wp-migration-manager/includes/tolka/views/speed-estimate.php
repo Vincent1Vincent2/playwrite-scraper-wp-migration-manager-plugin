@@ -310,6 +310,7 @@ if ('error' === $wmm_tolka_speed_view['state']) {
         $wmm_tolka_speed_detail = $wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['error']) ? $wmm_tolka_speed_payload['error'] : ''
         );
+        $wmm_tolka_speed_detail = trim((string) preg_replace('/0\.0%\s*faster/i', '', $wmm_tolka_speed_detail));
     }
     $wmm_tolka_speed_detail = $wmm_tolka_speed_finish($wmm_tolka_speed_detail);
     if ('' === $wmm_tolka_speed_detail) {

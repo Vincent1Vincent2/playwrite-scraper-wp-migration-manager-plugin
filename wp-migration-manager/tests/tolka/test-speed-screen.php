@@ -940,6 +940,55 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         }
     }
 
+    public function test_failed_estimate_hides_zero_percent_and_can_still_show_both_warnings()
+    {
+        $note = 'Placeholder <script>alert(1)</script> note';
+        $truncated_sentence = 'Only the first part of the page HTML was measured.';
+        $html = $this->render(true, array(
+            'metrics' => array('truncated' => true),
+            'estimate' => array(
+                'ok' => false,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 0,
+                'faster_label' => '0.0% faster',
+                'basis' => '0.0% faster',
+                'provenance' => 'placeholder',
+                'provenance_note' => $note,
+                'error' => '0.0% faster',
+            ),
+        ));
+        $document = $this->document($html);
+        $note_node = $document->getElementById('wmm-tolka-provenance-note');
+        $truncated_node = $document->getElementById('wmm-tolka-speed-truncated');
+
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+        }
+
+        $this->assertStringNotContainsString('0.0% faster', $html);
+        $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame('', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
+        $this->assertFalse($note_node->hasAttribute('hidden'));
+        $this->assertSame($note, $this->text($html, 'wmm-tolka-provenance-note'));
+        $this->assertNotNull($truncated_node);
+        $this->assertSame($truncated_sentence, $this->text($html, 'wmm-tolka-speed-truncated'));
+        $this->assertSame(0, $this->element_child_count($note_node));
+        $this->assertSame(0, $this->element_child_count($truncated_node));
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringContainsString(
+            'The speed estimate could not be completed. Check the public site URL and measure again. No percent is shown.',
+            $this->text($html, 'wmm-tolka-speed-error')
+        );
+    }
+
     public function test_failed_estimate_offers_no_percent()
     {
         $estimate = $this->ready_estimate();
