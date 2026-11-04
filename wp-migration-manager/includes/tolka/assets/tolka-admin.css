@@ -2244,3 +2244,135 @@ dl.wmm-tolka-speed-fields > #wmm-tolka-faster {
     border: 0 !important;
     background: none !important;
 }
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load):has(> #wmm-tolka-tolka-load):has(> #wmm-tolka-faster) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster)::before {
+    content: none;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) > dt:has(+ #wmm-tolka-faster) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    order: -2;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) > #wmm-tolka-faster {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    order: -1;
+    margin-bottom: 12px;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load {
+    grid-column: 1;
+    order: 1;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load) {
+    grid-row: 3;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load {
+    grid-row: 4;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+    grid-column: 2;
+    order: 2;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load) {
+    grid-row: 3;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+    grid-row: 4;
+}
+
+#wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-faster),
+#wmm-tolka-wizard .wmm-tolka-compare > :has(#wmm-tolka-faster),
+#wmm-tolka-wizard .wmm-tolka-metrics > :has(#wmm-tolka-faster) {
+    order: -2;
+    grid-column: 1 / -1;
+    grid-row: 1;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed #wmm-tolka-current-load,
+#wmm-tolka-wizard #wmm-tolka-speed #wmm-tolka-tolka-load {
+    font-size: clamp(1.15rem, 2.2vw, 1.65rem);
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed #wmm-tolka-faster {
+    font-size: clamp(2.5rem, 6vw, 3.75rem);
+}
+
+@media (max-width: 782px) {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) {
+        grid-template-columns: 1fr;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load,
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+        grid-column: 1 / -1;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load) {
+        grid-row: 5;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+        grid-row: 6;
+    }
+}
+
+@container wmm-tolka-wizard (max-width: 720px) {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) {
+        grid-template-columns: 1fr;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load,
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+        grid-column: 1 / -1;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load) {
+        grid-row: 5;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+        grid-row: 6;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wmm-tolka-wizard button.wmm-tolka-is-busy,
+    #wmm-tolka-wizard button.wmm-tolka-busy,
+    #wmm-tolka-wizard button[aria-busy="true"],
+    #wmm-tolka-measure.wmm-tolka-is-busy,
+    #wmm-tolka-preview.wmm-tolka-is-busy,
+    #wmm-tolka-run.wmm-tolka-is-busy {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    #wmm-tolka-wizard button.wmm-tolka-is-busy::after,
+    #wmm-tolka-wizard button.wmm-tolka-busy::after,
+    #wmm-tolka-wizard button[aria-busy="true"]::after,
+    #wmm-tolka-measure.wmm-tolka-is-busy::after,
+    #wmm-tolka-preview.wmm-tolka-is-busy::after,
+    #wmm-tolka-run.wmm-tolka-is-busy::after {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}
