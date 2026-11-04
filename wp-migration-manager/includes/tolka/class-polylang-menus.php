@@ -830,9 +830,13 @@ class Polylang_Menus
      */
     private function navigation_anchor(array $group)
     {
-        $default = $this->normalize_lang_slug($this->read_default_language());
-        if ($default !== '' && isset($group[$default])) {
-            return $group[$default];
+        $default = $this->lowercase_slug($this->read_default_language());
+        if ($default !== '') {
+            foreach ($group as $language => $member) {
+                if (strtolower((string) $language) === $default) {
+                    return $member;
+                }
+            }
         }
         foreach ($group as $member) {
             return $member;
@@ -1410,7 +1414,7 @@ class Polylang_Menus
             $language = $this->normalize_lang_slug($this->language_of_menu($menu_id));
         }
         if ($language === '') {
-            $language = $this->normalize_lang_slug($this->read_default_language());
+            $language = $this->lowercase_slug($this->read_default_language());
         }
         if ($language === '' && $menu_id > 0) {
             $language = $this->language_without_assignment();
@@ -1570,10 +1574,17 @@ class Polylang_Menus
             }
         }
 
-        $default = $this->normalize_lang_slug($this->read_default_language());
+        $default = $this->lowercase_slug($this->read_default_language());
         if ($default !== '') {
-            $slugs = array_values(array_diff($slugs, array($default)));
-            array_unshift($slugs, $default);
+            $rest = array();
+            foreach ($slugs as $slug) {
+                if (strtolower($slug) === $default) {
+                    continue;
+                }
+                $rest[] = $slug;
+            }
+            array_unshift($rest, $default);
+            $slugs = $rest;
         }
 
         return $slugs;
@@ -2613,11 +2624,29 @@ class Polylang_Menus
      */
     private function language_without_assignment()
     {
-        $default = $this->normalize_lang_slug($this->read_default_language());
+        $default = $this->lowercase_slug($this->read_default_language());
         if ($default !== '') {
             return $default;
         }
         return 'unknown';
+    }
+
+    /**
+     * Default and fallback language slugs are stored in lowercase.
+     *
+     * Polylang slugs are lowercase. A stored value of `SV` is the same language
+     * as `sv` and must not become a second slot.
+     *
+     * @param mixed $slug Raw slug.
+     * @return string
+     */
+    private function lowercase_slug($slug)
+    {
+        $slug = $this->normalize_lang_slug($slug);
+        if ($slug === '') {
+            return '';
+        }
+        return strtolower($slug);
     }
 
     /**
