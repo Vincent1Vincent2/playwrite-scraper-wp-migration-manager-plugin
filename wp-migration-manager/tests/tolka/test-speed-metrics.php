@@ -605,12 +605,40 @@ HTML;
         $this->assertSame(1, $result['stylesheet_count']);
     }
 
-    public function test_noscript_fallback_image_counts()
+    public function test_noscript_images_are_not_part_of_the_scripted_page()
     {
-        $result = $this->analyze('<noscript><img src="/fallback.png"></noscript>');
+        $result = $this->analyze('<noscript><img src="/fallback.png"><link rel="stylesheet" href="/fallback.css"></noscript><img src="/live.png">');
 
         $this->assertSame(0, $result['script_count']);
         $this->assertSame(1, $result['image_count']);
+        $this->assertSame(0, $result['stylesheet_count']);
+    }
+
+    public function test_inert_markup_does_not_change_the_speed_counts()
+    {
+        $html = <<<'HTML'
+<title>Northwind <img src="/in-title.png"></title>
+<textarea><img src="/in-field.png"><a hreflang="ja" href="/ja/">JA</a></textarea>
+<iframe src="/map"><img src="/in-frame.png"><script src="/in-frame.js"></script></iframe>
+<template>
+<script src="/not-run.js"></script>
+<img src="/not-loaded.png">
+<link rel="stylesheet" href="/not-loaded.css">
+<a hreflang="ja" href="/ja/">JA</a>
+</template>
+<script src="/run.js"></script>
+<img src="/loaded.png">
+<link rel="stylesheet" href="/loaded.css">
+<a hreflang="sv" href="/sv/">SV</a>
+HTML;
+
+        $result = $this->analyze($html);
+
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(1, $result['image_count']);
+        $this->assertSame(1, $result['stylesheet_count']);
+        $this->assertSame(1, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
     }
 
     public function test_browser_ends_a_script_at_the_first_closing_tag()
@@ -742,7 +770,8 @@ HTML;
 <html lang="en-US">
 <head>
 <meta charset="utf-8">
-<title>Northwind Studio</title>
+<title>Northwind Studio <img src="/not-in-the-title.png"></title>
+<textarea><img src="/not-in-the-field.png"><a hreflang="ja" href="/ja/">JA</a></textarea>
 <link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/wp-content/themes/northwind/style.css">
 <link rel="stylesheet" href="/wp-content/plugins/polylang/css/frontend.css?ver=3.6.2">

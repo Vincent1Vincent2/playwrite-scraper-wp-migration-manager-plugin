@@ -37,10 +37,11 @@ class Speed_Metrics
      * than a reported html_bytes value. Bytes past the cap are not counted.
      *
      * Script, image, stylesheet, and hreflang signals come from markup a
-     * browser would parse. HTML comments are ignored. The inside of a script
-     * or style element is ignored, and an unclosed comment, script, or style
-     * hides the rest of the body. That is the shape of a page cut off inside
-     * one of those. Switcher markers are read from the whole HTML string.
+     * browser would load. HTML comments are ignored, as are the contents of
+     * script, style, template, textarea, title, iframe, and noscript elements.
+     * An unclosed one of those hides the rest of the body, which is what a
+     * cut-off page looks like. Switcher markers are read from the whole HTML
+     * string.
      *
      * @param array $measurement Result from Speed_Loader::measure.
      * @return array{
@@ -212,14 +213,23 @@ class Speed_Metrics
                 continue;
             }
 
-            if (self::opens_element($lower_html, $next, 'script')) {
-                $scripts++;
-                $i = self::skip_element($lower_html, $next, 'script');
-                continue;
+            $skipped = false;
+
+            foreach (self::raw_text_elements() as $name) {
+                if (!self::opens_element($lower_html, $next, $name)) {
+                    continue;
+                }
+
+                if ($name === 'script') {
+                    $scripts++;
+                }
+
+                $i = self::skip_element($lower_html, $next, $name);
+                $skipped = true;
+                break;
             }
 
-            if (self::opens_element($lower_html, $next, 'style')) {
-                $i = self::skip_element($lower_html, $next, 'style');
+            if ($skipped) {
                 continue;
             }
 
@@ -230,6 +240,24 @@ class Speed_Metrics
         return array(
             'markup' => implode('', $chunks),
             'scripts' => $scripts,
+        );
+    }
+
+    /**
+     * Elements whose contents the browser does not load as page markup.
+     *
+     * @return string[]
+     */
+    private static function raw_text_elements()
+    {
+        return array(
+            'script',
+            'style',
+            'template',
+            'textarea',
+            'title',
+            'iframe',
+            'noscript',
         );
     }
 
