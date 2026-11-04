@@ -69,7 +69,7 @@ class Migration_Report
         if ($status === 'complete' || $status === 'unconfirmed' || ($status === 'problems' && $total > 0)) {
             $default_language = self::default_language_sentence($run);
         }
-        $summary = self::summary_for($status, $package, $description, $total, $missing['labels'], $errors, $next, $run_ok, $default_language);
+        $summary = self::summary_for($status, $package, $description, $total, $missing['labels'], $missing['bases'], $errors, $next, $run_ok, $default_language);
 
         return array(
             'ok' => ($status === 'complete' || $status === 'empty'),
@@ -228,21 +228,26 @@ class Migration_Report
         $lines = array();
         $seen = array();
 
+        $bases = array();
+
         foreach ($classes as $class_name) {
             $label = self::step_label($class_name);
-            if ($label === '') {
+            $base = self::class_basename($class_name);
+            if ($label === '' || $base === '') {
                 continue;
             }
 
-            $key = strtolower($label);
+            $key = strtolower($base);
             if (isset($seen[$key])) {
                 continue;
             }
 
             $seen[$key] = true;
             $labels[] = $label;
+            $bases[] = $base;
             $lines[] = sprintf(
-                self::text('The %s step is missing from this plugin.'),
+                self::text('%1$s (%2$s) is missing, so that part was skipped.'),
+                $base,
                 $label
             );
         }
@@ -250,6 +255,7 @@ class Migration_Report
         return array(
             'classes' => $classes,
             'labels' => $labels,
+            'bases' => $bases,
             'lines' => $lines,
         );
     }
@@ -494,16 +500,17 @@ class Migration_Report
      * @param array<string, string> $description Present phrase and absent sentence.
      * @param int                  $total       Sum of counts.
      * @param string[]             $labels      Missing step labels.
+     * @param string[]             $bases       Missing class names, without a namespace.
      * @param string[]             $errors      Error sentences.
      * @param string               $next        Next step sentence.
      * @param bool                 $run_ok            Runner ok flag.
      * @param string               $default_language  Sentence naming the default language, or empty.
      * @return string
      */
-    private static function summary_for($status, $package, array $description, $total, array $labels, array $errors, $next, $run_ok, $default_language)
+    private static function summary_for($status, $package, array $description, $total, array $labels, array $bases, array $errors, $next, $run_ok, $default_language)
     {
         $closing = self::text('Your existing Polylang data was left in place.');
-        $missing_sentence = self::missing_sentence($labels);
+        $missing_sentence = self::missing_sentence($labels, $bases);
         $problem_lead = self::problem_lead($errors);
 
         if ($status === 'complete') {
@@ -753,23 +760,35 @@ class Migration_Report
     }
 
     /**
-     * @param string[] $labels Missing step labels.
+     * One sentence a site owner can read when classes were missing.
+     *
+     * @param string[] $labels Plain names, parallel to $bases.
+     * @param string[] $bases  Class names without a namespace.
      * @return string
      */
-    private static function missing_sentence(array $labels)
+    private static function missing_sentence(array $labels, array $bases)
     {
+        $named = array();
         $count = count($labels);
+        for ($i = 0; $i < $count; $i++) {
+            $base = isset($bases[$i]) && $bases[$i] !== '' ? $bases[$i] : $labels[$i];
+            $named[] = sprintf(self::text('%1$s (%2$s)'), $base, $labels[$i]);
+        }
+
         if ($count === 0) {
             return '';
         }
 
         if ($count === 1) {
-            return sprintf(self::text('The %s step is missing from this plugin.'), $labels[0]);
+            return sprintf(
+                self::text('A required class is missing, so that part was skipped: %s.'),
+                $named[0]
+            );
         }
 
         return sprintf(
-            self::text('The %s steps are missing from this plugin.'),
-            self::join_and($labels)
+            self::text('Required classes are missing, so those parts were skipped: %s.'),
+            self::join_and($named)
         );
     }
 
@@ -891,19 +910,17 @@ class Migration_Report
      */
     private static function line_value(array $meta, $count, $unavailable)
     {
+        if ((int) $count === 1) {
+            $phrase = sprintf(self::text($meta['one']), self::number(1));
+        } else {
+            $phrase = sprintf(self::text($meta['many']), self::number($count));
+        }
+
         if ($unavailable && $count <= 0) {
-            return self::text('Not available');
+            return sprintf(self::text('%s, not read'), $phrase);
         }
 
-        if ($count <= 0) {
-            return self::text($meta['none_line']);
-        }
-
-        if ($count === 1) {
-            return sprintf(self::text($meta['one']), self::number(1));
-        }
-
-        return sprintf(self::text($meta['many']), self::number($count));
+        return $phrase;
     }
 
     /**
@@ -1140,7 +1157,6 @@ class Migration_Report
                 'label' => 'Languages',
                 'group' => 'languages',
                 'singular' => 'language',
-                'none_line' => 'No languages',
                 'one' => '%s language',
                 'many' => '%s languages',
             ),
@@ -1148,7 +1164,6 @@ class Migration_Report
                 'label' => 'Posts',
                 'group' => 'posts',
                 'singular' => 'post',
-                'none_line' => 'No posts',
                 'one' => '%s post',
                 'many' => '%s posts',
             ),
@@ -1156,7 +1171,6 @@ class Migration_Report
                 'label' => 'Terms',
                 'group' => 'terms',
                 'singular' => 'term',
-                'none_line' => 'No terms',
                 'one' => '%s term',
                 'many' => '%s terms',
             ),
@@ -1164,7 +1178,6 @@ class Migration_Report
                 'label' => 'Strings',
                 'group' => 'strings',
                 'singular' => 'string',
-                'none_line' => 'No strings',
                 'one' => '%s string',
                 'many' => '%s strings',
             ),
@@ -1172,7 +1185,6 @@ class Migration_Report
                 'label' => 'Menus',
                 'group' => 'menus',
                 'singular' => 'menu',
-                'none_line' => 'No menus',
                 'one' => '%s menu',
                 'many' => '%s menus',
             ),
@@ -1180,7 +1192,6 @@ class Migration_Report
                 'label' => 'Media',
                 'group' => 'media items',
                 'singular' => 'media item',
-                'none_line' => 'No media',
                 'one' => '%s media item',
                 'many' => '%s media items',
             ),
