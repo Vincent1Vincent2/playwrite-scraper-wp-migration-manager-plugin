@@ -3,6 +3,11 @@
 /**
  * Wizard shell tests. WordPress is stubbed when it is not already loaded.
  *
+ * PHPUnit 9 discovers this file by TestCase subclass. PHPUnit 10 and 11
+ * match the class short name to the filename, and a hyphenated filename
+ * cannot be a class name, so those runners need a loader that collects
+ * TestCase subclasses.
+ *
  * @package MigrationManager
  */
 
@@ -201,7 +206,15 @@ namespace WMM\Tolka {
             $GLOBALS['wmm_tolka_test_can'] = true;
             $GLOBALS['wmm_tolka_test_nonce_valid'] = false;
             $_POST = array();
-            unset($GLOBALS['wmm_tolka_test_json'], $GLOBALS['wmm_tolka_stub_throw'], $GLOBALS['wmm_tolka_test_report']);
+            unset(
+                $GLOBALS['wmm_tolka_test_json'],
+                $GLOBALS['wmm_tolka_stub_throw'],
+                $GLOBALS['wmm_tolka_test_report'],
+                $GLOBALS['wmm_tolka_detector_throw'],
+                $GLOBALS['wmm_tolka_detector_active'],
+                $GLOBALS['wmm_tolka_detector_version'],
+                $GLOBALS['wmm_tolka_detector_errors']
+            );
         }
 
         public function test_main_plugin_requires_bootstrap_once()
@@ -452,15 +465,113 @@ namespace WMM\Tolka {
             }
 
             $this->assertStringContainsString('value="https://public.example.test/"', $html);
+            $this->assertStringContainsString('Speed estimates, migration preview, and running the migration are not available', $html);
+            $this->assertStringContainsString('A speed estimate is not available on this install yet.', $html);
+            $this->assertStringContainsString('Migration preview is not available on this install yet.', $html);
+            $this->assertStringContainsString('Running the migration is not available on this install yet.', $html);
+            $this->assertStringNotContainsString('No measurement yet.', $html);
+            $this->assertStringNotContainsString('Nothing has been previewed yet.', $html);
+            $this->assertStringNotContainsString('No migration has been run from this screen yet.', $html);
+            $this->assertSame(3, substr_count($html, ' disabled '));
+            $this->assertStringContainsString('Polylang cannot be checked on this install yet.', $html);
+            $this->assertStringContainsString('includes/tolka/data/benchmarks.json', $html);
+            $this->assertStringContainsString('id="wmm-tolka-fallback"', $html);
+            $this->assertStringContainsString('Enter', $html);
+            $this->assertStringContainsString('Enable JavaScript', $html);
+            $this->assertStringNotContainsString('secret-html', $html);
+        }
+
+        public function test_ready_steps_invite_action_and_skip_fallback_script_when_js_exists()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $html = $this->render();
             $this->assertStringContainsString('No measurement yet.', $html);
             $this->assertStringContainsString('Nothing has been previewed yet.', $html);
             $this->assertStringContainsString('No migration has been run from this screen yet.', $html);
-            $this->assertStringContainsString('Polylang cannot be checked on this install yet.', $html);
-            $this->assertStringContainsString('A speed estimate is not available on this install yet.', $html);
-            $this->assertStringContainsString('includes/tolka/data/benchmarks.json', $html);
-            $this->assertStringContainsString('id="wmm-tolka-fallback"', $html);
-            $this->assertStringContainsString('Enable JavaScript', $html);
-            $this->assertStringNotContainsString('secret-html', $html);
+            $this->assertSame(0, substr_count($html, ' disabled '));
+            $this->assertStringContainsString('button-primary', $html);
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/assets/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+            $js = $directory . 'tolka-admin.js';
+            file_put_contents($js, '/* behavior slice */');
+            clearstatcache();
+
+            try {
+                $with_js = $this->render();
+                $this->assertStringNotContainsString('id="wmm-tolka-fallback"', $with_js);
+                $this->assertStringContainsString('id="wmm-tolka-wizard"', $with_js);
+            } finally {
+                unlink($js);
+                clearstatcache();
+            }
+        }
+
+        public function test_empty_wizard_view_falls_back()
+        {
+            $this->requireStubs();
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            $view = $directory . 'wizard.php';
+            file_put_contents($view, "<?php\n/* empty screen */\n");
+            clearstatcache();
+
+            try {
+                $html = $this->render();
+                $this->assertSame(1, substr_count($html, 'id="wmm-tolka-wizard"'));
+                $this->assertStringContainsString('id="wmm-tolka-url"', $html);
+            } finally {
+                unlink($view);
+                clearstatcache();
+            }
+        }
+
+        public function test_missing_method_is_unavailable()
+        {
+            $this->requireStubs();
+
+            if (!class_exists(Empty_Method_Slice::class)) {
+                eval('namespace WMM\\Tolka; class Empty_Method_Slice {}');
+            }
+
+            $missing = \wmm_tolka_unavailable(array(
+                'Empty_Method_Slice' => array(
+                    'class' => Empty_Method_Slice::class,
+                    'methods' => array('status'),
+                ),
+            ));
+
+            $this->assertSame(array('Empty_Method_Slice'), $missing);
+        }
+
+        public function test_non_string_url_does_not_fatal()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => array('https://public.example.test/'),
+            );
+
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $output = ob_get_clean();
+
+            $this->assertSame('', $output);
+            $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success']);
+            $this->assertArrayHasKey('estimate', $GLOBALS['wmm_tolka_test_json']['data']);
         }
 
         public function test_saved_report_is_shown()
@@ -608,6 +719,83 @@ namespace WMM\Tolka {
                 \wmm_tolka_ajax_run();
             });
             $this->assertSame('Migration finished', $GLOBALS['wmm_tolka_test_json']['data']['title']);
+        }
+
+        public function test_polylang_status_is_safe_and_nonfatal()
+        {
+            $this->requireStubs();
+
+            if (!class_exists(Polylang_Detector::class)) {
+                eval(<<<'PHP'
+namespace WMM\Tolka;
+class Polylang_Detector {
+    public static function status() {
+        if (!empty($GLOBALS['wmm_tolka_detector_throw'])) {
+            throw new \RuntimeException('detector-boom');
+        }
+        return array(
+            'active' => !empty($GLOBALS['wmm_tolka_detector_active']),
+            'version' => isset($GLOBALS['wmm_tolka_detector_version']) ? $GLOBALS['wmm_tolka_detector_version'] : '',
+            'errors' => isset($GLOBALS['wmm_tolka_detector_errors']) ? $GLOBALS['wmm_tolka_detector_errors'] : array(),
+        );
+    }
+}
+PHP
+                );
+            }
+
+            $GLOBALS['wmm_tolka_detector_throw'] = false;
+            $GLOBALS['wmm_tolka_detector_active'] = true;
+            $GLOBALS['wmm_tolka_detector_version'] = '3.6<script>';
+            $GLOBALS['wmm_tolka_detector_errors'] = array('<b>bad</b>', 'Stored rows were unreadable.', array('skip'));
+
+            $html = $this->render();
+            $this->assertStringContainsString('Polylang 3.6 is active on this site.', $html);
+            $this->assertStringContainsString('>bad<', $html);
+            $this->assertStringContainsString('Stored rows were unreadable.', $html);
+            $this->assertStringNotContainsString('3.6<script>', $html);
+            $this->assertStringNotContainsString('<b>bad</b>', $html);
+
+            $GLOBALS['wmm_tolka_detector_active'] = false;
+            $GLOBALS['wmm_tolka_detector_version'] = '';
+            $GLOBALS['wmm_tolka_detector_errors'] = array();
+            $html = $this->render();
+            $this->assertStringContainsString('Polylang is not active on this site.', $html);
+            $this->assertStringContainsString('will not delete Polylang data.', $html);
+
+            $GLOBALS['wmm_tolka_detector_throw'] = true;
+            $html = $this->render();
+            $this->assertStringContainsString('Polylang status could not be read.', $html);
+            $this->assertStringNotContainsString('detector-boom', $html);
+        }
+
+        public function test_installed_partials_replace_fallback_copy()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            $speed = $directory . 'speed-estimate.php';
+            $help = $directory . 'help.php';
+            file_put_contents($speed, '<p id="speed-partial">SPEED_PARTIAL</p>');
+            file_put_contents($help, '<p id="help-partial">HELP_PARTIAL</p>');
+            clearstatcache();
+
+            try {
+                $html = $this->render();
+                $this->assertStringContainsString('SPEED_PARTIAL', $html);
+                $this->assertStringContainsString('HELP_PARTIAL', $html);
+                $this->assertStringNotContainsString('No measurement yet.', $html);
+                $this->assertStringNotContainsString('See whether Polylang is active.', $html);
+            } finally {
+                unlink($speed);
+                unlink($help);
+                clearstatcache();
+            }
         }
 
         public function test_slice_exceptions_become_errors()
