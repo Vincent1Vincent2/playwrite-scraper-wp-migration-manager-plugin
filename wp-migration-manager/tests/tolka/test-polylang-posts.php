@@ -265,6 +265,7 @@ class Tolka_Posts_Fake_Db
     public $translation_terms = array();
     public $relationships = array();
     public $languages = array();
+    public $language_terms = array();
     public $option_value = null;
     public $fail = false;
     public $fail_results = false;
@@ -328,6 +329,9 @@ class Tolka_Posts_Fake_Db
         }
         if (strpos($sql, 'SELECT ID FROM') !== false) {
             return $this->page_ids($sql);
+        }
+        if (strpos($sql, 'AS slug') !== false && strpos($sql, 'description') !== false) {
+            return $this->language_terms;
         }
         if (strpos($sql, 'description') !== false) {
             return $this->translation_terms;
@@ -1177,6 +1181,40 @@ class Polylang_Posts_Test extends TestCase
                 $this->assertStringNotContainsString('99', $sql);
             }
         }
+    }
+
+    public function test_locale_keys_are_rewritten_to_language_slugs_for_a_draft()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->language_terms = array(
+            array(
+                'slug' => 'en',
+                'term_description' => serialize(array('locale' => 'en_US', 'flag_code' => 'us')),
+            ),
+            array(
+                'slug' => 'de',
+                'term_description' => serialize(array('locale' => 'de_DE', 'flag_code' => 'de')),
+            ),
+        );
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 12,
+                'description' => serialize(array('en_US' => 5, 'de_DE' => 6)),
+            ),
+        );
+        $fake->languages = array(5 => 'en', 6 => 'de');
+        $fake->posts_rows = array(
+            5 => $this->db_post(5, 'draft', 'Hello', 'hello'),
+            6 => $this->db_post(6, 'publish', 'Hallo', 'hallo'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:5', $result['items'][0]['group']);
+        $this->assertSame(array('en', 'de'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
     }
 
     public function test_draft_product_is_exported()
