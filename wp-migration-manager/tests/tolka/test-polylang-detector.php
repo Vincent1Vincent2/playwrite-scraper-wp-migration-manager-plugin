@@ -193,6 +193,25 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($status, WMM\Tolka\Polylang_Detector::status());
     }
 
+    public function test_polylang_inactive_returns_a_clear_error(): void
+    {
+        if (function_exists('pll_languages_list') || class_exists('PLL', false) || class_exists('Polylang', false)) {
+            $this->markTestSkipped('Polylang is loaded in this process.');
+        }
+
+        $status = WMM\Tolka\Polylang_Detector::status();
+
+        $this->assertFalse($status['active']);
+        $this->assertIsString($status['version']);
+        $this->assertNotEmpty($status['errors']);
+        foreach ($status['errors'] as $error) {
+            $this->assertIsString($error);
+            $this->assertMatchesRegularExpression('/\.$/', $error);
+            $this->assertStringNotContainsString('<', $error);
+        }
+        $this->assertSame($status, WMM\Tolka\Polylang_Detector::status());
+    }
+
     public function test_inactive_without_plugin_asks_the_admin_to_install(): void
     {
         Polylang_Detector_Fixture::$directories = array($this->temp_dir());
@@ -314,6 +333,76 @@ class Polylang_Detector_Test extends TestCase
                 'active' => true,
                 'version' => '',
                 'errors' => array(self::ACTIVE_MISSING),
+            ),
+            Polylang_Detector_Fixture::status()
+        );
+    }
+
+    public function test_plugin_header_with_no_version_line(): void
+    {
+        $root = $this->temp_dir();
+        $contents = $this->header_without_version('Polylang');
+        $this->assertDoesNotMatchRegularExpression('/^[ \t\/*#@]*Version:/m', $contents);
+        $this->write_plugin($root, 'polylang/polylang.php', $contents);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '',
+                'errors' => array(self::INACTIVE_HEADER),
+            ),
+            Polylang_Detector_Fixture::status()
+        );
+    }
+
+    public function test_both_free_and_pro_copies_present(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '3.6.4'));
+        $this->write_plugin($root, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '3.7.1'));
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '3.6.4',
+                'errors' => array(sprintf(self::INACTIVE_INSTALLED, '3.6.4')),
+            ),
+            $status
+        );
+        $this->assertStringNotContainsString('3.7.1', $status['errors'][0]);
+        $this->assertStringNotContainsString('Polylang Pro', $status['errors'][0]);
+    }
+
+    public function test_both_copies_when_free_header_has_no_version_line(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->header_without_version('Polylang'));
+        $this->write_plugin($root, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '3.7.1'));
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertFalse($status['active']);
+        $this->assertSame('3.7.1', $status['version']);
+        $this->assertSame(array(sprintf(self::INACTIVE_INSTALLED_PRO, '3.7.1')), $status['errors']);
+    }
+
+    public function test_both_copies_without_version_lines(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->header_without_version('Polylang'));
+        $this->write_plugin($root, 'polylang-pro/polylang.php', $this->header_without_version('Polylang Pro'));
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '',
+                'errors' => array(self::INACTIVE_HEADER),
             ),
             Polylang_Detector_Fixture::status()
         );
@@ -911,6 +1000,21 @@ class Polylang_Detector_Test extends TestCase
         file_put_contents($path, $contents);
 
         return $path;
+    }
+
+    private function header_without_version(string $name): string
+    {
+        return "<?php\n"
+            . "/**\n"
+            . " * Plugin Name:       {$name}\n"
+            . " * Plugin URI:        https://polylang.pro\n"
+            . " * Description:       Adds multilingual capability. Version: see the readme.\n"
+            . " * Requires at least: 6.2\n"
+            . " * Requires PHP:      7.2\n"
+            . " * Author:            WP SYNTEX\n"
+            . " * Text Domain:       polylang\n"
+            . " * License:           GPL v3 or later\n"
+            . " */\n";
     }
 
     private function wordpress_header(string $name, string $version): string
