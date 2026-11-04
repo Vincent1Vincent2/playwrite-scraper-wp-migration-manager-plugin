@@ -2161,26 +2161,50 @@
 
   function postLine(item) {
     var entries = mapEntries(item.translations);
-    var title = firstField(entries, "title");
-    var head = clip(title || text(item.group) || "Untitled post", 80);
-    var bits = [head];
+    var named = [];
+    entries.forEach(function (entry) {
+      var title = objectText(entry.value, "title");
+      var slug = objectText(entry.value, "slug");
+      var status = objectText(entry.value, "status");
+      var label = "";
+      if (title && slug && slug !== title) {
+        label = title + " (" + slug + ")";
+      } else {
+        label = title || slug;
+      }
+      if (!label) {
+        if (entry.lang) {
+          named.push(entry.lang);
+        }
+        return;
+      }
+      var piece = entry.lang ? entry.lang + ": " + clip(label, 80) : clip(label, 80);
+      if (status) {
+        piece += ", " + status;
+      }
+      named.push(piece);
+    });
+    var bits = [];
     if (text(item.type)) {
       bits.push(text(item.type));
     }
-    var langs = entries.map(function (entry) {
-      return entry.lang;
-    });
-    if (langs.length) {
-      bits.push(langs.join(", "));
+    if (named.length) {
+      bits.push(named.join("; "));
+    } else {
+      bits.push(clip(text(item.group) || "Untitled post", 80));
     }
-    var status = firstField(entries, "status");
-    if (status) {
-      bits.push(status);
-    }
-    if (text(item.group) && text(item.group) !== head) {
-      bits.push(text(item.group));
+    var group = text(item.group);
+    if (group && bits.join(" ").indexOf(group) === -1) {
+      bits.push(group);
     }
     return bits.join(" · ");
+  }
+
+  function objectText(value, key) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return "";
+    }
+    return text(value[key]);
   }
 
   function termLine(item) {
