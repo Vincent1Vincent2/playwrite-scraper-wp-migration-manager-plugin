@@ -2322,7 +2322,8 @@ class Polylang_Media
     /**
      * Keep text that can be stored in the Tolka package.
      *
-     * Invalid bytes would make the package fail when it is encoded.
+     * Markup in alt text and titles is left in place. Null bytes and invalid
+     * UTF-8 are removed so the package can be encoded.
      *
      * @param string $value
      * @return string
