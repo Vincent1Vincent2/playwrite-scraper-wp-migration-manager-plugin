@@ -656,6 +656,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('longer than 2000 characters', $html);
             $this->assertStringContainsString('javascript: and data:', $html);
             $this->assertStringContainsString('That address is on a local or private network, so it was not measured.', $html);
+            $this->assertStringContainsString('That address has no host, so it was not measured.', $html);
             $this->assertStringContainsString('Enter', $html);
             $this->assertStringContainsString('Enable JavaScript', $html);
             $this->assertStringNotContainsString('secret-html', $html);

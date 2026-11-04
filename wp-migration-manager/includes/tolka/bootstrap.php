@@ -1836,6 +1836,7 @@ function wmm_tolka_fallback_copy()
         'tooLong' => __('That address is longer than 2000 characters, so it was not measured. Nothing was changed.', 'migration-manager'),
         'blockedScheme' => __('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'),
         'localAddress' => __('That address is on a local or private network, so it was not measured.', 'migration-manager'),
+        'emptyHost' => __('That address has no host, so it was not measured.', 'migration-manager'),
         'timeoutMeasure' => __('The speed check took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutPreview' => __('The preview took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutRun' => __('The migration took too long to answer. Reload this screen before trying again. Polylang data was not deleted.', 'migration-manager'),
@@ -1992,6 +1993,24 @@ function wmm_tolka_fallback_script()
         return false;
     }
 
+    function urlHasEmptyHost(value) {
+        var match = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)/i.exec(value);
+        if (!match) {
+            return false;
+        }
+        var scheme = match[1].toLowerCase();
+        if (scheme !== "http" && scheme !== "https") {
+            return false;
+        }
+        var authority = match[2];
+        var at = authority.lastIndexOf("@");
+        if (at !== -1) {
+            authority = authority.slice(at + 1);
+        }
+        authority = authority.replace(/^\[|\]$/g, "").replace(/\.+$/g, "");
+        return authority === "";
+    }
+
     function onClick(job) {
         if (active) {
             return;
@@ -2024,6 +2043,10 @@ function wmm_tolka_fallback_script()
             }
             if (urlIsLocal(url)) {
                 showError(document.getElementById(job.target), text("localAddress", "That address is on a local or private network, so it was not measured."));
+                return;
+            }
+            if (urlHasEmptyHost(url)) {
+                showError(document.getElementById(job.target), text("emptyHost", "That address has no host, so it was not measured."));
                 return;
             }
             body.set("url", url);
