@@ -1982,6 +1982,37 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_padded_package_time_is_zulu_and_padded_string_text_stays()
+    {
+        $padded = '  2024-05-06T07:08:09+00:00  ';
+        $result = Tolka_Writer::write(array(
+            'version' => ' 1 ',
+            'generated_at' => "  2024-05-06T07:08:09+00:00\0",
+            'strings' => array(
+                array(
+                    'name' => 'log',
+                    'string' => $padded,
+                    'context' => 'theme',
+                    'translations' => array(
+                        'sv' => $padded,
+                    ),
+                ),
+            ),
+        ));
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('2024-05-06T07:08:09Z', $stored['generated_at']);
+        $this->assertTrue(Tolka_Schema::is_zulu_timestamp($stored['generated_at']));
+        $this->assertSame(1, $stored['version']);
+        $this->assertTrue(is_int($stored['version']));
+        $this->assertSame($padded, $stored['strings'][0]['string']);
+        $this->assertSame($padded, $stored['strings'][0]['translations']['sv']);
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+        $this->assertSame(1, Tolka_Schema::VERSION);
+    }
+
     public function test_offset_package_time_is_stored_as_zulu_and_string_text_is_kept()
     {
         $same = '2024-05-06T07:08:09+00:00';
