@@ -717,7 +717,7 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             ),
         ));
 
-        $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame('No percent is shown.', $this->text($html, 'wmm-tolka-faster'));
         $this->assertSame('', $this->document($html)->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
         $this->assertStringNotContainsString('% faster', $html);
         $this->assertStringNotContainsString('20.0', $html);
@@ -804,7 +804,7 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             $this->assertSame($contract_basis, $this->text($html, 'wmm-tolka-basis'), $name);
             $this->assertStringContainsString('1,000 ms', $this->text($html, 'wmm-tolka-current-load'), $name);
             $this->assertStringContainsString('800 ms', $this->text($html, 'wmm-tolka-tolka-load'), $name);
-            $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertSame('No percent is shown.', $this->text($html, 'wmm-tolka-faster'), $name);
             $this->assertSame('', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'), $name);
             $this->assertStringNotContainsString('% faster', $html, $name);
             $this->assertStringNotContainsString('20.0', $html, $name);

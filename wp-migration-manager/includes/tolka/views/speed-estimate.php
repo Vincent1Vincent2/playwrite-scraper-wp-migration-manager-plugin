@@ -206,7 +206,7 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
         $wmm_tolka_speed_loads_ok = ('' !== $wmm_tolka_speed_view['current'] && '' !== $wmm_tolka_speed_view['tolka']);
         $wmm_tolka_speed_faster_ok = ('' !== $wmm_tolka_speed_view['faster']);
 
-        if (!$wmm_tolka_speed_loads_ok || !$wmm_tolka_speed_faster_ok) {
+        if (!$wmm_tolka_speed_loads_ok) {
             if ('' === $wmm_tolka_speed_view['current']) {
                 $wmm_tolka_speed_view['current'] = $wmm_tolka_speed_unavailable;
             }
@@ -215,6 +215,9 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
             }
             $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_unavailable;
             $wmm_tolka_speed_view['summary'] = __('The speed estimate completed, but one or more figures were missing. No percent is shown.', 'migration-manager');
+        } elseif (!$wmm_tolka_speed_faster_ok) {
+            $wmm_tolka_speed_view['faster'] = __('No percent is shown.', 'migration-manager');
+            $wmm_tolka_speed_view['summary'] = __('The speed estimate completed, but the faster label was empty. No percent is shown.', 'migration-manager');
         } else {
             if (null !== $wmm_tolka_speed_percent) {
                 $wmm_tolka_speed_view['faster_percent'] = number_format($wmm_tolka_speed_percent, 1, '.', '');
