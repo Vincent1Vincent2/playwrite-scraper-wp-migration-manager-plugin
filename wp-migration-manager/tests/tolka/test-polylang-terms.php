@@ -588,6 +588,24 @@ class Polylang_Terms_Test extends TestCase
                 'parent' => null,
                 'description' => null,
             ),
+            array(
+                'id' => 62,
+                'name' => 'Falskt',
+                'slug' => 'FALSKT',
+                'taxonomy' => 'category',
+                'lang' => 'sv',
+                'parent' => false,
+                'description' => false,
+            ),
+            array(
+                'id' => 63,
+                'name' => 'Lista',
+                'slug' => 'LISTA',
+                'taxonomy' => 'post_tag',
+                'lang' => 'sv',
+                'parent' => array(1),
+                'description' => array('html' => '<p>å</p>'),
+            ),
             $this->term(70, 'Main', 'MAIN', 'nav_menu', 'FR', 0, $html),
         );
         $GLOBALS['wpdb'] = $database;
@@ -614,12 +632,24 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(0, $empty['translations']['sv']['parent']);
         $this->assertIsInt($empty['translations']['sv']['parent']);
 
+        $falseDescription = $this->itemByGroup($second['items'], 'term:62');
+        $this->assertSame('', $falseDescription['translations']['sv']['description']);
+        $this->assertSame('falskt', $falseDescription['translations']['sv']['slug']);
+        $this->assertSame(0, $falseDescription['translations']['sv']['parent']);
+        $this->assertIsInt($falseDescription['translations']['sv']['parent']);
+
+        $arrayDescription = $this->itemByGroup($second['items'], 'term:63');
+        $this->assertSame('', $arrayDescription['translations']['sv']['description']);
+        $this->assertSame('lista', $arrayDescription['translations']['sv']['slug']);
+        $this->assertSame(0, $arrayDescription['translations']['sv']['parent']);
+        $this->assertIsInt($arrayDescription['translations']['sv']['parent']);
+
         $this->assertNotContains('term:70', $this->groupIds($second['items']));
         $this->assertIsString($encoded);
         $this->assertStringNotContainsString('nav_menu', $encoded);
         $this->assertStringNotContainsString('Main', $encoded);
         $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
-        $this->assertCount(2, $second['items']);
+        $this->assertCount(4, $second['items']);
     }
 
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
