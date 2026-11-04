@@ -290,6 +290,113 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
     }
 
+    public function test_saved_package_with_section_errors_does_not_use_the_clean_title()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 2,
+                'posts' => 4,
+                'menus' => 1,
+            ),
+            'package' => array(
+                'posts' => array(
+                    'items' => array(
+                        array('group' => 'post:1'),
+                        array('group' => 'post:2'),
+                        array('group' => 'post:3'),
+                        array('group' => 'post:4'),
+                    ),
+                    'errors' => array('One post had no title', 4, array('nested')),
+                ),
+                'menus' => array(
+                    'items' => array(array('name' => 'Primary')),
+                    'errors' => array('A menu item was skipped'),
+                ),
+            ),
+            'write' => array(
+                'ok' => true,
+                'counts' => array(
+                    'languages' => 2,
+                    'posts' => 4,
+                    'menus' => 1,
+                ),
+                'deleted_polylang' => false,
+                'errors' => array(
+                    'languages' => array('A flag file was missing'),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($report['ok']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assertStringNotContainsString('The migration is complete', $report['title']);
+        $this->assertStringNotContainsString('The migration is complete', $report['summary']);
+        $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
+        $this->assertStringContainsString('A flag file was missing.', $report['summary']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
+        $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
+        $this->assertSame(
+            array(
+                'A flag file was missing.',
+                'One post had no title.',
+                'A menu item was skipped.',
+            ),
+            $this->lines_named($report, 'Problem')
+        );
+    }
+
+    public function test_summary_says_polylang_data_was_left_in_place_when_the_writer_did_not_delete_it()
+    {
+        $explicit = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('posts' => 2),
+            'write' => array(
+                'ok' => true,
+                'counts' => array('posts' => 2),
+                'polylang_deleted' => false,
+                'errors' => array(
+                    'posts' => 'A post excerpt was empty',
+                ),
+            ),
+        ));
+        $this->assertNotSame('The migration is complete.', $explicit['title']);
+        $this->assertStringContainsString('The package is saved on this site.', $explicit['summary']);
+        $this->assertStringContainsString('Polylang data was left in place.', $explicit['summary']);
+        $this->assertSame('Polylang data was left in place.', $this->line($explicit, 'Polylang data'));
+
+        $unspecified = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('menus' => 1),
+            'write' => array(
+                'ok' => true,
+                'counts' => array('menus' => 1),
+                'errors' => array(
+                    'menus' => array('Menu location was empty'),
+                ),
+            ),
+        ));
+        $this->assertNotSame('The migration is complete.', $unspecified['title']);
+        $this->assertStringContainsString('Polylang data was left in place.', $unspecified['summary']);
+
+        $deleted = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('posts' => 1),
+            'write' => array(
+                'ok' => true,
+                'counts' => array('posts' => 1),
+                'polylang_deleted' => true,
+                'errors' => array(
+                    'posts' => array('A post excerpt was empty'),
+                ),
+            ),
+        ));
+        $this->assertNotSame('The migration is complete.', $deleted['title']);
+        $this->assertStringNotContainsString('Polylang data was left in place.', $deleted['summary']);
+        $this->assertSame('Polylang data was removed.', $this->line($deleted, 'Polylang data'));
+    }
+
     public function test_write_failure_overrides_a_successful_run_flag()
     {
         $report = Migration_Report::format(array(
