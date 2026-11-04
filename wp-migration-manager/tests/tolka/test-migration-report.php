@@ -45,7 +45,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertTrue($report['ok']);
-        $this->assertSame('Migration complete', $report['title']);
+        $this->assertSame('The migration is complete.', $report['title']);
         $this->assertSame(
             'Your Polylang content is packaged for Tolka: 2 languages, 1 post, 10 strings, 1 menu, and 2 media items. No terms were found. The package is saved on this site. Polylang data was left in place.',
             $report['summary']
@@ -88,7 +88,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertTrue($report['ok']);
-        $this->assertSame('Nothing to migrate', $report['title']);
+        $this->assertSame('Nothing was found on this site.', $report['title']);
         $this->assertSame(
             'Nothing was found on this site. No languages, posts, terms, strings, menus, or media were found. If this site should have translations, check that Polylang has languages, then run the migration again. An empty Tolka package was saved on this site. Polylang data was left in place.',
             $report['summary']
@@ -112,7 +112,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertTrue($report['ok']);
-        $this->assertSame('Migration complete', $report['title']);
+        $this->assertSame('The migration is complete.', $report['title']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
 
@@ -125,7 +125,7 @@ class Test_Migration_Report extends TestCase
             'write' => array('ok' => true),
         ));
         $this->assertTrue($omitted['ok']);
-        $this->assertSame('Migration complete', $omitted['title']);
+        $this->assertSame('The migration is complete.', $omitted['title']);
         $this->assertStringContainsString('Polylang data was left in place.', $omitted['summary']);
     }
 
@@ -137,7 +137,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertTrue($report['ok']);
-        $this->assertSame('Nothing to migrate', $report['title']);
+        $this->assertSame('Nothing was found on this site.', $report['title']);
         $this->assertStringContainsString('Nothing was found', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertSame('0 languages', $this->line($report, 'Languages'));
@@ -198,7 +198,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertSame(
             'The migration did not finish, so the Tolka package was not saved. Polylang is not active. Activate Polylang, then run the migration again from Migrate to Tolka. Polylang data was left in place.',
             $report['summary']
@@ -282,7 +282,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('Migration finished with problems', $report['title']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
         $this->assertSame(
             'Your Polylang content is packaged for Tolka: 2 languages and 3 posts. No terms, strings, menus, or media items were found. The package is saved on this site. One menu had no items. Review the problems below, then run the migration again if you want to retry. Polylang data was left in place.',
             $report['summary']
@@ -304,7 +304,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertStringContainsString('The package could not be stored.', $report['summary']);
         $this->assertStringContainsString('was not saved into a Tolka package.', $report['summary']);
         $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
@@ -357,7 +357,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertStringEndsWith('Polylang data was left in place.', $report['summary']);
         $this->assertSame('0 languages', $this->line($report, 'Languages'));
         $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
@@ -434,9 +434,72 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('Migration finished', $report['title']);
+        $this->assertSame('The migration finished, but the save was not confirmed.', $report['title']);
         $this->assertStringContainsString('could not confirm that the Tolka package was saved.', $report['summary']);
         $this->assertSame('Not confirmed', $this->line($report, 'Tolka package'));
+    }
+
+    public function test_titles_are_finished_sentences()
+    {
+        $clean = $this->format_run(array(
+            'languages' => 2,
+            'posts' => 1,
+        ));
+        $failed = Migration_Report::format(array(
+            'ok' => false,
+            'errors' => array('Polylang is not active'),
+        ));
+
+        $this->assertSame('The migration is complete.', $clean['title']);
+        $this->assertSame('The migration did not finish.', $failed['title']);
+        $this->assertMatchesRegularExpression('/^[A-Z].+\.$/', $clean['title']);
+        $this->assertMatchesRegularExpression('/^[A-Z].+\.$/', $failed['title']);
+        $this->assertSame($clean['title'], $this->line($clean, 'Outcome'));
+        $this->assertSame($failed['title'], $this->line($failed, 'Outcome'));
+    }
+
+    public function test_non_string_errors_are_left_out_of_the_summary()
+    {
+        $stringable = new class {
+            public function __toString()
+            {
+                return 'from tostring';
+            }
+        };
+
+        $report = Migration_Report::format(array(
+            'ok' => false,
+            'counts' => array('posts' => 2),
+            'errors' => array(
+                'The menu could not be read.',
+                'Code 4099 was returned.',
+                4099,
+                3.25,
+                array('nested'),
+                null,
+                true,
+                $stringable,
+            ),
+            'write' => array(
+                'ok' => false,
+                'errors' => 404,
+            ),
+        ));
+
+        $this->assertStringContainsString('The menu could not be read.', $report['summary']);
+        $this->assertStringContainsString('1 more problem is listed below.', $report['summary']);
+        $this->assertStringNotContainsString('4099', $report['summary']);
+        $this->assertStringNotContainsString('3.25', $report['summary']);
+        $this->assertStringNotContainsString('nested', $report['summary']);
+        $this->assertStringNotContainsString('from tostring', $report['summary']);
+        $this->assertStringNotContainsString('404', $report['summary']);
+        $this->assertSame(
+            array(
+                'The menu could not be read.',
+                'Code 4099 was returned.',
+            ),
+            $this->lines_named($report, 'Problem')
+        );
     }
 
     public function test_html_in_an_error_is_not_left_in_the_summary()
@@ -488,7 +551,7 @@ class Test_Migration_Report extends TestCase
         $report = Migration_Report::format(array());
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertSame('0 languages', $this->line($report, 'Languages'));
         $this->assertSame('0 posts', $this->line($report, 'Posts'));
         $this->assertSame('0 terms', $this->line($report, 'Terms'));
@@ -709,7 +772,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertFalse($report['ok']);
-        $this->assertSame('Migration finished with problems', $report['title']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
         $this->assertStringContainsString('The Tolka package on this site is incomplete.', $report['summary']);
         $this->assertStringNotContainsString('packaged for Tolka', $report['summary']);
         $this->assertStringContainsString(
@@ -763,7 +826,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assert_not_a_clean_finish($report);
-        $this->assertSame('Migration finished with problems', $report['title']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
         $this->assertStringContainsString(
             'The package contained more than was stored. 3 of 5 posts were saved.',
             $report['summary']
@@ -792,7 +855,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assert_not_a_clean_finish($report);
-        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertSame('2 media items', $this->line($report, 'Media'));
         $this->assertSame('1 of 2', $this->line($report, 'Media stored'));
         $this->assertStringContainsString(
@@ -856,7 +919,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assert_not_a_clean_finish($report);
-        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertSame('The migration did not finish.', $report['title']);
         $this->assertStringContainsString('6 posts', $report['summary']);
         $this->assertStringContainsString('Saving stopped before the package was stored.', $report['summary']);
         $this->assertStringContainsString('was not saved into a Tolka package.', $report['summary']);
@@ -909,7 +972,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertTrue($report['ok']);
-        $this->assertSame('Migration complete', $report['title']);
+        $this->assertSame('The migration is complete.', $report['title']);
         $this->assertArrayNotHasKey('Saved counts', $this->line_map($report));
     }
 
@@ -1033,7 +1096,7 @@ class Test_Migration_Report extends TestCase
     private function assert_not_a_clean_finish(array $report)
     {
         $this->assertFalse($report['ok']);
-        $this->assertNotSame('Migration complete', $report['title']);
+        $this->assertNotSame('The migration is complete.', $report['title']);
         $haystack = strtolower($report['title'] . ' ' . $report['summary']);
         $this->assertStringNotContainsString('migration complete', $haystack);
         $this->assertStringNotContainsString('clean finish', $haystack);
