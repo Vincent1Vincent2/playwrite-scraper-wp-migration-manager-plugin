@@ -173,7 +173,10 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $html = $this->render(false);
 
         $this->assertStringContainsString('wmm-tolka-is-empty', $html);
-        $this->assertStringContainsString('Choose Measure speed', $this->text($html, 'wmm-tolka-speed-summary'));
+        $this->assertSame(
+            'No measurement yet. Enter the public site URL and choose Measure speed to see the current load, the estimated Tolka load, the percent faster, and the basis of that estimate.',
+            $this->text($html, 'wmm-tolka-speed-summary')
+        );
         $this->assertSame('Current load', $this->text($html, 'wmm-tolka-current-load-label'));
         $this->assertSame('Estimated Tolka load', $this->text($html, 'wmm-tolka-tolka-load-label'));
         $this->assertSame('Percent faster', $this->text($html, 'wmm-tolka-faster-label'));
@@ -400,7 +403,7 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $html = $this->render(true, array('ok' => false));
 
         $this->assertSame(
-            'The speed estimate could not be completed. Check the public site URL and measure again.',
+            'The speed estimate could not be completed. Check the public site URL and measure again. No percent is shown.',
             $this->text($html, 'wmm-tolka-speed-error')
         );
         $this->assertStringNotContainsString('% faster', $html);

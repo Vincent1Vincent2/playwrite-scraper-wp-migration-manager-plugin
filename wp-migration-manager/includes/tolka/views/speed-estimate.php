@@ -7,10 +7,10 @@
  * Optional $estimate is Speed_Estimate::project(), or a measure payload
  * with an estimate key.
  *
- * The behavior script fills these slots in place: data-wmm-tolka
- * "current_ms", "tolka_ms", "faster", "basis", and "provenance_note".
- * Each value node is also marked wmm-tolka-value. The provenance note
- * is shown when provenance is placeholder.
+ * Stable ids, filled in place by the behavior script:
+ * #wmm-tolka-current-load, #wmm-tolka-tolka-load, #wmm-tolka-faster,
+ * #wmm-tolka-basis, and #wmm-tolka-provenance-note.
+ * The provenance note is shown when provenance is placeholder.
  *
  * @package MigrationManager
  */
@@ -121,13 +121,13 @@ $wmm_tolka_speed_unavailable = __('Unavailable', 'migration-manager');
 $wmm_tolka_speed_basis_fallback = 'Measured page load plus coefficients from benchmarks.json';
 $wmm_tolka_speed_note_fallback = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
 $wmm_tolka_speed_scope_text = __('The speed percent is an estimate for the single page you load. It is not a result for every page on the site.', 'migration-manager');
-$wmm_tolka_speed_error_fallback = __('The speed estimate could not be completed. Check the public site URL and measure again.', 'migration-manager');
+$wmm_tolka_speed_error_fallback = __('The speed estimate could not be completed. Check the public site URL and measure again. No percent is shown.', 'migration-manager');
 
 $wmm_tolka_speed_view = array(
     'state' => 'empty',
     'provenance' => '',
     'show_note' => false,
-    'summary' => __('Choose Measure speed to load the public site URL. These figures show the current load, the estimated Tolka load, and the percent faster.', 'migration-manager'),
+    'summary' => __('No measurement yet. Enter the public site URL and choose Measure speed to see the current load, the estimated Tolka load, the percent faster, and the basis of that estimate.', 'migration-manager'),
     'current' => $wmm_tolka_speed_pending,
     'current_ms' => '',
     'tolka' => $wmm_tolka_speed_pending,
