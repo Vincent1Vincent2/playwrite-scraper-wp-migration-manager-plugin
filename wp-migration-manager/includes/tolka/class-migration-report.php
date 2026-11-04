@@ -103,11 +103,12 @@ class Migration_Report
     /**
      * Store the report for the next time the site owner opens the screen.
      *
-     * Missing update_option is not a failure. A false return means the save
-     * was refused.
+     * WordPress update_option returns false when the stored value is already
+     * the same. That is still a successful save. The failure is only when the
+     * value is not stored afterward. A missing update_option does not fatal.
      *
      * @param array $report Formatted report.
-     * @return bool True when there is nothing to do or the option was saved.
+     * @return bool True when there is nothing to do or the option holds this report.
      */
     private static function remember(array $report)
     {
@@ -115,7 +116,45 @@ class Migration_Report
             return true;
         }
 
-        return update_option(self::OPTION_LAST_REPORT, $report) !== false;
+        $updated = update_option(self::OPTION_LAST_REPORT, $report);
+        if ($updated !== false) {
+            return true;
+        }
+
+        return self::option_has_report($report);
+    }
+
+    /**
+     * @param array $report Formatted report.
+     * @return bool
+     */
+    private static function option_has_report(array $report)
+    {
+        if (!function_exists('get_option')) {
+            return false;
+        }
+
+        $stored = get_option(self::OPTION_LAST_REPORT, null);
+
+        return self::reports_match($stored, $report);
+    }
+
+    /**
+     * @param mixed $stored Stored option value.
+     * @param array $report Formatted report.
+     * @return bool
+     */
+    private static function reports_match($stored, array $report)
+    {
+        if ($stored === $report) {
+            return true;
+        }
+
+        if (function_exists('maybe_serialize')) {
+            return maybe_serialize($stored) === maybe_serialize($report);
+        }
+
+        return serialize($stored) === serialize($report);
     }
 
     /**

@@ -1261,6 +1261,12 @@ echo json_encode($report);
 
         $this->assert_not_a_clean_finish($partial);
         $this->assert_partial_title($partial);
+        $this->assertSame('0', $this->line($partial, 'Languages'));
+        $this->assertSame('0', $this->line($partial, 'Terms'));
+        $this->assertSame('0', $this->line($partial, 'Strings'));
+        $this->assertSame('0', $this->line($partial, 'Menus'));
+        $this->assertSame('0', $this->line($partial, 'Media'));
+        $this->assertNotSame('', $this->line($partial, 'Languages'));
         $this->assertStringContainsString(
             'Saving did not finish. The package contained more than was stored. 4 of 6 posts were saved.',
             $partial['summary']
@@ -1627,6 +1633,99 @@ echo json_encode(array("clean" => $clean, "failed" => $failed));
         ));
     }
 
+    public function test_second_format_does_not_add_an_error_when_the_value_is_unchanged()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+$GLOBALS["wmm_opt"] = null;
+function update_option($option, $value, $autoload = null) {
+    if ($GLOBALS["wmm_opt"] !== null && $GLOBALS["wmm_opt"] == $value) {
+        $GLOBALS["wmm_unchanged_false"] = true;
+        return false;
+    }
+    $GLOBALS["wmm_opt"] = $value;
+    return true;
+}
+function get_option($option, $default = false) {
+    return $GLOBALS["wmm_opt"] === null ? $default : $GLOBALS["wmm_opt"];
+}
+require ' . var_export($class, true) . ';
+$run = array(
+    "ok" => true,
+    "counts" => array("languages" => 2, "posts" => 1),
+    "write" => array("ok" => true),
+);
+$first = \\WMM\\Tolka\\Migration_Report::format($run);
+$second = \\WMM\\Tolka\\Migration_Report::format($run);
+$third = \\WMM\\Tolka\\Migration_Report::format($run);
+echo json_encode(array(
+    "unchanged_false" => !empty($GLOBALS["wmm_unchanged_false"]),
+    "first_errors" => $first["errors"],
+    "second_errors" => $second["errors"],
+    "third_errors" => $third["errors"],
+    "first_summary" => $first["summary"],
+    "second_summary" => $second["summary"],
+    "third_summary" => $third["summary"],
+    "first_title" => $first["title"],
+    "second_title" => $second["title"],
+    "third_title" => $third["title"],
+    "second_lines" => $second["lines"],
+    "stored_errors" => $GLOBALS["wmm_opt"]["errors"],
+));
+';
+        $decoded = $this->run_report_script($script);
+        $this->assertTrue($decoded['unchanged_false']);
+        $this->assertSame(array(), $decoded['first_errors']);
+        $this->assertSame(array(), $decoded['second_errors']);
+        $this->assertSame(array(), $decoded['third_errors']);
+        $this->assertStringNotContainsString('could not be saved', $decoded['first_summary']);
+        $this->assertStringNotContainsString('could not be saved', $decoded['second_summary']);
+        $this->assertStringNotContainsString('could not be saved', $decoded['third_summary']);
+        $this->assertSame(array(), $decoded['stored_errors']);
+        $this->assertSame('The migration is complete.', $decoded['first_title']);
+        $this->assertSame('The migration is complete.', $decoded['second_title']);
+        $this->assertSame('The migration is complete.', $decoded['third_title']);
+        $this->assertNotSame('The migration finished with problems.', $decoded['second_title']);
+        $second = array('lines' => $decoded['second_lines']);
+        $this->assertSame('2', $this->line($second, 'Languages'));
+        $this->assertSame('1', $this->line($second, 'Posts'));
+        $this->assertSame('0', $this->line($second, 'Terms'));
+        $this->assertSame('0', $this->line($second, 'Strings'));
+        $this->assertSame('0', $this->line($second, 'Menus'));
+        $this->assertSame('0', $this->line($second, 'Media'));
+        $this->assert_section_order($second);
+    }
+
+    public function test_update_option_false_adds_an_error_only_when_the_value_is_not_stored()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+function update_option($option, $value, $autoload = null) {
+    return false;
+}
+function get_option($option, $default = false) {
+    return array("ok" => false, "title" => "old");
+}
+require ' . var_export($class, true) . ';
+$report = \\WMM\\Tolka\\Migration_Report::format(array(
+    "ok" => true,
+    "counts" => array("languages" => 2),
+    "write" => array("ok" => true),
+));
+echo json_encode($report);
+';
+        $report = $this->run_report_script($script);
+        $this->assertTrue($report['ok']);
+        $this->assertSame('The migration is complete.', $report['title']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertStringContainsString('The report could not be saved.', $report['summary']);
+        $this->assertSame(array('The report could not be saved.'), $report['errors']);
+        $this->assertSame('2', $this->line($report, 'Languages'));
+        $this->assertSame('0', $this->line($report, 'Posts'));
+    }
+
     public function test_update_option_true_does_not_add_a_save_error()
     {
         $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
@@ -1697,6 +1796,25 @@ echo json_encode(array(
             }
         }
         $this->assertSame(array('The report could not be saved.'), $values);
+    }
+
+    /**
+     * @param string $script PHP source without the opening tag.
+     * @return array
+     */
+    private function run_report_script($script)
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'wmm-report');
+        file_put_contents($tmp, $script);
+        $output = array();
+        $exit = 0;
+        exec('php ' . escapeshellarg($tmp) . ' 2>&1', $output, $exit);
+        unlink($tmp);
+        $this->assertSame(0, $exit, implode("\n", $output));
+        $decoded = json_decode(implode("\n", $output), true);
+        $this->assertIsArray($decoded);
+
+        return $decoded;
     }
 
     /**
