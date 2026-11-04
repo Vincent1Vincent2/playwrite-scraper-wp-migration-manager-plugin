@@ -2152,7 +2152,7 @@
     if (truthyFlag(item.is_default)) {
       extra.push("default");
     }
-    var flag = shortFlag(item.flag);
+    var flag = shortFlag(item.flag_code) || shortFlag(item.flag);
     if (flag) {
       extra.push(flag);
     }
