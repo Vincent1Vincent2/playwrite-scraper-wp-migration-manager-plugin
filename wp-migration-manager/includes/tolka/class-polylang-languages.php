@@ -931,7 +931,7 @@ class Polylang_Languages
             'locale' => $this->plain_locale($locale),
             'is_default' => $this->is_truthy_flag($is_default),
             'term_id' => $term_id,
-            'flag' => $this->string_value($flag),
+            'flag' => $this->plain_flag($flag),
         );
     }
 
@@ -1173,6 +1173,25 @@ class Polylang_Languages
     private function is_language_slug($slug)
     {
         return is_string($slug) && preg_match('/^[A-Za-z][A-Za-z0-9_-]{0,199}$/', $slug) === 1;
+    }
+
+    /**
+     * Flag code, URL, or markup. Script and data URLs are dropped.
+     *
+     * @param mixed $flag Raw flag.
+     * @return string
+     */
+    private function plain_flag($flag)
+    {
+        $flag = $this->normalize_flag($flag);
+        if ($flag === '' || $this->is_flag_code($flag)) {
+            return $flag;
+        }
+        if (preg_match('/^(javascript|data):/i', $flag) === 1) {
+            return '';
+        }
+
+        return $flag;
     }
 
     /**

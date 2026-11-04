@@ -1827,6 +1827,29 @@ PHP
         $this->assertSame('de', $by_slug['de']['name']);
     }
 
+    public function test_script_and_data_flag_urls_are_dropped()
+    {
+        $script = $this->language_term(4, 'English', 'en', 'en_US', '', 0, 1);
+        $script->description = serialize(array(
+            'locale' => 'en_US',
+            'flag' => 'javascript:alert(1)',
+        ));
+        $data = $this->language_term(8, 'Svenska', 'sv', 'sv_SE', '', 1, 0);
+        $data->description = serialize(array(
+            'locale' => 'sv_SE',
+            'flag' => 'data:image/svg+xml,xxxx',
+        ));
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($script, $data), 'en');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame('', $by_slug['en']['flag']);
+        $this->assertSame('en_US', $by_slug['en']['locale']);
+        $this->assertSame('', $by_slug['sv']['flag']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+    }
+
     public function test_custom_flag_url_is_kept_when_no_flag_code_is_stored()
     {
         $language = (object) array(
