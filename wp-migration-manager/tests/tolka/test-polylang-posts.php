@@ -298,6 +298,10 @@ class Tolka_Posts_Fake_Db
         if ($this->fail) {
             return null;
         }
+        if (strpos($sql, 'SELECT post_type') !== false && preg_match('/ID = (\d+)/', $sql, $match)) {
+            $id = (int) $match[1];
+            return isset($this->posts_rows[$id]['post_type']) ? $this->posts_rows[$id]['post_type'] : null;
+        }
         if (strpos($sql, 'option_name') !== false) {
             return $this->option_value;
         }
@@ -390,7 +394,7 @@ class Tolka_Posts_Fake_Db
     private function filter_posts($sql)
     {
         $ids = array_keys($this->posts_rows);
-        if (preg_match('/IN \(([^)]+)\)/', $sql, $match)) {
+        if (preg_match('/\bID IN \(([^)]+)\)/i', $sql, $match)) {
             $ids = array_map('intval', explode(',', $match[1]));
         }
         $rows = array();
@@ -405,7 +409,7 @@ class Tolka_Posts_Fake_Db
     private function language_rows($sql)
     {
         $only = null;
-        if (preg_match('/IN \(([^)]+)\)/', $sql, $match)) {
+        if (preg_match('/object_id IN \(([^)]+)\)/', $sql, $match)) {
             $only = array_map('intval', explode(',', $match[1]));
         }
         $rows = array();
@@ -731,7 +735,7 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame(array('en', 'de'), array_keys($result['items'][0]['translations']));
         $this->assertSame(12, $result['items'][0]['translations']['en']['id']);
         $this->assertSame(
-            array('Post 12 was listed as both en and de-extra in the same translation group. It was exported as en.'),
+            array('Post 12 was listed as both en and de-extra in the same translation group. Only one entry was kept.'),
             $result['errors']
         );
     }
@@ -1033,6 +1037,47 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
         $this->assertSame('Ett utkast', $result['items'][0]['translations']['sv']['content']);
         $this->assertSame(array(), $result['errors']);
+        $filtered = false;
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'AS slug') !== false && strpos($sql, 'nav_menu_item') !== false && strpos($sql, 'p.ID IS NULL') !== false) {
+                $filtered = true;
+            }
+        }
+        $this->assertTrue($filtered);
+    }
+
+    public function test_attachment_and_whitespace_draft_are_exported_as_stored()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 9,
+                'description' => serialize(array('en' => 15, 'de' => 17)),
+            ),
+        );
+        $fake->languages = array(15 => 'en', 16 => 'de', 17 => 'de', 99 => 'en');
+        $fake->posts_rows = array(
+            15 => $this->db_post(15, 'inherit', 'Photo', 'photo', 'attachment', 'Pier', ''),
+            16 => $this->db_post(16, 'draft', '  Untitled  ', '', 'post', 'Only the excerpt', ''),
+            17 => $this->db_post(17, 'inherit', 'Foto', 'foto', 'attachment', 'Steg', ''),
+            99 => $this->db_post(99, 'inherit', 'Alone', 'alone', 'attachment'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('post:15', 'post:16'), $this->groups($result));
+        $this->assertSame('attachment', $result['items'][0]['type']);
+        $this->assertSame('inherit', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('Photo', $result['items'][0]['translations']['en']['title']);
+        $this->assertSame('Pier', $result['items'][0]['translations']['en']['excerpt']);
+        $this->assertSame('Foto', $result['items'][0]['translations']['de']['title']);
+        $this->assertSame('  Untitled  ', $result['items'][1]['translations']['de']['title']);
+        $this->assertSame('', $result['items'][1]['translations']['de']['slug']);
+        $this->assertSame('draft', $result['items'][1]['translations']['de']['status']);
+        $this->assertSame('Only the excerpt', $result['items'][1]['translations']['de']['excerpt']);
+        $this->assertSame('', $result['items'][1]['translations']['de']['content']);
     }
 
     public function test_double_serialized_description_still_exports_the_draft()

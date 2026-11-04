@@ -445,6 +445,9 @@ class Polylang_Posts
                     array($post_id, $kept_group)
                 );
             }
+            if (count($fresh) === 1 && $this->post_type_of((int) reset($fresh)) === 'attachment') {
+                continue;
+            }
 
             $records = $this->posts_by_ids(array_values($fresh));
             $loaded = array();
@@ -498,6 +501,14 @@ class Polylang_Posts
                     array($group, $default_lang, $default_id)
                 );
             }
+            // One file with a language is media, not a post translation.
+            // A group of attachment translations stays, so the files remain linked.
+            if (count($loaded) === 1) {
+                $only = reset($loaded);
+                if (is_array($only) && isset($only['type']) && $only['type'] === 'attachment') {
+                    continue;
+                }
+            }
 
             $translations = array();
             foreach ($loaded as $lang => $record) {
@@ -529,6 +540,39 @@ class Polylang_Posts
         });
 
         return $items;
+    }
+
+    /**
+     * Post type only, so a lone media file can be skipped without reading its file contents.
+     *
+     * @param int $post_id
+     * @return string
+     */
+    private function post_type_of($post_id)
+    {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return '';
+        }
+        if (array_key_exists($post_id, $this->record_cache) && is_array($this->record_cache[$post_id])) {
+            return (string) $this->record_cache[$post_id]['type'];
+        }
+        if (function_exists('get_post')) {
+            $post = get_post($post_id);
+            if (!is_object($post) || !isset($post->post_type)) {
+                return '';
+            }
+            return (string) $post->post_type;
+        }
+        global $wpdb;
+        if (!$this->db_ready($wpdb) || !method_exists($wpdb, 'get_var')) {
+            return '';
+        }
+        $type = $wpdb->get_var($wpdb->prepare(
+            "SELECT post_type FROM {$wpdb->posts} WHERE ID = %d",
+            $post_id
+        ));
+        return is_string($type) ? $type : '';
     }
 
     /**
@@ -670,7 +714,7 @@ class Polylang_Posts
             }
             if (isset($seen[$post_id]) && $seen[$post_id] !== $lang) {
                 $errors[] = $this->say_sprintf(
-                    'Post %1$d was listed as both %2$s and %3$s in the same translation group. It was exported as %2$s.',
+                    'Post %1$d was listed as both %2$s and %3$s in the same translation group. Only one entry was kept.',
                     array($post_id, $seen[$post_id], $lang)
                 );
                 continue;
@@ -1058,11 +1102,12 @@ class Polylang_Posts
         if (!$this->db_ready($wpdb)) {
             return array();
         }
-        $sql = $wpdb->prepare(
-            "SELECT tr.object_id AS object_id, t.slug AS slug FROM {$wpdb->term_relationships} tr INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id WHERE tt.taxonomy = %s",
-            self::TAX_LANGUAGE
-        );
-        return $this->normalize_rows($wpdb->get_results($sql, 'ARRAY_A'));
+        $ignored = array_merge($this->ignored_post_types(), array('attachment'));
+        $placeholders = implode(', ', array_fill(0, count($ignored), '%s'));
+        $sql = "SELECT tr.object_id AS object_id, t.slug AS slug FROM {$wpdb->term_relationships} tr INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id LEFT JOIN {$wpdb->posts} p ON p.ID = tr.object_id WHERE tt.taxonomy = %s AND (p.ID IS NULL OR (p.post_status <> %s AND p.post_type NOT IN ($placeholders)))";
+        $params = array_merge(array(self::TAX_LANGUAGE, 'auto-draft'), $ignored);
+        $prepared = $wpdb->prepare($sql, ...$params);
+        return $this->normalize_rows($wpdb->get_results($prepared, 'ARRAY_A'));
     }
 
     /**
