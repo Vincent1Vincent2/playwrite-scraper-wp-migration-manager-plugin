@@ -75,6 +75,19 @@
 
   var cfg = window.wmmTolka || null;
   var requestInFlight = false;
+  var SPEED_ANCHOR_IDS = [
+    "wmm-tolka-speed-panel",
+    "wmm-tolka-speed-summary",
+    "wmm-tolka-current-load",
+    "wmm-tolka-tolka-load",
+    "wmm-tolka-faster",
+    "wmm-tolka-basis",
+    "wmm-tolka-provenance-note",
+    "wmm-tolka-speed-error",
+    "wmm-tolka-speed-savings",
+    "wmm-tolka-speed-scope",
+    "wmm-tolka-speed-heading",
+  ];
 
   ready(function () {
     var wizard = document.getElementById("wmm-tolka-wizard");
@@ -138,6 +151,13 @@
       }
 
       var url = els.url ? String(els.url.value || "").trim() : "";
+      if (!url) {
+        if (els.url) {
+          els.url.setAttribute("aria-invalid", "true");
+        }
+        showError(els.speed, "Enter a public site URL, then measure again.");
+        return;
+      }
       var invalid = validateUrl(url);
       if (invalid) {
         if (els.url) {
@@ -163,6 +183,10 @@
         els.speed,
         "Measuring the public page. This can take a few seconds.",
         function () {
+          if (!String(url || "").trim()) {
+            showError(els.speed, "Enter a public site URL, then measure again.");
+            return;
+          }
           return post(
             cfg.actionMeasure,
             { url: url },
@@ -1040,19 +1064,28 @@
   }
 
   function paintSpeedError(container, message, estimate) {
+    if (!container || container.id !== "wmm-tolka-speed") {
+      return false;
+    }
     var slots = collectSpeedSlots(container);
-    if (!slots.current || !slots.tolka || !slots.faster || !slots.basis) {
+    if (!hasSpeedAnchor(container) && !(slots.current && slots.tolka && slots.faster && slots.basis)) {
       return false;
     }
 
     var messages = normalizeMessages(message);
     removeGenerated(container);
-    setText(slots.current, "Unavailable");
-    setText(slots.tolka, "Unavailable");
-    setText(slots.faster, "Unavailable");
-    slots.current.removeAttribute("data-ms");
-    slots.tolka.removeAttribute("data-ms");
-    slots.faster.removeAttribute("data-faster-percent");
+    if (slots.current) {
+      setText(slots.current, "Unavailable");
+      slots.current.removeAttribute("data-ms");
+    }
+    if (slots.tolka) {
+      setText(slots.tolka, "Unavailable");
+      slots.tolka.removeAttribute("data-ms");
+    }
+    if (slots.faster) {
+      setText(slots.faster, "Unavailable");
+      slots.faster.removeAttribute("data-faster-percent");
+    }
     setText(slots.basis, "");
     conceal(slots.basis);
     if (slots.basisLabel) {
@@ -1140,6 +1173,9 @@
       return;
     }
     conceal(wrapper);
+    if (wrapper !== slots.provenance) {
+      conceal(slots.provenance);
+    }
     wrapper.classList.remove(
       "wmm-tolka-provenance-placeholder",
       "notice",
@@ -2034,6 +2070,10 @@
       return;
     }
     var messages = normalizeMessages(message);
+    if (container.id === "wmm-tolka-speed" && hasSpeedAnchor(container)) {
+      paintSpeedError(container, messages, null);
+      return;
+    }
     if (paintSpeedError(container, messages, null)) {
       return;
     }
@@ -2270,6 +2310,36 @@
     return false;
   }
 
+  function hasSpeedAnchor(container) {
+    if (!container || !container.querySelector) {
+      return false;
+    }
+    for (var i = 0; i < SPEED_ANCHOR_IDS.length; i += 1) {
+      if (container.querySelector("#" + SPEED_ANCHOR_IDS[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isProtectedSpeedNode(node) {
+    if (!node) {
+      return false;
+    }
+    if (node.id && SPEED_ANCHOR_IDS.indexOf(node.id) !== -1) {
+      return true;
+    }
+    if (!node.querySelector) {
+      return false;
+    }
+    for (var i = 0; i < SPEED_ANCHOR_IDS.length; i += 1) {
+      if (node.querySelector("#" + SPEED_ANCHOR_IDS[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function isOwnGenerated(node) {
     if (!node || !node.getAttribute) {
       return false;
@@ -2291,7 +2361,7 @@
     }
     var nodes = container.querySelectorAll("[data-wmm-tolka-generated]");
     Array.prototype.forEach.call(nodes, function (node) {
-      if (!isOwnGenerated(node) || !node.parentNode) {
+      if (!isOwnGenerated(node) || !node.parentNode || isProtectedSpeedNode(node)) {
         return;
       }
       node.parentNode.removeChild(node);
