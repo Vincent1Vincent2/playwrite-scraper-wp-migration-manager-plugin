@@ -3,10 +3,12 @@
 /**
  * Polylang navigation menu export for the Tolka migration.
  *
- * Each exported item is one theme location. `translations` maps a language
- * slug to that language's menu id, name, slug, and menu items. Locations the
- * theme registers but does not assign are still returned, with menu id 0.
- * Menu links are a tree: each item's `children` list holds its submenu.
+ * Each exported item is one theme location. `label` is the theme's name for
+ * that location, or a sentence when the menu is not assigned. `translations`
+ * maps a language slug to `menu_id`, `name`, `slug`, `link_count`, and
+ * `items`. Locations with no menu use menu id 0. Menu links are a tree:
+ * each item's `children` list holds its submenu. A language switcher has
+ * `switcher` set, and the title "Languages" when none was stored.
  *
  * Polylang keeps assignments on the `polylang` option at
  * nav_menus[stylesheet][location][language] = menu term id. When the
@@ -416,6 +418,38 @@ class Polylang_Menus
     }
 
     /**
+     * How many links in this menu are not published and were left out.
+     *
+     * Trash and auto-drafts are ignored. The count is 0 when the database
+     * tables are not available.
+     *
+     * @param int $menu_id Menu term id.
+     * @return int
+     */
+    protected function read_skipped_item_count($menu_id)
+    {
+        $menu_id = $this->to_int($menu_id);
+        $tables = $this->tables();
+        if ($menu_id === 0 || $tables === null) {
+            return 0;
+        }
+
+        $rows = $this->db_get(
+            'SELECT COUNT(*) AS total FROM ' . $tables['posts'] . ' p'
+            . ' INNER JOIN ' . $tables['term_relationships'] . ' tr ON tr.object_id = p.ID'
+            . ' INNER JOIN ' . $tables['term_taxonomy'] . ' tt ON tt.term_taxonomy_id = tr.term_taxonomy_id'
+            . " WHERE tt.taxonomy = 'nav_menu' AND tt.term_id = %d"
+            . " AND p.post_type = 'nav_menu_item'"
+            . " AND p.post_status NOT IN ('publish', 'trash', 'auto-draft')",
+            array($menu_id)
+        );
+        if (! isset($rows[0]['total'])) {
+            return 0;
+        }
+        return $this->to_int($rows[0]['total']);
+    }
+
+    /**
      * Flat menu links for one menu. Nesting is applied by the exporter.
      *
      * @param int $menu_id Menu term id.
@@ -504,6 +538,7 @@ class Polylang_Menus
             }
             $items[] = array(
                 'location' => '',
+                'label' => $this->location_label(''),
                 'translations' => $translations,
             );
         }
@@ -565,6 +600,7 @@ class Polylang_Menus
 
         return array(
             'location' => $location,
+            'label' => $this->location_label($location),
             'translations' => $translations,
         );
     }
@@ -586,6 +622,7 @@ class Polylang_Menus
                 'name' => '',
                 'slug' => '',
                 'items' => array(),
+                'link_count' => 0,
             );
         }
 
@@ -607,6 +644,11 @@ class Polylang_Menus
             $flat = array();
         }
         $items = $this->nest_items($flat);
+        $skipped = $this->read_skipped_item_count($menu_id);
+        if ($skipped > 0) {
+            $menu_label = $name !== null && $name !== '' ? $this->entity_text($name) : ('menu ' . $menu_id);
+            $this->warn($this->message_skipped_items($skipped, $menu_label, $language));
+        }
 
         if ($name === null && empty($items)) {
             $this->warn_missing_menu($menu_id, $location, $language);
@@ -621,7 +663,43 @@ class Polylang_Menus
             'name' => $this->entity_text($name),
             'slug' => $slug,
             'items' => $items,
+            'link_count' => $this->link_count($items),
         );
+    }
+
+    /**
+     * Human label for a theme location, or a sentence for menus with no location.
+     *
+     * @param string $location Location slug.
+     * @return string
+     */
+    private function location_label($location)
+    {
+        if ($location === '') {
+            return $this->message_unassigned_location();
+        }
+        if (isset($this->location_labels[$location]) && $this->location_labels[$location] !== '') {
+            return $this->location_labels[$location];
+        }
+        return $location;
+    }
+
+    /**
+     * Count this menu's links, including links nested in submenus.
+     *
+     * @param array<int, array> $items Nested items.
+     * @return int
+     */
+    private function link_count(array $items)
+    {
+        $count = 0;
+        foreach ($items as $item) {
+            $count++;
+            if (! empty($item['children']) && is_array($item['children'])) {
+                $count += $this->link_count($item['children']);
+            }
+        }
+        return $count;
     }
 
     /**
@@ -649,11 +727,7 @@ class Polylang_Menus
         if ($theme_is_known) {
             $this->absorb_location_map($assignments, $nav[$theme]);
         } else {
-            foreach ($nav as $locations) {
-                if (is_array($locations)) {
-                    $this->absorb_location_map($assignments, $locations);
-                }
-            }
+            $this->absorb_theme_maps($assignments, $nav);
         }
 
         if (! $theme_is_known && empty($assignments)) {
@@ -663,8 +737,101 @@ class Polylang_Menus
             }
         }
 
+        $this->fill_locations_from_theme_mod($assignments);
         $this->expand_with_translations($assignments);
         return $assignments;
+    }
+
+    /**
+     * Add theme-mod locations that Polylang's map never mentioned.
+     *
+     * Existing locations are left alone, including a language slot that was
+     * saved as "no menu".
+     *
+     * @param array<string, array<string, int>> $assignments Location => language => menu id.
+     * @return void
+     */
+    private function fill_locations_from_theme_mod(array &$assignments)
+    {
+        $raw = $this->read_theme_menu_locations();
+        if (! is_array($raw) || empty($raw)) {
+            return;
+        }
+
+        $known = array_keys($assignments);
+        $extra = array();
+        foreach ($raw as $key => $value) {
+            $split = $this->split_location_key($key);
+            if ($split['location'] === '') {
+                continue;
+            }
+            if (! in_array($split['location'], $known, true)) {
+                $extra[$key] = $value;
+                continue;
+            }
+            // primary___sv can supply a language the Polylang map never stored.
+            // A bare primary value is not allowed to replace the saved menu.
+            if ($split['lang'] !== '' && ! isset($assignments[$split['location']][$split['lang']])) {
+                $extra[$key] = $value;
+            }
+        }
+        if (! empty($extra)) {
+            $this->absorb_location_map($assignments, $extra);
+        }
+    }
+
+    /**
+     * Keep every theme's locations when the active theme has no saved map.
+     *
+     * A location slug used by one theme stays as that slug. The same slug in
+     * two themes becomes `stylesheet:location` so neither menu is dropped.
+     *
+     * @param array<string, array<string, int>> $assignments Location => language => menu id.
+     * @param array<string, mixed>              $nav         Theme => location map.
+     * @return void
+     */
+    private function absorb_theme_maps(array &$assignments, array $nav)
+    {
+        $per_theme = array();
+        foreach ($nav as $theme_slug => $locations) {
+            if (! is_array($locations)) {
+                continue;
+            }
+            $theme_slug = $this->text($theme_slug);
+            if ($theme_slug === '') {
+                $theme_slug = 'theme';
+            }
+            if (! isset($per_theme[$theme_slug])) {
+                $per_theme[$theme_slug] = array();
+            }
+            $this->absorb_location_map($per_theme[$theme_slug], $locations);
+        }
+
+        $slug_themes = array();
+        foreach ($per_theme as $theme_slug => $map) {
+            foreach (array_keys($map) as $location) {
+                if (! isset($slug_themes[$location])) {
+                    $slug_themes[$location] = array();
+                }
+                $slug_themes[$location][] = $theme_slug;
+            }
+        }
+
+        foreach ($per_theme as $theme_slug => $map) {
+            foreach ($map as $location => $slots) {
+                $key = $location;
+                if (isset($slug_themes[$location]) && count($slug_themes[$location]) > 1) {
+                    $key = $theme_slug . ':' . $location;
+                    $base = isset($this->location_labels[$location]) && $this->location_labels[$location] !== ''
+                        ? $this->location_labels[$location]
+                        : $location;
+                    $this->location_labels[$key] = $base . ' (' . $theme_slug . ')';
+                }
+                if (! isset($assignments[$key])) {
+                    $assignments[$key] = $slots;
+                }
+            }
+        }
     }
 
     /**
@@ -731,6 +898,7 @@ class Polylang_Menus
         }
         if ($language === '' && $menu_id > 0) {
             $language = 'unknown';
+            $this->warn($this->message_unknown_language());
         }
         if ($language === '') {
             return;
@@ -829,6 +997,7 @@ class Polylang_Menus
             }
             if ($language === '') {
                 $language = 'unknown';
+                $this->warn($this->message_unknown_language());
             }
             if (! isset($groups[$key][$language])) {
                 $groups[$key][$language] = $menu_id;
@@ -923,11 +1092,7 @@ class Polylang_Menus
         }
 
         $by_parent = array();
-        $ids = array();
         foreach ($normalized as $item) {
-            if ($item['id'] > 0) {
-                $ids[$item['id']] = true;
-            }
             $parent = $item['parent'];
             if (! isset($by_parent[$parent])) {
                 $by_parent[$parent] = array();
@@ -1075,6 +1240,10 @@ class Polylang_Menus
         }
         if ($normalized['url'] === '') {
             $normalized['url'] = $this->resolve_url($normalized);
+        }
+        $normalized['switcher'] = ($normalized['url'] === '#pll_switcher');
+        if ($normalized['title'] === '' && $normalized['switcher']) {
+            $normalized['title'] = $this->message_switcher_title();
         }
 
         return $normalized;
@@ -1763,14 +1932,13 @@ class Polylang_Menus
             return array();
         }
 
-        $previous = set_error_handler(function () {
+        set_error_handler(function () {
             return true;
         });
-        $decoded = unserialize($value, array('allowed_classes' => false));
-        if ($previous === null) {
+        try {
+            $decoded = unserialize($value, array('allowed_classes' => false));
+        } finally {
             restore_error_handler();
-        } else {
-            set_error_handler($previous);
         }
 
         return is_array($decoded) ? $decoded : array();
@@ -1883,6 +2051,68 @@ class Polylang_Menus
             $text = __('Polylang menu assignments could not be read because the stored nav_menus value is invalid. Theme locations are still listed.', 'migration-manager');
         }
         return $text;
+    }
+
+    /**
+     * @return string
+     */
+    private function message_switcher_title()
+    {
+        $text = 'Languages';
+        if (function_exists('__')) {
+            $text = __('Languages', 'migration-manager');
+        }
+        return $text;
+    }
+
+    /**
+     * @return string
+     */
+    private function message_unassigned_location()
+    {
+        $text = 'Not assigned to a theme location';
+        if (function_exists('__')) {
+            $text = __('Not assigned to a theme location', 'migration-manager');
+        }
+        return $text;
+    }
+
+    /**
+     * @return string
+     */
+    private function message_unknown_language()
+    {
+        $text = 'A menu has no Polylang language, so it was exported under "unknown".';
+        if (function_exists('__')) {
+            $text = __('A menu has no Polylang language, so it was exported under "unknown".', 'migration-manager');
+        }
+        return $text;
+    }
+
+    /**
+     * @param int    $count      Unpublished links.
+     * @param string $menu_label Menu name, or "menu {id}" when the name is missing.
+     * @param string $language   Language slug.
+     * @return string
+     */
+    private function message_skipped_items($count, $menu_label, $language)
+    {
+        $count = $this->to_int($count);
+        $menu_label = $this->text($menu_label);
+        $language = $this->text($language);
+        if ($count === 1) {
+            $text = 'The "%1$s" menu (%2$s) has 1 link that is not published. That link was left out of the export.';
+            if (function_exists('__')) {
+                $text = __('The "%1$s" menu (%2$s) has 1 link that is not published. That link was left out of the export.', 'migration-manager');
+            }
+            return sprintf($text, $menu_label, $language);
+        }
+
+        $text = 'The "%1$s" menu (%2$s) has %3$d links that are not published. Those links were left out of the export.';
+        if (function_exists('__')) {
+            $text = __('The "%1$s" menu (%2$s) has %3$d links that are not published. Those links were left out of the export.', 'migration-manager');
+        }
+        return sprintf($text, $menu_label, $language, $count);
     }
 
     /**
