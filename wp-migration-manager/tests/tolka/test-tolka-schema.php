@@ -204,6 +204,9 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $stamp = $replaced['ok'] ? strtotime($GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']) : false;
 
         $this->assertTrue($replaced['ok']);
+        $this->assertSame('tolka-migration', $GLOBALS['wmm_tolka_schema_driver']['stored_package']['format']);
+        $this->assertSame(1, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['version']);
+        $this->assertSame('Z', substr($GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at'], -1));
         $this->assertTrue(Tolka_Schema::is_gmt_timestamp($GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at']));
         $this->assertGreaterThanOrEqual($before, $stamp);
         $this->assertLessThanOrEqual($after, $stamp);
@@ -223,6 +226,8 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $after_fraction = time();
         $fraction_stamp = $GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at'];
         $this->assertTrue($fraction['ok']);
+        $this->assertSame('Z', substr($fraction_stamp, -1));
+        $this->assertSame(1, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['version']);
         $this->assertTrue(Tolka_Schema::is_gmt_timestamp($fraction_stamp));
         $this->assertNotSame('2020-01-01T00:00:00.000Z', $fraction_stamp);
         $this->assertGreaterThanOrEqual($before_fraction, strtotime($fraction_stamp));
@@ -237,6 +242,9 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $fixed = $GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at'];
 
         $this->assertTrue($invalid['ok']);
+        $this->assertSame('tolka-migration', $GLOBALS['wmm_tolka_schema_driver']['stored_package']['format']);
+        $this->assertSame(1, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['version']);
+        $this->assertSame('Z', substr($fixed, -1));
         $this->assertNotSame('2020-13-40T00:00:00Z', $fixed);
         $this->assertTrue(Tolka_Schema::is_gmt_timestamp($fixed));
         $this->assertGreaterThanOrEqual($before_invalid, strtotime($fixed));
@@ -274,7 +282,9 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertTrue($result['ok']);
         $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
         $this->assertTrue(Tolka_Schema::is_gmt_timestamp($stored['generated_at']));
-        $this->assertSame(1, preg_match('/Z$/', $stored['generated_at']));
+        $this->assertSame('Z', substr($stored['generated_at'], -1));
+        $this->assertSame('tolka-migration', $stored['format']);
+        $this->assertSame(1, $stored['version']);
         $parsed = new DateTimeImmutable($stored['generated_at']);
         $this->assertSame(0, $parsed->getOffset());
         $stamp = strtotime($stored['generated_at']);
