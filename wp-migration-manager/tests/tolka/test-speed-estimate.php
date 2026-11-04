@@ -535,8 +535,26 @@ class Test_Speed_Estimate extends TestCase
             self::contractBenchmarks()
         );
 
-        $this->assertMatchesRegularExpression('/ measured…\.$/', $wordy['error']);
+        $this->assertMatchesRegularExpression('/ slowly…\.$/', $wordy['error']);
         $this->assertLessThanOrEqual(241, mb_strlen(self::detailFrom($wordy['error'])));
+
+        $multibyte = trim(str_repeat('åäö ', 80));
+        $letters = Speed_Estimate::project(
+            array('ok' => false, 'error' => $multibyte),
+            array(),
+            self::contractBenchmarks()
+        );
+        $this->assertSame(1, preg_match('//u', $letters['error']));
+        $this->assertMatchesRegularExpression('/åäö…\.$/u', $letters['error']);
+
+        $huge = str_repeat('x', 10000) . 'TAIL_MARKER';
+        $capped = Speed_Estimate::project(
+            array('ok' => false, 'error' => $huge),
+            array(),
+            self::contractBenchmarks()
+        );
+        $this->assertStringNotContainsString('TAIL_MARKER', $capped['error']);
+        $this->assertStringEndsWith('…).', $capped['error']);
     }
 
     public function test_missing_or_unusable_load_time_does_not_invent_a_percent()
@@ -785,6 +803,7 @@ class Test_Speed_Estimate extends TestCase
         };
 
         $this->assertSame(array(), $read(self::benchmarksPath() . '.missing'));
+        $this->assertSame(array(), $read(sys_get_temp_dir()));
 
         $directory = sys_get_temp_dir() . '/tolka-benchmarks-' . getmypid();
         mkdir($directory);
@@ -792,6 +811,10 @@ class Test_Speed_Estimate extends TestCase
             $empty = $directory . '/empty.json';
             file_put_contents($empty, '');
             $this->assertSame(array(), $read($empty));
+
+            $blank = $directory . '/blank.json';
+            file_put_contents($blank, "  \n\t");
+            $this->assertSame(array(), $read($blank));
 
             $list = $directory . '/list.json';
             file_put_contents($list, '[1, 2, 3]');

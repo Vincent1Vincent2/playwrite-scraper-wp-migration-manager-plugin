@@ -183,7 +183,7 @@ class Speed_Estimate
      */
     private static function read_benchmarks($path)
     {
-        if (!is_string($path) || !is_readable($path)) {
+        if (!is_string($path) || !is_file($path) || !is_readable($path)) {
             return array();
         }
 
@@ -649,6 +649,10 @@ class Speed_Estimate
             return '';
         }
 
+        if (strlen($value) > 4000) {
+            $value = substr($value, 0, 4000);
+        }
+
         $detail = strip_tags($value);
         if (preg_match('//u', $detail) !== 1) {
             return '';
@@ -688,13 +692,40 @@ class Speed_Estimate
             return $detail;
         }
 
-        $slice = self::string_slice($detail, $limit - 1);
-        $space = self::string_last_space($slice);
-        if ($space !== null && $space >= 80) {
-            $slice = self::string_slice($detail, $space);
+        $room = $limit - 1;
+        $slice = self::string_slice($detail, $room);
+        $extended = self::string_slice($detail, $room + 1);
+        $next = self::string_length($extended) > $room ? self::string_last_character($extended) : '';
+        $ends_on_boundary = $next === '' || $next === ' ' || substr($slice, -1) === ' ';
+        if (!$ends_on_boundary) {
+            $space = self::string_last_space($slice);
+            if ($space !== null && $space >= 80) {
+                $slice = self::string_slice($slice, $space);
+            }
         }
 
         return rtrim($slice) . '…';
+    }
+
+    /**
+     * @param string $text
+     * @return string
+     */
+    private static function string_last_character($text)
+    {
+        if ($text === '') {
+            return '';
+        }
+
+        if (function_exists('mb_substr')) {
+            return (string) mb_substr($text, -1);
+        }
+
+        if (preg_match('/.$/us', $text, $matches) === 1) {
+            return $matches[0];
+        }
+
+        return (string) substr($text, -1);
     }
 
     /**
@@ -707,6 +738,11 @@ class Speed_Estimate
             return (int) mb_strlen($text);
         }
 
+        $count = preg_match_all('/./u', $text, $matches);
+        if ($count !== false) {
+            return (int) $count;
+        }
+
         return strlen($text);
     }
 
@@ -717,8 +753,17 @@ class Speed_Estimate
      */
     private static function string_slice($text, $length)
     {
+        if ($length < 1) {
+            return '';
+        }
+
         if (function_exists('mb_substr')) {
             return (string) mb_substr($text, 0, $length);
+        }
+
+        $pattern = '/^.{0,' . $length . '}/us';
+        if (preg_match($pattern, $text, $matches) === 1) {
+            return $matches[0];
         }
 
         return substr($text, 0, $length);
