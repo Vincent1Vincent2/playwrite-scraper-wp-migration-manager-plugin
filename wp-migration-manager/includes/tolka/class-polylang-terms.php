@@ -385,6 +385,9 @@ class Polylang_Terms
         if ($this->databaseReady()) {
             $languageMap = $this->fetchLanguageMap();
         }
+        $notes = array();
+        $groups = $this->applyActualLanguages($groups, $languageMap, $notes);
+        $this->appendCapped($errors, $notes);
 
         $untranslated = array();
         foreach ($listed['terms'] as $term) {
@@ -569,9 +572,16 @@ class Polylang_Terms
         }
         $this->appendTermProblems($errors, $missing, $mismatched);
 
+        $languageMap = array();
+        if ($groups !== array() || $evidence) {
+            $languageMap = $this->fetchLanguageMap();
+        }
+        $notes = array();
+        $groups = $this->applyActualLanguages($groups, $languageMap, $notes);
+        $this->appendCapped($errors, $notes);
+
         $untranslated = array();
         if ($evidence) {
-            $languageMap = $this->fetchLanguageMap();
             foreach ($taxonomies as $taxonomy) {
                 if ($this->isInternalTaxonomy($taxonomy)) {
                     continue;
@@ -1559,6 +1569,106 @@ class Polylang_Terms
     /**
      * Keep the wizard readable when hundreds of terms have the same kind of problem.
      *
+     * @param array<int, string> $errors
+     * @param array<int, string> $sentences
+     * @return void
+     */
+    private function applyActualLanguages(array $groups, array $languageMap, array &$notes)
+    {
+        $updated = array();
+        foreach ($groups as $group) {
+            if (!is_array($group) || !isset($group['translations']) || !is_array($group['translations'])) {
+                $updated[] = $group;
+                continue;
+            }
+            $ids = array();
+            foreach ($group['translations'] as $row) {
+                if (is_array($row) && isset($row['id'])) {
+                    $ids[] = (int) $row['id'];
+                }
+            }
+            $group['translations'] = $this->reconcileTranslations(
+                $group['translations'],
+                $this->actualLanguages($ids, $languageMap),
+                $notes
+            );
+            $updated[] = $group;
+        }
+        return $updated;
+    }
+
+    /**
+     * Prefer the language stored on the term when the group description is stale.
+     *
+     * @param array<string, array<string, mixed>> $translations
+     * @param array<int, string> $actual
+     * @param array<int, string> $notes
+     * @return array<string, array<string, mixed>>
+     */
+    private function reconcileTranslations(array $translations, array $actual, array &$notes)
+    {
+        if ($actual === array()) {
+            return $translations;
+        }
+        $rebuilt = array();
+        foreach ($translations as $stored => $row) {
+            if (!is_array($row) || !isset($row['id'])) {
+                continue;
+            }
+            $id = (int) $row['id'];
+            $real = isset($actual[$id]) ? trim((string) $actual[$id]) : '';
+            $lang = is_string($stored) ? $stored : (string) $stored;
+            if ($real !== '' && $real !== $lang) {
+                $taken = isset($translations[$real]) || isset($rebuilt[$real]);
+                if (!$taken) {
+                    $notes[] = sprintf(
+                        $this->text('Term %1$d is stored as %2$s in its translation group, but its language is %3$s. It was exported as %3$s.'),
+                        $id,
+                        $lang,
+                        $real
+                    );
+                    $lang = $real;
+                } else {
+                    $notes[] = sprintf(
+                        $this->text('Term %1$d is stored as %2$s in its translation group, but its language is %3$s. The stored language was kept because %3$s is already used in that group.'),
+                        $id,
+                        $lang,
+                        $real
+                    );
+                }
+            }
+            if (!isset($rebuilt[$lang])) {
+                $rebuilt[$lang] = $row;
+            }
+        }
+        return $rebuilt;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @param array<int, string> $languageMap
+     * @return array<int, string>
+     */
+    private function actualLanguages(array $ids, array $languageMap)
+    {
+        $actual = array();
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id <= 0) {
+                continue;
+            }
+            $real = $this->apiTermLanguage($id);
+            if ($real === '' && isset($languageMap[$id])) {
+                $real = $languageMap[$id];
+            }
+            if ($real !== '') {
+                $actual[$id] = $real;
+            }
+        }
+        return $actual;
+    }
+
+    /**
      * @param array<int, string> $errors
      * @param array<int, string> $sentences
      * @return void
