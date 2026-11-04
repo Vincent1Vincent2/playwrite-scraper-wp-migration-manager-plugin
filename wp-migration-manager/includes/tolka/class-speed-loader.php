@@ -100,17 +100,26 @@ class Speed_Loader
             } catch (\Throwable $e) {
                 $result['total_ms'] = self::elapsed_ms($started);
                 $result['url'] = $current;
-                $result['status_code'] = 0;
-                return self::fail($result, self::sentence_for_transport_failure(self::throwable_text($e)));
+                if (self::is_timeout_signal(self::throwable_text($e))) {
+                    return self::timed_out($result);
+                }
+                return self::fail($result, self::text('The site could not be reached. Check the address and try again.'));
             }
 
             $result['total_ms'] = self::elapsed_ms($started);
             $result['url'] = $current;
 
             try {
-                $transport_error = self::transport_error($response);
+                $timed_out = self::response_is_timeout($response);
+                $transport_error = $timed_out ? '' : self::transport_error($response);
             } catch (\Throwable $e) {
-                $transport_error = self::sentence_for_transport_failure(self::throwable_text($e));
+                if (self::is_timeout_signal(self::throwable_text($e))) {
+                    return self::timed_out($result);
+                }
+                return self::fail($result, self::text('The site could not be reached. Check the address and try again.'));
+            }
+            if ($timed_out) {
+                return self::timed_out($result);
             }
             if ($transport_error !== '') {
                 $result['status_code'] = 0;
@@ -1364,6 +1373,46 @@ class Speed_Loader
     }
 
     /**
+     * A transport timeout: no HTTP status, no page, and one sentence.
+     *
+     * @param array $result Measurement with total_ms already recorded.
+     * @return array
+     */
+    private static function timed_out(array $result)
+    {
+        $result['ok'] = false;
+        $result['status_code'] = 0;
+        $result['html'] = '';
+        $result['html_bytes'] = 0;
+        $result['ttfb_ms'] = null;
+        $result['error'] = self::timeout_sentence();
+
+        return self::finish($result);
+    }
+
+    /**
+     * True when this response is a transport timeout rather than an HTTP status.
+     *
+     * @param mixed $response Response from remote_get.
+     * @return bool
+     */
+    private static function response_is_timeout($response)
+    {
+        try {
+            if ($response instanceof \Throwable) {
+                return self::is_timeout_signal(self::throwable_text($response));
+            }
+            if (self::is_transport_failure($response)) {
+                return self::is_timeout_signal(self::error_object_text($response));
+            }
+        } catch (\Throwable $e) {
+            return self::is_timeout_signal(self::throwable_text($e));
+        }
+
+        return false;
+    }
+
+    /**
      * One sentence for a page that did not answer within the request limit.
      *
      * @return string
@@ -1371,21 +1420,6 @@ class Speed_Loader
     private static function timeout_sentence()
     {
         return self::text('The site did not respond within 15 seconds, so the load time could not be measured.');
-    }
-
-    /**
-     * Choose a transport sentence, using the timeout sentence when that is the cause.
-     *
-     * @param string $text Raw transport or exception text.
-     * @return string
-     */
-    private static function sentence_for_transport_failure($text)
-    {
-        if (self::is_timeout_signal($text)) {
-            return self::timeout_sentence();
-        }
-
-        return self::text('The site could not be reached. Check the address and try again.');
     }
 
     /**
