@@ -1073,6 +1073,56 @@ class Speed_Loader_Test extends TestCase
         $this->assertStringNotContainsString('cURL', $result['error']);
     }
 
+    public function test_http_gateway_timeout_keeps_its_status()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+
+        foreach (array(408, 504) as $code) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            Speed_Loader_Harness::$response = $this->http_response($code, '<html>secret</html>');
+            $result = Speed_Loader_Harness::measure('https://example.com/');
+
+            $this->assertFalse($result['ok'], (string) $code);
+            $this->assertSame('', $result['html'], (string) $code);
+            $this->assertSame(0, $result['html_bytes'], (string) $code);
+            $this->assertIsInt($result['html_bytes'], (string) $code);
+            $this->assertSame($code, $result['status_code'], (string) $code);
+            $this->assertIsInt($result['status_code'], (string) $code);
+            $this->assertIsInt($result['total_ms'], (string) $code);
+            $this->assertGreaterThanOrEqual(0, $result['total_ms'], (string) $code);
+            $this->assertNotSame(self::TIMEOUT_MESSAGE, $result['error'], (string) $code);
+        }
+    }
+
+    public function test_timeout_after_a_redirect_reports_status_zero()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$clock = array(0, 2000000000, 5000000000);
+        Speed_Loader_Harness::$queue = array(
+            $this->http_response(302, '<html>secret hop</html>', 'https://example.com/next'),
+        );
+        Speed_Loader_Harness::$throw = true;
+        Speed_Loader_Harness::$throw_after = 1;
+        Speed_Loader_Harness::$throw_message = 'cURL error 28: Operation timed out after 15000 milliseconds';
+
+        $result = $this->measureWithoutThrowing('https://example.com/');
+
+        $this->assertTimeoutResult($result);
+        $this->assertSame(0, $result['status_code']);
+        $this->assertSame('', $result['html']);
+        $this->assertSame(0, $result['html_bytes']);
+        $this->assertIsInt($result['total_ms']);
+        $this->assertSame(5000, $result['total_ms']);
+        $this->assertSame(
+            array('https://example.com/', 'https://example.com/next'),
+            Speed_Loader_Harness::$requested_urls
+        );
+        $this->assertStringNotContainsString('secret', (string) json_encode($result));
+    }
+
     public function test_timeout_on_a_later_hop_stops_without_throwing()
     {
         $this->requireHarness();
@@ -1750,6 +1800,7 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame(0, $result['html_bytes']);
         $this->assertIsInt($result['html_bytes']);
         $this->assertSame(0, $result['status_code']);
+        $this->assertIsInt($result['status_code']);
         $this->assertNull($result['ttfb_ms']);
         $this->assertSame(self::TIMEOUT_MESSAGE, $result['error']);
         $this->assertSame(1, preg_match_all('/\./', $result['error']));
