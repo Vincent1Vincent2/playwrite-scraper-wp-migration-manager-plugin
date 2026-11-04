@@ -218,6 +218,37 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertNotFalse(json_encode($package));
     }
 
+    public function test_self_referential_item_does_not_hang()
+    {
+        $item = array(
+            'group' => 'post:1',
+            'type' => 'post',
+            'translations' => array(
+                'en' => array(
+                    'id' => 1,
+                    'title' => 'Hello',
+                    'content' => 'Body',
+                ),
+            ),
+        );
+        $item['translations']['en']['loop'] = &$item;
+
+        $package = Tolka_Schema::package(array(
+            'posts' => array(
+                'items' => array($item),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assertSame(1, $package['posts'][0]['translations']['en']['id']);
+        $this->assertSame('Hello', $package['posts'][0]['translations']['en']['title']);
+        $this->assertNotFalse(json_encode($package));
+
+        $result = Tolka_Writer::write($package);
+        $this->assertTrue($result['ok']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][1]['_wmm_tolka_lang']);
+    }
+
     public function test_cyclic_exporter_object_does_not_hang()
     {
         $translation = new stdClass();
