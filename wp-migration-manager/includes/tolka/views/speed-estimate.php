@@ -7,10 +7,10 @@
  * Optional $estimate is Speed_Estimate::project(), or a measure payload
  * with an estimate key.
  *
- * The behavior script fills these slots in place: data-wmm-tolka
- * "current_ms", "tolka_ms", "faster", "basis", and "provenance_note".
- * Each value node is also marked wmm-tolka-value. The provenance note
- * is shown when provenance is placeholder.
+ * Stable ids, filled in place by the behavior script:
+ * #wmm-tolka-current-load, #wmm-tolka-tolka-load, #wmm-tolka-faster,
+ * #wmm-tolka-basis, and #wmm-tolka-provenance-note.
+ * The provenance note is shown when provenance is placeholder.
  *
  * @package MigrationManager
  */
@@ -118,16 +118,16 @@ $wmm_tolka_speed_finish = static function ($sentence) {
 
 $wmm_tolka_speed_pending = __('Not measured yet', 'migration-manager');
 $wmm_tolka_speed_unavailable = __('Unavailable', 'migration-manager');
-$wmm_tolka_speed_basis_fallback = 'Measured page load plus coefficients from benchmarks.json';
-$wmm_tolka_speed_note_fallback = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
-$wmm_tolka_speed_scope_text = __('A speed percent on this screen is only for the single page you load. It is not a result for every page on the site.', 'migration-manager');
-$wmm_tolka_speed_error_fallback = __('The speed estimate could not be completed. Check the public site URL and measure again.', 'migration-manager');
+$wmm_tolka_speed_basis_fallback = __('Measured page load plus coefficients from benchmarks.json', 'migration-manager');
+$wmm_tolka_speed_note_fallback = __('Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.', 'migration-manager');
+$wmm_tolka_speed_scope_text = __('The speed percent is an estimate for the single page you load. It is not a result for every page on the site.', 'migration-manager');
+$wmm_tolka_speed_error_fallback = __('The speed estimate could not be completed. Check the public site URL and measure again. No percent is shown.', 'migration-manager');
 
 $wmm_tolka_speed_view = array(
     'state' => 'empty',
     'provenance' => '',
     'show_note' => false,
-    'summary' => __('Choose Measure speed to load the public site URL. These figures show the current load, the estimated Tolka load, and the percent faster.', 'migration-manager'),
+    'summary' => __('No measurement yet. Enter the public site URL and choose Measure speed to see the current load, the estimated Tolka load, the percent faster, and the basis of that estimate.', 'migration-manager'),
     'current' => $wmm_tolka_speed_pending,
     'current_ms' => '',
     'tolka' => $wmm_tolka_speed_pending,
@@ -324,6 +324,14 @@ $wmm_tolka_speed_summary_class = 'wmm-tolka-speed-summary';
 if ('empty' === $wmm_tolka_speed_view['state']) {
     $wmm_tolka_speed_summary_class .= ' description';
 }
+
+$wmm_tolka_speed_described_by = array();
+if ($wmm_tolka_speed_view['show_scope']) {
+    $wmm_tolka_speed_described_by[] = 'wmm-tolka-speed-scope';
+}
+if ($wmm_tolka_speed_view['show_note']) {
+    $wmm_tolka_speed_described_by[] = 'wmm-tolka-provenance-note';
+}
 ?>
 
 <div
@@ -338,14 +346,14 @@ if ('empty' === $wmm_tolka_speed_view['state']) {
         <p id="wmm-tolka-speed-error" data-field="error"><?php echo esc_html($wmm_tolka_speed_view['error']); ?></p>
     </div>
 
-    <p class="<?php echo esc_attr($wmm_tolka_speed_summary_class); ?>" id="wmm-tolka-speed-summary" data-field="summary"<?php echo ('' === $wmm_tolka_speed_view['summary']) ? ' hidden' : ''; ?>>
+    <div class="<?php echo esc_attr($wmm_tolka_speed_summary_class); ?>" id="wmm-tolka-speed-summary" data-field="summary"<?php echo ('' === $wmm_tolka_speed_view['summary']) ? ' hidden' : ''; ?>>
         <?php echo esc_html($wmm_tolka_speed_view['summary']); ?>
-    </p>
+    </div>
 
     <dl class="wmm-tolka-speed-figures">
         <div class="wmm-tolka-speed-figure">
             <dt class="wmm-tolka-speed-label" id="wmm-tolka-faster-label"><?php esc_html_e('Percent faster', 'migration-manager'); ?></dt>
-            <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-faster" id="wmm-tolka-faster" data-wmm-tolka="faster" data-field="faster_label" data-faster-percent="<?php echo esc_attr($wmm_tolka_speed_view['faster_percent']); ?>" aria-labelledby="wmm-tolka-faster-label"<?php echo $wmm_tolka_speed_view['show_scope'] ? ' aria-describedby="wmm-tolka-speed-scope"' : ''; ?>>
+            <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-faster" id="wmm-tolka-faster" data-wmm-tolka="faster" data-field="faster_label" data-faster-percent="<?php echo esc_attr($wmm_tolka_speed_view['faster_percent']); ?>" aria-labelledby="wmm-tolka-faster-label"<?php echo array() !== $wmm_tolka_speed_described_by ? ' aria-describedby="' . esc_attr(implode(' ', $wmm_tolka_speed_described_by)) . '"' : ''; ?>>
                 <?php echo esc_html($wmm_tolka_speed_view['faster']); ?>
             </dd>
         </div>
@@ -375,6 +383,7 @@ if ('empty' === $wmm_tolka_speed_view['state']) {
         <?php echo $wmm_tolka_speed_view['show_scope'] ? esc_html($wmm_tolka_speed_scope_text) : ''; ?>
     </p>
 
+    <p class="wmm-tolka-speed-basis-label"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>><?php esc_html_e('Basis', 'migration-manager'); ?></p>
     <p class="wmm-tolka-speed-basis wmm-tolka-value" id="wmm-tolka-basis" data-wmm-tolka="basis" data-field="basis"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>>
         <?php echo esc_html($wmm_tolka_speed_view['basis']); ?>
     </p>
@@ -404,5 +413,6 @@ unset(
     $wmm_tolka_speed_saved,
     $wmm_tolka_speed_detail,
     $wmm_tolka_speed_classes,
-    $wmm_tolka_speed_summary_class
+    $wmm_tolka_speed_summary_class,
+    $wmm_tolka_speed_described_by
 );
