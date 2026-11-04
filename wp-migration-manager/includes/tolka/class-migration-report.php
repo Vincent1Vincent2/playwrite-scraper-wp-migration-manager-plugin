@@ -58,7 +58,9 @@ class Migration_Report
         $missing = self::collect_missing($run);
         $unavailable = self::missing_section_keys($missing['classes']);
         $description = self::describe_content($counts, $unavailable);
-        $description['mismatch'] = self::mismatch_sentence($run, $write, $counts, $package);
+        $gap = self::storage_gap($run, $write, $counts, $package);
+        $description['mismatch'] = $gap['sentence'];
+        $description['shortfall'] = $gap['shortfall'];
         $total = self::total_items($counts);
         $has_problems = !empty($errors) || !empty($missing['labels']) || $description['mismatch'] !== '';
         $status = self::decide($run_ok, $package, $has_problems, $total);
@@ -75,7 +77,7 @@ class Migration_Report
             'ok' => ($status === 'complete' || $status === 'empty'),
             'title' => $title,
             'summary' => $summary,
-            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch']),
+            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch'], $description['shortfall']),
         );
     }
 
@@ -132,6 +134,11 @@ class Migration_Report
 
         if ($from_run['present']) {
             return $from_run['values'];
+        }
+
+        $from_package = self::counts_from_package($run);
+        if ($from_package['present']) {
+            return $from_package['values'];
         }
 
         $source = array();
@@ -553,7 +560,12 @@ class Migration_Report
         if ($status === 'problems') {
             $parts = array();
 
-            if ($total > 0) {
+            if (!empty($description['shortfall'])) {
+                $parts[] = $description['mismatch'];
+                $parts[] = self::text('The Tolka package on this site is incomplete.');
+                $parts[] = $description['absent'];
+                $parts[] = $default_language;
+            } elseif ($total > 0) {
                 $parts[] = self::packaged_lead($description);
                 $parts[] = $description['absent'];
                 $parts[] = $default_language;
@@ -561,9 +573,9 @@ class Migration_Report
                 $parts[] = self::text('The migration reported a problem before any content was packaged.');
             }
 
-            if ($package === 'saved') {
+            if ($package === 'saved' && empty($description['shortfall'])) {
                 $parts[] = self::text('The package is saved on this site.');
-            } else {
+            } elseif ($package !== 'saved') {
                 $parts[] = self::text('The plugin could not confirm that the Tolka package was saved.');
             }
 
@@ -572,7 +584,9 @@ class Migration_Report
             }
 
             $parts[] = $missing_sentence;
-            $parts[] = $description['mismatch'];
+            if (empty($description['shortfall'])) {
+                $parts[] = $description['mismatch'];
+            }
             $parts[] = $problem_lead;
             $parts[] = $next;
             $parts[] = $closing;
@@ -581,7 +595,10 @@ class Migration_Report
         }
 
         $parts = array();
-        if ($total > 0 && $description['present'] !== '') {
+        if (!empty($description['shortfall'])) {
+            $parts[] = $description['mismatch'];
+            $parts[] = self::text('That is not a finished migration.');
+        } elseif ($total > 0 && $description['present'] !== '') {
             $parts[] = sprintf(
                 self::text('The migration did not finish. This site has %s, but that content was not saved into a Tolka package.'),
                 $description['present']
@@ -592,7 +609,9 @@ class Migration_Report
         }
 
         $parts[] = $missing_sentence;
-        $parts[] = $description['mismatch'];
+        if (empty($description['shortfall'])) {
+            $parts[] = $description['mismatch'];
+        }
         $parts[] = $problem_lead;
         $parts[] = $next;
         $parts[] = $closing;
@@ -601,28 +620,88 @@ class Migration_Report
     }
 
     /**
-     * Say so when the writer saved a different number than the run found.
+     * Counts taken from the package item lists, when the run omitted counts.
+     *
+     * @param array $run Runner result.
+     * @return array{present: bool, values: array<string, int>}
+     */
+    private static function counts_from_package(array $run)
+    {
+        $values = array();
+        $present = false;
+
+        foreach (array_keys(self::section_catalog()) as $key) {
+            $count = self::package_section_count($run, $key);
+            if ($count === null) {
+                $values[$key] = 0;
+                continue;
+            }
+
+            $values[$key] = $count;
+            $present = true;
+        }
+
+        return array(
+            'present' => $present,
+            'values' => $values,
+        );
+    }
+
+    /**
+     * How many items a package section contains, or null when it is absent.
+     *
+     * @param array  $run Runner result.
+     * @param string $key Section key.
+     * @return int|null
+     */
+    private static function package_section_count(array $run, $key)
+    {
+        if (!isset($run['package']) || !is_array($run['package']) || !array_key_exists($key, $run['package'])) {
+            return null;
+        }
+
+        $section = $run['package'][$key];
+        if (is_array($section) && array_key_exists('items', $section) && is_array($section['items'])) {
+            $section = $section['items'];
+        }
+
+        if (!is_array($section)) {
+            return null;
+        }
+
+        return count($section);
+    }
+
+    /**
+     * Say so when the writer stored fewer items than the package contained.
      *
      * @param array      $run       Runner result.
      * @param array|null $write     Writer result.
      * @param array      $collected Counts shown in the report.
      * @param string     $package   Package state.
-     * @return string
+     * @return array{sentence: string, shortfall: bool}
      */
-    private static function mismatch_sentence(array $run, $write, array $collected, $package)
+    private static function storage_gap(array $run, $write, array $collected, $package)
     {
-        if ($package !== 'saved' || !is_array($write)) {
-            return '';
+        $empty = array(
+            'sentence' => '',
+            'shortfall' => false,
+        );
+        $write_failed = is_array($write) && array_key_exists('ok', $write) && $write['ok'] !== true;
+        if (!is_array($write) || (!$write_failed && $package !== 'saved')) {
+            return $empty;
         }
 
         $run_counts = (isset($run['counts']) && is_array($run['counts'])) ? $run['counts'] : array();
-        if (!self::read_counts($run_counts)['present']) {
-            return '';
+        $package_present = isset($run['package']) && is_array($run['package']);
+        if (!self::read_counts($run_counts)['present'] && !$package_present) {
+            return $empty;
         }
 
         $source = (isset($write['counts']) && is_array($write['counts'])) ? $write['counts'] : $write;
         $short = array();
         $extra = array();
+        $compared_package = false;
 
         foreach (self::section_catalog() as $key => $meta) {
             $saved = self::count_if_set($source, $key);
@@ -630,12 +709,20 @@ class Migration_Report
                 continue;
             }
 
-            $found = isset($collected[$key]) ? (int) $collected[$key] : 0;
+            $package_count = self::package_section_count($run, $key);
+            if ($package_count !== null) {
+                $found = $package_count;
+            } else {
+                $found = isset($collected[$key]) ? (int) $collected[$key] : 0;
+            }
             if ($saved === $found) {
                 continue;
             }
 
             if ($saved < $found) {
+                if ($package_count !== null) {
+                    $compared_package = true;
+                }
                 if ($saved === 0 && $found === 1) {
                     $short[] = sprintf(
                         self::text('the %s was not saved'),
@@ -671,14 +758,28 @@ class Migration_Report
         }
 
         $parts = array();
+        $shortfall = false;
         if (!empty($short)) {
-            $parts[] = self::text('Not everything that was found was saved.') . ' ' . self::capitalize(self::join_and($short)) . '.';
+            $shortfall = true;
+            if ($write_failed && $compared_package) {
+                $lead = self::text('Saving did not finish. The package contained more than was stored.');
+            } elseif ($write_failed) {
+                $lead = self::text('Saving did not finish.');
+            } elseif ($compared_package) {
+                $lead = self::text('The package contained more than was stored.');
+            } else {
+                $lead = self::text('Not everything that was found was saved.');
+            }
+            $parts[] = $lead . ' ' . self::capitalize(self::join_and($short)) . '.';
         }
         if (!empty($extra)) {
             $parts[] = self::text('The saved package includes more than was found.') . ' ' . self::capitalize(self::join_and($extra)) . '.';
         }
 
-        return self::join_sentences($parts);
+        return array(
+            'sentence' => self::join_sentences($parts),
+            'shortfall' => $shortfall,
+        );
     }
 
     /**
@@ -862,9 +963,10 @@ class Migration_Report
      * @param string[]              $missing_lines Per-step sentences.
      * @param string[]              $errors       Error sentences.
      * @param string                $mismatch     Saved-count warning, or empty.
+     * @param bool                  $shortfall    Stored fewer items than the package contained.
      * @return array<int, array{label: string, value: string}>
      */
-    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors, $mismatch)
+    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors, $mismatch, $shortfall)
     {
         $lines = array(
             self::line(self::text('Outcome'), $title),
@@ -881,7 +983,7 @@ class Migration_Report
             $lines[] = $example;
         }
 
-        $lines[] = self::line(self::text('Tolka package'), self::package_value($package, $total));
+        $lines[] = self::line(self::text('Tolka package'), self::package_value($package, $total, $shortfall));
         if ($mismatch !== '') {
             $lines[] = self::line(self::text('Saved counts'), $mismatch);
         }
@@ -924,12 +1026,17 @@ class Migration_Report
     }
 
     /**
-     * @param string $package Package state.
-     * @param int    $total   Sum of counts.
+     * @param string $package   Package state.
+     * @param int    $total     Sum of counts.
+     * @param bool   $shortfall Stored fewer items than the package contained.
      * @return string
      */
-    private static function package_value($package, $total)
+    private static function package_value($package, $total, $shortfall)
     {
+        if ($package === 'saved' && $shortfall) {
+            return self::text('Saved, but it is incomplete');
+        }
+
         if ($package === 'saved' && $total === 0) {
             return self::text('Saved, but it is empty');
         }
