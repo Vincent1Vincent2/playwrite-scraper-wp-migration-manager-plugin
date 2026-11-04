@@ -235,7 +235,7 @@ function wmm_tolka_ajax_guard()
 }
 
 /**
- * Send an error payload. Missing class names stay machine-readable.
+ * Send an error payload. Missing class names stay in the sentence and the list.
  *
  * @param string $message Finished sentence for the screen.
  * @param array  $missing Short class names.
@@ -248,9 +248,78 @@ function wmm_tolka_json_error($message, $missing = array())
 
     if (!empty($missing)) {
         $data['missing'] = array_values($missing);
+        $data['message'] = wmm_tolka_missing_sentence($message, $data['missing']);
     }
 
     wp_send_json_error($data);
+}
+
+/**
+ * Join class names into a readable list.
+ *
+ * @param array $names Short class names.
+ * @return string
+ */
+function wmm_tolka_name_list($names)
+{
+    $clean = array();
+
+    foreach ($names as $name) {
+        if (!is_string($name) || $name === '') {
+            continue;
+        }
+        $clean[] = $name;
+    }
+
+    $count = count($clean);
+
+    if ($count === 0) {
+        return '';
+    }
+
+    if ($count === 1) {
+        return $clean[0];
+    }
+
+    $last = array_pop($clean);
+
+    if ($count === 2) {
+        return sprintf(
+            /* translators: 1: class name, 2: class name */
+            __('%1$s and %2$s', 'migration-manager'),
+            $clean[0],
+            $last
+        );
+    }
+
+    return sprintf(
+        /* translators: 1: comma-separated class names, 2: last class name */
+        __('%1$s, and %2$s', 'migration-manager'),
+        implode(', ', $clean),
+        $last
+    );
+}
+
+/**
+ * Append every missing class name to a finished sentence.
+ *
+ * @param string $lead    Sentence that already stands alone.
+ * @param array  $missing Short class names.
+ * @return string
+ */
+function wmm_tolka_missing_sentence($lead, $missing)
+{
+    $list = wmm_tolka_name_list($missing);
+
+    if ($list === '') {
+        return $lead;
+    }
+
+    return $lead . ' ' . sprintf(
+        /* translators: %s: missing class names */
+        __('Missing: %s.', 'migration-manager'),
+        $list
+    );
 }
 
 /**
@@ -589,12 +658,22 @@ function wmm_tolka_plain_value($value)
         return __('Stored with the report.', 'migration-manager');
     }
 
+    $without_comments = preg_replace('/<!--.*?-->/s', '', $value);
+    if (is_string($without_comments)) {
+        $value = $without_comments;
+    }
+
     $without_blocks = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/is', '', $value);
     if (is_string($without_blocks)) {
         $value = $without_blocks;
     }
 
     $value = strip_tags($value);
+
+    $without_tags = preg_replace('/<[^>]*>/', '', $value);
+    if (is_string($without_tags)) {
+        $value = $without_tags;
+    }
 
     $collapsed = preg_replace('/\s+/', ' ', $value);
     if (is_string($collapsed)) {
@@ -628,7 +707,11 @@ function wmm_tolka_public_copy($value)
         return $value;
     }
 
-    unset($value['html']);
+    foreach (array_keys($value) as $key) {
+        if (is_string($key) && strtolower($key) === 'html') {
+            unset($value[$key]);
+        }
+    }
 
     foreach ($value as $key => $item) {
         $value[$key] = wmm_tolka_public_copy($item);
@@ -884,17 +967,29 @@ function wmm_tolka_render_status()
 function wmm_tolka_gap_messages()
 {
     $gaps = array();
+    $speed = wmm_tolka_unavailable(wmm_tolka_speed_requirements());
+    $preview = wmm_tolka_unavailable(wmm_tolka_preview_requirements());
+    $run = wmm_tolka_unavailable(wmm_tolka_run_requirements());
 
-    if (wmm_tolka_unavailable(wmm_tolka_speed_requirements())) {
-        $gaps['measure'] = __('A speed estimate is not available on this install yet.', 'migration-manager');
+    if ($speed) {
+        $gaps['measure'] = wmm_tolka_missing_sentence(
+            __('A speed estimate is not available on this install yet.', 'migration-manager'),
+            $speed
+        );
     }
 
-    if (wmm_tolka_unavailable(wmm_tolka_preview_requirements())) {
-        $gaps['preview'] = __('Migration preview is not available on this install yet.', 'migration-manager');
+    if ($preview) {
+        $gaps['preview'] = wmm_tolka_missing_sentence(
+            __('Migration preview is not available on this install yet.', 'migration-manager'),
+            $preview
+        );
     }
 
-    if (wmm_tolka_unavailable(wmm_tolka_run_requirements())) {
-        $gaps['run'] = __('Running the migration is not available on this install yet.', 'migration-manager');
+    if ($run) {
+        $gaps['run'] = wmm_tolka_missing_sentence(
+            __('Running the migration is not available on this install yet.', 'migration-manager'),
+            $run
+        );
     }
 
     return $gaps;

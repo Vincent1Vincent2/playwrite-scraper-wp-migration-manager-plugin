@@ -214,7 +214,8 @@ namespace WMM\Tolka {
                 $GLOBALS['wmm_tolka_detector_active'],
                 $GLOBALS['wmm_tolka_detector_version'],
                 $GLOBALS['wmm_tolka_detector_errors'],
-                $GLOBALS['wmm_tolka_stub_bad_estimate']
+                $GLOBALS['wmm_tolka_stub_bad_estimate'],
+                $GLOBALS['wmm_tolka_stub_html']
             );
         }
 
@@ -455,11 +456,16 @@ namespace WMM\Tolka {
                 $GLOBALS['wmm_tolka_test_json']['data']['missing']
             );
             $this->assertStringContainsString('Nothing was changed.', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Speed_Loader', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Speed_Metrics', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Speed_Estimate', $GLOBALS['wmm_tolka_test_json']['data']['message']);
 
             $this->capture(function () {
                 \wmm_tolka_ajax_preview();
             });
             $this->assertSame(array('Migration_Runner'), $GLOBALS['wmm_tolka_test_json']['data']['missing']);
+            $this->assertStringContainsString('Migration_Runner', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringNotContainsString('Migration_Report', $GLOBALS['wmm_tolka_test_json']['data']['message']);
 
             $this->capture(function () {
                 \wmm_tolka_ajax_run();
@@ -468,6 +474,9 @@ namespace WMM\Tolka {
                 array('Migration_Runner', 'Migration_Report'),
                 $GLOBALS['wmm_tolka_test_json']['data']['missing']
             );
+            $this->assertStringContainsString('Migration_Runner', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Migration_Report', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+            $this->assertStringContainsString('Nothing was changed.', $GLOBALS['wmm_tolka_test_json']['data']['message']);
         }
 
         public function test_rejected_nonce_is_an_error_without_a_percent()
@@ -577,6 +586,9 @@ namespace WMM\Tolka {
             $this->assertArrayNotHasKey('faster_percent', $payload['data']);
             $this->assertArrayNotHasKey('faster_label', $payload['data']);
             $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+            $this->assertStringContainsString('Speed_Loader', $payload['data']['message']);
+            $this->assertStringContainsString('Speed_Metrics', $payload['data']['message']);
+            $this->assertStringContainsString('Speed_Estimate', $payload['data']['message']);
             $this->assertNoSpeedPercent($payload);
         }
 
@@ -622,6 +634,43 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('Enter', $html);
             $this->assertStringContainsString('Enable JavaScript', $html);
             $this->assertStringNotContainsString('secret-html', $html);
+        }
+
+        public function test_run_names_only_classes_that_are_missing()
+        {
+            $this->requireStubs();
+
+            if (class_exists(Migration_Runner::class) || class_exists(Migration_Report::class)) {
+                $this->markTestSkipped('Migration classes are already loaded.');
+            }
+
+            $this->defineRunnerStub();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+            );
+
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_run();
+            });
+            $output = ob_get_clean();
+            $payload = $GLOBALS['wmm_tolka_test_json'];
+
+            $this->assertSame('', $output);
+            $this->assertFalse($payload['success']);
+            $this->assertSame(array('Migration_Report'), $payload['data']['missing']);
+            $this->assertStringContainsString('Migration_Report', $payload['data']['message']);
+            $this->assertStringNotContainsString('Migration_Runner', $payload['data']['message']);
+            $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+
+            $this->capture(function () {
+                \wmm_tolka_ajax_preview();
+            });
+            $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success']);
+            $this->assertSame(array(), $GLOBALS['wmm_tolka_test_json']['data']['missing']);
         }
 
         public function test_ready_steps_invite_action_and_skip_fallback_script_when_js_exists()
@@ -856,6 +905,27 @@ namespace WMM\Tolka {
             $this->assertSame(25.0, $payload['data']['estimate']['faster_percent']);
             $this->assertSame('25% faster', $payload['data']['estimate']['faster_label']);
 
+            $GLOBALS['wmm_tolka_stub_html'] = true;
+            ob_start();
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $html_output = ob_get_clean();
+            $html_payload = $GLOBALS['wmm_tolka_test_json'];
+            $html_encoded = json_encode($html_payload);
+
+            $this->assertSame('', $html_output);
+            $this->assertTrue($html_payload['success']);
+            $this->assertSame(25.0, $html_payload['data']['estimate']['faster_percent']);
+            $this->assertSame(2, $html_payload['data']['metrics']['language_count']);
+            $this->assertSame('counted', $html_payload['data']['metrics']['note']);
+            $this->assertArrayNotHasKey('html', $html_payload['data']['metrics']);
+            $this->assertArrayNotHasKey('HTML', $html_payload['data']['metrics']);
+            $this->assertArrayNotHasKey('html', $html_payload['data']['estimate']);
+            $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $html_encoded);
+            $this->assertStringNotContainsString('secret-html', $html_encoded);
+            $this->assertStringNotContainsString('onerror', $html_encoded);
+
             $this->capture(function () {
                 \wmm_tolka_ajax_preview();
             });
@@ -1054,82 +1124,13 @@ PHP
             }
         }
 
-        private function defineSliceStubs()
+        private function defineRunnerStub()
         {
-            if (!class_exists(Speed_Loader::class)) {
-                eval(<<<'PHP'
-namespace WMM\Tolka;
-class Speed_Loader {
-    public static function measure($url) {
-        if (!empty($GLOBALS['wmm_tolka_stub_throw'])) {
-            throw new \RuntimeException('boom');
-        }
-        return array(
-            'ok' => true,
-            'url' => $url,
-            'html' => '<script>secret-html</script>',
-            'total_ms' => 120,
-        );
-    }
-}
-PHP
-                );
+            if (class_exists(Migration_Runner::class)) {
+                return;
             }
 
-            if (!class_exists(Speed_Metrics::class)) {
-                eval(<<<'PHP'
-namespace WMM\Tolka;
-class Speed_Metrics {
-    public static function analyze($measurement) {
-        return array(
-            'language_count' => 2,
-            'html' => '<script>secret-html</script>',
-        );
-    }
-}
-PHP
-                );
-            }
-
-            if (!class_exists(Speed_Estimate::class)) {
-                eval(<<<'PHP'
-namespace WMM\Tolka;
-class Speed_Estimate {
-    public static function benchmarks() {
-        return array('id' => 'tolka-lab');
-    }
-    public static function project($measurement, $metrics, $benchmarks) {
-        if (!empty($GLOBALS['wmm_tolka_stub_bad_estimate'])) {
-            return array(
-                'ok' => false,
-                'current_ms' => 0,
-                'tolka_ms' => 0,
-                'faster_percent' => 99.9,
-                'faster_label' => '99.9% faster',
-                'error' => 'The page could not be measured. <script>secret-html</script>',
-                'html' => '<script>secret-html</script>',
-            );
-        }
-        return array(
-            'ok' => true,
-            'current_ms' => 120,
-            'tolka_ms' => 90,
-            'faster_percent' => 25.0,
-            'faster_label' => '25% faster',
-            'basis' => 'Measured page load plus coefficients from benchmarks.json',
-            'provenance' => 'placeholder',
-            'provenance_note' => 'Placeholder coefficients',
-            'html' => '<script>secret-html</script>',
-            'error' => '',
-        );
-    }
-}
-PHP
-                );
-            }
-
-            if (!class_exists(Migration_Runner::class)) {
-                eval(<<<'PHP'
+            eval(<<<'PHP'
 namespace WMM\Tolka;
 class Migration_Runner {
     public static function preview() {
@@ -1164,7 +1165,104 @@ class Migration_Runner {
     }
 }
 PHP
+            );
+        }
+
+        private function defineSliceStubs()
+        {
+            if (!class_exists(Speed_Loader::class)) {
+                eval(<<<'PHP'
+namespace WMM\Tolka;
+class Speed_Loader {
+    public static function measure($url) {
+        if (!empty($GLOBALS['wmm_tolka_stub_throw'])) {
+            throw new \RuntimeException('boom');
+        }
+        return array(
+            'ok' => true,
+            'url' => $url,
+            'html' => '<script>secret-html</script>',
+            'total_ms' => 120,
+        );
+    }
+}
+PHP
                 );
+            }
+
+            if (!class_exists(Speed_Metrics::class)) {
+                eval(<<<'PHP'
+namespace WMM\Tolka;
+class Speed_Metrics {
+            public static function analyze($measurement) {
+        $metrics = array(
+            'language_count' => 2,
+            'html' => '<script>secret-html</script>',
+            'HTML' => '<div>secret-html</div>',
+        );
+        if (!empty($GLOBALS['wmm_tolka_stub_html'])) {
+            $metrics['note'] = '<img src=x onerror=alert(1)>counted <!-- <script>secret-html</script> -->';
+        }
+        return $metrics;
+    }
+}
+PHP
+                );
+            }
+
+            if (!class_exists(Speed_Estimate::class)) {
+                eval(<<<'PHP'
+namespace WMM\Tolka;
+class Speed_Estimate {
+    public static function benchmarks() {
+        return array('id' => 'tolka-lab');
+    }
+    public static function project($measurement, $metrics, $benchmarks) {
+        if (!empty($GLOBALS['wmm_tolka_stub_bad_estimate'])) {
+            return array(
+                'ok' => false,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 99.9,
+                'faster_label' => '99.9% faster',
+                'error' => 'The page could not be measured. <script>secret-html</script>',
+                'html' => '<script>secret-html</script>',
+            );
+        }
+        if (!empty($GLOBALS['wmm_tolka_stub_html'])) {
+            return array(
+                'ok' => true,
+                'current_ms' => 120,
+                'tolka_ms' => 90,
+                'faster_percent' => 25.0,
+                'faster_label' => '25% faster',
+                'basis' => 'Measured <b>page</b> load plus coefficients from benchmarks.json',
+                'error' => '<script>secret-html</script>',
+                'html' => '<script>secret-html</script>',
+                'provenance' => 'placeholder',
+                'provenance_note' => 'Placeholder <!-- <style>secret-html</style> -->coefficients',
+            );
+        }
+        return array(
+            'ok' => true,
+            'current_ms' => 120,
+            'tolka_ms' => 90,
+            'faster_percent' => 25.0,
+            'faster_label' => '25% faster',
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'placeholder',
+            'provenance_note' => 'Placeholder coefficients',
+            'html' => '<script>secret-html</script>',
+            'error' => '',
+        );
+    }
+}
+PHP
+                );
+            }
+
+            if (!class_exists(Migration_Runner::class)) {
+                $this->defineRunnerStub();
             }
 
             if (!class_exists(Migration_Report::class)) {
