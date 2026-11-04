@@ -115,6 +115,37 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('Migration complete', $report['title']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
+
+        $omitted = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 1,
+                'posts' => 2,
+            ),
+            'write' => array('ok' => true),
+        ));
+        $this->assertTrue($omitted['ok']);
+        $this->assertSame('Migration complete', $omitted['title']);
+        $this->assertStringContainsString('Polylang data was left in place.', $omitted['summary']);
+    }
+
+    public function test_empty_site_with_omitted_counts_says_nothing_was_found()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'write' => array('ok' => true),
+        ));
+
+        $this->assertTrue($report['ok']);
+        $this->assertSame('Nothing to migrate', $report['title']);
+        $this->assertStringContainsString('Nothing was found', $report['summary']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertSame('0 languages', $this->line($report, 'Languages'));
+        $this->assertSame('0 posts', $this->line($report, 'Posts'));
+        $this->assertSame('0 terms', $this->line($report, 'Terms'));
+        $this->assertSame('0 strings', $this->line($report, 'Strings'));
+        $this->assertSame('0 menus', $this->line($report, 'Menus'));
+        $this->assertSame('0 media items', $this->line($report, 'Media'));
     }
 
     public function test_several_missing_classes_are_named_in_one_sentence()
