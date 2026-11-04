@@ -775,8 +775,7 @@ class Polylang_Menus
                     }
                 }
                 if ($language === '') {
-                    $language = 'unknown';
-                    $this->warn($this->message_unknown_language());
+                    $language = $this->language_without_assignment();
                 }
                 if (! isset($groups[$key][$language])) {
                     $groups[$key][$language] = $member;
@@ -1414,8 +1413,7 @@ class Polylang_Menus
             $language = $this->normalize_lang_slug($this->read_default_language());
         }
         if ($language === '' && $menu_id > 0) {
-            $language = 'unknown';
-            $this->warn($this->message_unknown_language());
+            $language = $this->language_without_assignment();
         }
         if ($language === '') {
             return;
@@ -1513,8 +1511,7 @@ class Polylang_Menus
                 }
             }
             if ($language === '') {
-                $language = 'unknown';
-                $this->warn($this->message_unknown_language());
+                $language = $this->language_without_assignment();
             }
             if (! isset($groups[$key][$language])) {
                 $groups[$key][$language] = $menu_id;
@@ -2607,15 +2604,20 @@ class Polylang_Menus
     }
 
     /**
+     * Language slug for a menu Polylang did not label.
+     *
+     * The default language is used when the site has one. Otherwise the menu
+     * is still exported under "unknown". Missing a language is not an error.
+     *
      * @return string
      */
-    private function message_unknown_language()
+    private function language_without_assignment()
     {
-        $text = 'A menu has no Polylang language, so it was exported under "unknown".';
-        if (function_exists('__')) {
-            $text = __('A menu has no Polylang language, so it was exported under "unknown".', 'migration-manager');
+        $default = $this->normalize_lang_slug($this->read_default_language());
+        if ($default !== '') {
+            return $default;
         }
-        return $text;
+        return 'unknown';
     }
 
     /**
