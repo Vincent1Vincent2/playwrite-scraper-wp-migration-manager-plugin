@@ -66,12 +66,13 @@ class Migration_Runner
      */
     public static function preview()
     {
-        $view = self::view(static::collect());
+        $collected = static::collect();
+        $view = self::view($collected);
 
         $state = self::preview_state($view);
         $errors = self::cap_list($view['errors']);
 
-        return array(
+        return self::with_sections(array(
             'counts' => $view['counts'],
             'sample' => $view['sample'],
             'errors' => $errors,
@@ -80,7 +81,7 @@ class Migration_Runner
             'state' => $state,
             'message' => self::preview_message($view, $state),
             'detail' => self::first_error($errors),
-        );
+        ), $collected);
     }
 
     /**
@@ -126,7 +127,7 @@ class Migration_Runner
         $ok = $saved && !$had_errors && empty($missing);
         $errors = self::merge_errors($blocking, $view['errors']);
 
-        return array(
+        return self::with_sections(array(
             'ok' => $ok,
             'counts' => $view['counts'],
             'write' => $write,
@@ -137,7 +138,7 @@ class Migration_Runner
             'state' => self::run_state($ok, $saved, $attempted, $view['counts']),
             'message' => self::run_message($ok, $saved, $attempted, $view, $errors),
             'detail' => self::first_error($errors),
-        );
+        ), $collected);
     }
 
     /**
@@ -297,6 +298,50 @@ class Migration_Runner
         return array(
             'items' => $items,
             'errors' => array_values($errors),
+        );
+    }
+
+    /**
+     * Copy the six envelopes onto a result. Missing classes keep an empty item list.
+     *
+     * @param array $result
+     * @param array $collected
+     * @return array
+     */
+    private static function with_sections($result, $collected)
+    {
+        foreach (self::section_keys() as $section) {
+            $result[$section] = self::section_envelope($collected, $section);
+        }
+        return $result;
+    }
+
+    /**
+     * @param array  $collected
+     * @param string $section
+     * @return array
+     */
+    private static function section_envelope($collected, $section)
+    {
+        $items = array();
+        $errors = array();
+        if (isset($collected[$section]) && is_array($collected[$section])) {
+            if (isset($collected[$section]['items']) && is_array($collected[$section]['items'])) {
+                foreach ($collected[$section]['items'] as $item) {
+                    $items[] = self::present_item($item, 0);
+                }
+            }
+            if (isset($collected[$section]['errors']) && is_array($collected[$section]['errors'])) {
+                foreach ($collected[$section]['errors'] as $error) {
+                    if (is_string($error) && $error !== '') {
+                        $errors[] = $error;
+                    }
+                }
+            }
+        }
+        return array(
+            'items' => $items,
+            'errors' => $errors,
         );
     }
 

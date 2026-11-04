@@ -482,11 +482,17 @@ namespace {
             );
             foreach ($sections as $section) {
                 $this->assertArrayHasKey($section, $collected);
+                $this->assertArrayHasKey($section, $preview);
                 $this->assertSame(array(), $collected[$section]['items']);
+                $this->assertSame(array(), $preview[$section]['items']);
                 $this->assertNotEmpty($collected[$section]['errors']);
             }
 
             $run = \WMM\Tolka\Migration_Runner::run();
+            foreach ($sections as $section) {
+                $this->assertArrayHasKey($section, $run);
+                $this->assertSame(array(), $run[$section]['items']);
+            }
             $this->assertSame($sections, array_keys($run['counts']));
             $this->assertSame($sections, array_keys($run['sample']));
             $this->assertSame($sections, array_keys($run['sections']));
@@ -1376,6 +1382,8 @@ namespace {
             $this->assertCount(21, \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
             $this->assertCount(20, $run['sample']['posts']);
             $this->assertSame('Draft 20', \WMM\Tolka\RunnerTest\Writer::$package['posts'][20]['title']);
+            $this->assertCount(21, $run['posts']['items']);
+            $this->assertSame('Draft 20', $run['posts']['items'][20]['title']);
         }
 
         public function test_exporter_non_array_makes_the_run_not_ok()
@@ -1707,8 +1715,12 @@ namespace {
             $this->assertSame($sections, array_keys($preview['sample']));
             $this->assertSame($sections, array_keys($preview['sections']));
             $this->assertSame(0, $preview['counts']['posts']);
+            $this->assertSame(array(), $preview['posts']['items']);
+            $this->assertNotEmpty($preview['posts']['errors']);
             $this->assertSame(array(), $preview['sample']['posts']);
+            $this->assertSame(array(), $preview['media']['items']);
             $this->assertSame(array(), $preview['sample']['media']);
+            $this->assertCount(1, $preview['languages']['items']);
             $this->assertSame(1, $preview['counts']['languages']);
             $this->assertSame('missing', $preview['sections']['posts']['status']);
             $this->assertSame('missing', $preview['sections']['media']['status']);
@@ -1731,6 +1743,9 @@ namespace {
             $this->assertSame(0, $run['counts']['posts']);
             $this->assertSame(0, $run['counts']['media']);
             $this->assertSame(1, $run['counts']['languages']);
+            $this->assertSame(array(), $run['posts']['items']);
+            $this->assertSame(array(), $run['media']['items']);
+            $this->assertCount(1, $run['languages']['items']);
             $this->assertSame(array(), $run['sample']['posts']);
             $this->assertNotSame(array(), $run['sample']['languages']);
 
