@@ -585,6 +585,59 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         }
     }
 
+    public function test_faster_label_is_shown_exactly_and_failure_says_unavailable()
+    {
+        $label = '57.9% faster';
+        $html = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 1000,
+            'tolka_ms' => 200,
+            'faster_percent' => 10,
+            'faster_label' => $label,
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => '',
+        ));
+        $document = $this->document($html);
+        $faster = $document->getElementById('wmm-tolka-faster');
+
+        $this->assertSame($label, $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame('10.0', $faster->getAttribute('data-faster-percent'));
+        $this->assertNotSame('80.0', $faster->getAttribute('data-faster-percent'));
+        $this->assertStringNotContainsString('80% faster', $html);
+        $this->assertStringNotContainsString('80.0% faster', $html);
+        $this->assertStringContainsString(' ms', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertStringContainsString(' ms', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertStringContainsString($label, $this->text($html, 'wmm-tolka-speed-summary'));
+
+        $failed = $this->render(true, array(
+            'ok' => false,
+            'current_ms' => 1000,
+            'tolka_ms' => 200,
+            'faster_percent' => 57.9,
+            'faster_label' => $label,
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => 'The page could not be loaded.',
+        ));
+        $failed_document = $this->document($failed);
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-faster'));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-current-load'));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-tolka-load'));
+        $this->assertSame('', $failed_document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
+        $this->assertStringNotContainsString($label, $failed);
+        $this->assertStringNotContainsString('57.9', $failed);
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($failed_document->getElementById($id), $id);
+        }
+    }
+
     public function test_successful_loads_use_an_ms_suffix_and_failure_stays_unavailable()
     {
         $pairs = array(
@@ -1440,9 +1493,10 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             'error' => '',
         ));
 
-        $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame('<img src=x onerror=alert(1)>', $this->text($html, 'wmm-tolka-faster'));
         $this->assertSame('', $this->document($html)->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
         $this->assertStringNotContainsString('<img', $html);
+        $this->assertStringContainsString('&lt;img', $html);
         $this->assertStringNotContainsString('<script>', $html);
         $this->assertStringContainsString('No percent is shown', $this->text($html, 'wmm-tolka-speed-summary'));
         $this->assertStringContainsString(
