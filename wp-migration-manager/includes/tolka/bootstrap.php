@@ -1173,6 +1173,10 @@ function wmm_tolka_fallback_copy()
         'measuredUrl' => __('Address checked', 'migration-manager'),
         'yes' => __('Yes', 'migration-manager'),
         'no' => __('No', 'migration-manager'),
+        'needUrl' => __('Enter a public site URL to measure. Nothing was changed.', 'migration-manager'),
+        'timeoutMeasure' => __('The speed check took too long and was stopped. Nothing was changed.', 'migration-manager'),
+        'timeoutPreview' => __('The preview took too long and was stopped. Nothing was changed.', 'migration-manager'),
+        'timeoutRun' => __('The migration took too long to answer. Reload this screen before trying again. Polylang data was not deleted.', 'migration-manager'),
     );
 }
 
@@ -1189,9 +1193,9 @@ function wmm_tolka_fallback_script()
     var config = window.wmmTolka || {};
     var active = false;
     var jobs = [
-        { id: "wmm-tolka-measure", action: config.actionMeasure, target: "wmm-tolka-speed", busy: text("measuring", "Measuring..."), needsUrl: true, render: renderSpeed },
-        { id: "wmm-tolka-preview", action: config.actionPreview, target: "wmm-tolka-preview-result", busy: text("previewing", "Previewing..."), render: renderPreview },
-        { id: "wmm-tolka-run", action: config.actionRun, target: "wmm-tolka-report", busy: text("running", "Migrating..."), confirmText: text("confirmRun", "Run the migration now?"), render: renderReport }
+        { id: "wmm-tolka-measure", action: config.actionMeasure, target: "wmm-tolka-speed", busy: text("measuring", "Measuring..."), needsUrl: true, timeout: 35000, timeoutMessage: text("timeoutMeasure", "The speed check took too long and was stopped. Nothing was changed."), render: renderSpeed },
+        { id: "wmm-tolka-preview", action: config.actionPreview, target: "wmm-tolka-preview-result", busy: text("previewing", "Previewing..."), timeout: 60000, timeoutMessage: text("timeoutPreview", "The preview took too long and was stopped. Nothing was changed."), render: renderPreview },
+        { id: "wmm-tolka-run", action: config.actionRun, target: "wmm-tolka-report", busy: text("running", "Migrating..."), timeout: 120000, timeoutMessage: text("timeoutRun", "The migration took too long to answer. Reload this screen before trying again. Polylang data was not deleted."), confirmText: text("confirmRun", "Run the migration now?"), render: renderReport }
     ];
 
     function text(key, fallback) {
@@ -1252,15 +1256,31 @@ function wmm_tolka_fallback_script()
         body.set("nonce", config.nonce || "");
         if (job.needsUrl) {
             var input = document.getElementById("wmm-tolka-url");
-            body.set("url", input ? input.value : "");
+            var url = input && input.value ? input.value.replace(/^\s+|\s+$/g, "") : "";
+            if (!url) {
+                showError(document.getElementById(job.target), text("needUrl", "Enter a public site URL to measure. Nothing was changed."));
+                return;
+            }
+            body.set("url", url);
+        }
+        var controller = window.AbortController ? new window.AbortController() : null;
+        var timer = null;
+        if (controller && job.timeout) {
+            timer = window.setTimeout(function () {
+                controller.abort();
+            }, job.timeout);
         }
         setBusy(true, job);
-        window.fetch(config.ajaxUrl, {
+        var fetchOptions = {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
             body: body.toString()
-        }).then(function (response) {
+        };
+        if (controller) {
+            fetchOptions.signal = controller.signal;
+        }
+        window.fetch(config.ajaxUrl, fetchOptions).then(function (response) {
             return response.text().then(function (raw) {
                 var data = null;
                 try {
@@ -1282,9 +1302,16 @@ function wmm_tolka_fallback_script()
             } catch (ignore) {
                 showError(target, text("failed", "The request failed. Nothing was changed."));
             }
-        }).catch(function () {
-            showError(document.getElementById(job.target), text("network", "The request could not be completed."));
+        }).catch(function (error) {
+            var timedOut = error && error.name === "AbortError";
+            var message = timedOut
+                ? (job.timeoutMessage || text("timeoutMeasure", "The speed check took too long and was stopped. Nothing was changed."))
+                : text("network", "The request could not be completed.");
+            showError(document.getElementById(job.target), message);
         }).then(function () {
+            if (timer) {
+                window.clearTimeout(timer);
+            }
             setBusy(false, job);
         });
     }
@@ -1398,7 +1425,11 @@ function wmm_tolka_fallback_script()
         if (!input || !input.value) {
             return "";
         }
-        return text("measuredUrl", "Address checked") + ": " + input.value;
+        var url = input.value.replace(/^\s+|\s+$/g, "");
+        if (!url) {
+            return "";
+        }
+        return text("measuredUrl", "Address checked") + ": " + url;
     }
 
     function renderSpeed(target, data) {
