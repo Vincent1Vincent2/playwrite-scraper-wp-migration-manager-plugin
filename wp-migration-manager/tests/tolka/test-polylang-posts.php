@@ -1098,6 +1098,73 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('draft', $one_more['items'][20]['translations']['en']['status']);
     }
 
+    public function test_database_row_keeps_html_and_drops_null_bytes_on_a_second_export()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->languages = array(7 => 'en');
+        $html = '<div class="entry"><p>Keep <em>this</em></p></div>';
+        $fake->posts_rows = array(
+            7 => $this->db_post(7, 'draft', "Name\0", 'name', 'post', '', "Start\0" . $html . "\0end"),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame('post:7', $second['items'][0]['group']);
+        $content = $second['items'][0]['translations']['en']['content'];
+        $this->assertSame('Start' . $html . 'end', $content);
+        $this->assertSame('Name', $second['items'][0]['translations']['en']['title']);
+        $this->assertStringContainsString('<em>this</em>', $content);
+        $this->assertStringNotContainsString("\0", $content);
+        $this->assertStringNotContainsString("\0", $second['items'][0]['translations']['en']['title']);
+    }
+
+    public function test_instance_export_keeps_html_strips_null_bytes_and_does_not_duplicate_groups()
+    {
+        $exporter = new Polylang_Posts_Fixture();
+        $this->assertTrue(is_callable(array($exporter, 'export')));
+        $html = '<p>Hello <strong>world</strong></p><!--more-->';
+        $exporter->maps = array(
+            array('en' => 7),
+            array('sv' => 8),
+        );
+        $exporter->posts = array(
+            7 => $this->record(
+                7,
+                'post',
+                "Draft\0 title",
+                'draft-title',
+                'draft',
+                "Lead\0 in",
+                "Before\0" . $html . "\0after"
+            ),
+            8 => $this->record(8, 'post', 'Andra', 'andra', 'publish', '', '<p>Oförändrad</p>'),
+        );
+
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertCount(2, $first['items']);
+        $this->assertCount(2, $second['items']);
+        $this->assertSame($first, $second);
+        $this->assertSame(array('post:7', 'post:8'), $this->groups($first));
+        $this->assertSame(array('post:7', 'post:8'), $this->groups($second));
+        $translation = $second['items'][0]['translations']['en'];
+        $this->assertSame('draft', $translation['status']);
+        $this->assertSame('Draft title', $translation['title']);
+        $this->assertSame('Lead in', $translation['excerpt']);
+        $this->assertSame('Before' . $html . 'after', $translation['content']);
+        $this->assertStringContainsString('<p>Hello <strong>world</strong></p>', $translation['content']);
+        $this->assertStringContainsString('<!--more-->', $translation['content']);
+        $this->assertStringNotContainsString("\0", $translation['title']);
+        $this->assertStringNotContainsString("\0", $translation['excerpt']);
+        $this->assertStringNotContainsString("\0", $translation['content']);
+        $this->assertSame('<p>Oförändrad</p>', $second['items'][1]['translations']['sv']['content']);
+    }
+
     public function test_repeated_export_is_identical()
     {
         $exporter = new Polylang_Posts_Fixture();
