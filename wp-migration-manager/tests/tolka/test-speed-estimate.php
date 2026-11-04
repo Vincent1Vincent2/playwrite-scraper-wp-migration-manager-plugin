@@ -461,6 +461,15 @@ class Test_Speed_Estimate extends TestCase
         $word_off = Speed_Estimate::project($measurement_word, $on_metrics, $benchmarks);
         $this->assertSame($off['overhead_ms'], $word_off['overhead_ms']);
         $this->assertSame($off['tolka_ms'], $word_off['tolka_ms']);
+
+        $costly = $benchmarks;
+        $costly['polylang_switcher_ms'] = 100;
+        $still_off = Speed_Estimate::project($measurement, $off_metrics, $costly);
+        $turned_on = Speed_Estimate::project($measurement, $on_metrics, $costly);
+        $this->assertSame($off['overhead_ms'], $still_off['overhead_ms']);
+        $this->assertSame($off['tolka_ms'], $still_off['tolka_ms']);
+        $this->assertSame($off['faster_percent'], $still_off['faster_percent']);
+        $this->assertSame(100, $turned_on['overhead_ms'] - $still_off['overhead_ms']);
     }
 
     public function test_failed_measurement_and_bad_ratio_do_not_invent_a_percent()
