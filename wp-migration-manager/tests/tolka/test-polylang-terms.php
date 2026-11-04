@@ -501,6 +501,40 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(2, $second['items']);
     }
 
+    public function test_a_single_swedish_letter_and_an_empty_name_with_a_parent_are_exported(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(40, 'å', 'ä', 'category', 'sv'),
+            $this->term(41, 'ö', 'ö', 'category', 'sv', 40),
+            $this->term(42, '', 'tomt', 'category', 'sv', 40),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $result = $exporter->export();
+
+        $letter = $this->itemByGroup($result['items'], 'term:40');
+        $this->assertSame('å', $letter['translations']['sv']['name']);
+        $this->assertSame('ä', $letter['translations']['sv']['slug']);
+
+        $oe = $this->itemByGroup($result['items'], 'term:41');
+        $this->assertSame('ö', $oe['translations']['sv']['name']);
+        $this->assertSame('ö', $oe['translations']['sv']['slug']);
+        $this->assertSame(40, $oe['translations']['sv']['parent']);
+
+        $empty = $this->itemByGroup($result['items'], 'term:42');
+        $this->assertSame('', $empty['translations']['sv']['name']);
+        $this->assertSame('tomt', $empty['translations']['sv']['slug']);
+        $this->assertSame(40, $empty['translations']['sv']['parent']);
+        $this->assertCount(3, $result['items']);
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(
