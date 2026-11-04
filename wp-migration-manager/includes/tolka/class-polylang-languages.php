@@ -62,7 +62,8 @@ class Polylang_Languages
      * holds one sentence explaining what the site owner can do next.
      *
      * Languages that have no posts are included. The default language is
-     * listed first. One language on its own is the default. Nothing is written.
+     * listed first. One language on its own is the default. Internal
+     * Polylang slugs such as pll_en are omitted. Nothing is written.
      *
      * @return array
      */
@@ -950,6 +951,9 @@ class Polylang_Languages
             $slug = '';
         }
         $name = $this->plain_name($name);
+        if ($this->is_internal_language_slug($this->normalized_slug($name))) {
+            $name = '';
+        }
         if ($name === '') {
             $name = $slug;
         }
