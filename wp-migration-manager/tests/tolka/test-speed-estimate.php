@@ -805,6 +805,21 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0, $failure['current_ms']);
         $this->assertSame(0.0, $failure['faster_percent']);
         $this->assertSame('', $failure['faster_label']);
+
+        $broken = self::contractBenchmarks();
+        $broken['provenance'] = "bad\xFF";
+        $broken['provenance_note'] = "note\xFE";
+        $safe = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            $metrics,
+            $broken
+        );
+        $this->assertTrue($safe['ok']);
+        $this->assertSame('', $safe['provenance']);
+        $this->assertSame('', $safe['provenance_note']);
+        $this->assertSame(14.4, $safe['faster_percent']);
+        $this->assertNotFalse(json_encode($safe));
+        $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
     }
 
     public function test_zero_coefficients_do_not_invent_a_speedup()
