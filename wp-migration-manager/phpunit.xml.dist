@@ -13,7 +13,7 @@ A skip sentence names the missing class and does not include a path from outside
 The overhead-cap example runs without the estimate class. With 35, 25, 8, 6, and 0.7 it is 465 ms raw, a 70 ms cap, and 78 ms for Tolka.
 Loading the bootstrap a second time is a no-op.
 A missing-class skip is a finished sentence that names the class, and the run still succeeds.
-If ABSPATH is already defined, two loads leave that value unchanged. The cap example stays 465, 70, and 78. A missing-class skip names that class.
+If ABSPATH is already defined, two loads leave that value unchanged. After two bootstrap loads the cap example stays 465, 70, and 78. A missing-class skip names that class and does not include a path from outside the plugin.
 -->
 <phpunit bootstrap="tests/tolka/bootstrap.php" colors="true">
     <testsuites>

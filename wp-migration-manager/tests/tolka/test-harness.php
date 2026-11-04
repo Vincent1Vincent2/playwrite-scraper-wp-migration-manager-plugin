@@ -224,6 +224,25 @@ abstract class Tolka_Test_Case extends TestCase
             $label . ' should end as a sentence: ' . $message
         );
     }
+
+    /**
+     * A skip sentence may name a class. It may not carry a path from outside the plugin.
+     *
+     * @param string $message Skip reason.
+     * @return void
+     */
+    protected function assert_skip_hides_paths_outside_the_plugin($message)
+    {
+        $plugin = rtrim(str_replace('\\', '/', WMM_TOLKA_PLUGIN_DIR), '/');
+        $temp = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/');
+
+        $this->assertStringNotContainsString($plugin . '/', $message);
+        $this->assertStringNotContainsString($temp . '/', $message);
+        $this->assertStringNotContainsString('/tmp/', $message);
+        $this->assertStringNotContainsString('/var/', $message);
+        $this->assertDoesNotMatchRegularExpression('#/(?:[^\\s/:]+/)+#', $message);
+        $this->assertDoesNotMatchRegularExpression('#[A-Za-z]:\\\\#', $message);
+    }
 }
 
 /**
@@ -1248,6 +1267,91 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertStringContainsString('skipped', strtolower($skip));
         $this->assert_finished_sentence($skip, 'kept abspath skip');
         $this->assertStringNotContainsString($sentinel, $skip);
+        $this->assert_skip_hides_paths_outside_the_plugin($skip);
+    }
+
+    /**
+     * Two bootstrap loads leave the cap at 465, 70, and 78.
+     * The skip recorded after those loads names the missing class and drops paths from outside the plugin.
+     */
+    public function test_overhead_stays_465_70_78_after_two_loads_and_skip_hides_outside_paths()
+    {
+        $this->assert_overhead_cap_is_465_70_78();
+
+        $runner_dir = $this->make_temp_dir();
+        $outside = $runner_dir . '/outside-the-plugin/leak.php';
+        $this->assertStringNotContainsString(rtrim(WMM_TOLKA_PLUGIN_DIR, '/'), $outside);
+        $bootstrap = var_export(WMM_TOLKA_TEST_DIR . '/bootstrap.php', true);
+        $resolved = var_export(realpath(WMM_TOLKA_TEST_DIR . '/bootstrap.php'), true);
+        $planted = var_export('Could not read ' . $outside, true);
+        $runner = $runner_dir . '/runner.php';
+        $script = "<?php\n"
+            . "error_reporting(E_ALL);\n"
+            . "ini_set('display_errors', '1');\n"
+            . "set_error_handler(function (\$severity, \$message) {\n"
+            . "    fwrite(STDERR, 'WARN ' . \$message . \"\\n\");\n"
+            . "    return true;\n"
+            . "});\n"
+            . "require $bootstrap;\n"
+            . "require $resolved;\n"
+            . "\$raw = (8 * 35) + 25 + (20 * 8);\n"
+            . "\$cap = (int) floor(100 * 0.7);\n"
+            . "\$overhead = (int) min(\$raw, \$cap);\n"
+            . "\$tolka = (int) max(1, 100 - \$overhead + min(8 * 6, \$overhead));\n"
+            . "echo 'LOADS=2' . \"\\n\";\n"
+            . "echo 'RAW=' . \$raw . \"\\n\";\n"
+            . "echo 'CAP=' . \$cap . \"\\n\";\n"
+            . "echo 'TOLKA=' . \$tolka . \"\\n\";\n"
+            . "echo (is_int(\$raw) && is_int(\$cap) && is_int(\$tolka)) ? \"TYPES=int\\n\" : \"TYPES=other\\n\";\n"
+            . "\$GLOBALS['wmm_tolka_load_errors']['class-after-two-loads.php'] = $planted;\n"
+            . "try {\n"
+            . "    wmm_tolka_skip_without_class('After_Two_Loads');\n"
+            . "    echo \"SKIP=none\\n\";\n"
+            . "} catch (Throwable \$error) {\n"
+            . "    echo 'SKIP=' . str_replace(\"\\n\", ' ', \$error->getMessage()) . \"\\n\";\n"
+            . "}\n"
+            . "\$raw = (8 * 35) + 25 + (20 * 8);\n"
+            . "\$cap = (int) floor(100 * 0.7);\n"
+            . "\$overhead = (int) min(\$raw, \$cap);\n"
+            . "\$tolka = (int) max(1, 100 - \$overhead + min(8 * 6, \$overhead));\n"
+            . "echo 'STILL_RAW=' . \$raw . \"\\n\";\n"
+            . "echo 'STILL_CAP=' . \$cap . \"\\n\";\n"
+            . "echo 'STILL_TOLKA=' . \$tolka . \"\\n\";\n";
+        file_put_contents($runner, $script);
+
+        $output = array();
+        $status = 1;
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' 2>&1', $output, $status);
+        $text = implode("\n", $output);
+
+        $this->assertSame(0, $status, $text);
+        $this->assertStringContainsString('LOADS=2', $text);
+        $this->assertStringContainsString('RAW=465', $text);
+        $this->assertStringContainsString('CAP=70', $text);
+        $this->assertStringContainsString('TOLKA=78', $text);
+        $this->assertStringContainsString('STILL_RAW=465', $text);
+        $this->assertStringContainsString('STILL_CAP=70', $text);
+        $this->assertStringContainsString('STILL_TOLKA=78', $text);
+        $this->assertStringContainsString('TYPES=int', $text);
+        $this->assertStringNotContainsString('WARN', $text);
+        $this->assertStringNotContainsString('Cannot redeclare', $text);
+
+        $skip = '';
+
+        foreach ($output as $line) {
+            if (strpos($line, 'SKIP=') === 0) {
+                $skip = substr($line, strlen('SKIP='));
+            }
+        }
+
+        $this->assertNotSame('', $skip);
+        $this->assertNotSame('none', $skip);
+        $this->assertStringContainsString('WMM\\Tolka\\After_Two_Loads', $skip);
+        $this->assertStringContainsString('skipped', strtolower($skip));
+        $this->assert_finished_sentence($skip, 'after two loads');
+        $this->assertStringNotContainsString($outside, $skip);
+        $this->assertStringNotContainsString($runner_dir, $skip);
+        $this->assert_skip_hides_paths_outside_the_plugin($skip);
     }
 
     /**
