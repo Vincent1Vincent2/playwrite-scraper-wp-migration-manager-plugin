@@ -1003,6 +1003,66 @@ PHP
         $this->assertSame('se', $by_slug['sv']['flag']);
     }
 
+    public function test_a_non_string_default_language_falls_back_to_the_saved_option()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_default_language($field = 'slug')
+{
+    return (object) array('slug' => 'en');
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return array(
+                (object) array(
+                    'term_id' => 4,
+                    'name' => 'English',
+                    'slug' => 'en',
+                    'term_group' => 0,
+                    'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                    'count' => 1,
+                ),
+                (object) array(
+                    'term_id' => 8,
+                    'name' => 'Svenska',
+                    'slug' => 'sv',
+                    'term_group' => 1,
+                    'description' => 'a:2:{s:6:"locale";s:5:"sv_SE";s:9:"flag_code";s:2:"se";}',
+                    'count' => 0,
+                ),
+            );
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return 'a:1:{s:12:"default_lang";s:2:"sv";}';
+    }
+};
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('sv', $result['items'][0]['slug']);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+    }
+
     public function test_broken_default_language_call_falls_back_to_the_saved_option()
     {
         $result = $this->export_isolated(<<<'PHP'
