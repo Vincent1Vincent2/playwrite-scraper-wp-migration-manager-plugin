@@ -73,6 +73,18 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0.7, Speed_Estimate::benchmarks()['max_overhead_ratio']);
         $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
         $this->assertSame(self::PROVENANCE_NOTE, Speed_Estimate::benchmarks()['provenance_note']);
+
+        $mutated = Speed_Estimate::benchmarks();
+        $mutated['polylang_extra_ms_per_language'] = 999;
+        $using_mutated = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $mutated
+        );
+        // raw = 999, cap = floor(1000 * 0.7) = 700, tolka = 1000 - 700 + 6 = 306.
+        $this->assertSame(306, $using_mutated['tolka_ms']);
+        $this->assertSame(69.4, $using_mutated['faster_percent']);
+        $this->assertSame(35, Speed_Estimate::benchmarks()['polylang_extra_ms_per_language']);
     }
 
     public function test_class_has_no_strict_types_and_uses_the_tolka_namespace()
@@ -772,6 +784,18 @@ class Test_Speed_Estimate extends TestCase
             'A Tolka speed estimate is not available. The page at https://example.com/%73tart could not be measured (404).',
             $estimate['error']
         );
+
+        $placeholder = Speed_Estimate::project(
+            array('ok' => false, 'url' => 'https://example.com/%s', 'error' => 'bad %s thing'),
+            array(),
+            self::contractBenchmarks()
+        );
+        $this->assertSame(
+            'A Tolka speed estimate is not available. The page at https://example.com/%s could not be measured. bad %s thing.',
+            $placeholder['error']
+        );
+        $this->assertSame('', $placeholder['faster_label']);
+        $this->assertSame(0.0, $placeholder['faster_percent']);
     }
 
     public function test_missing_or_unusable_load_time_does_not_invent_a_percent()
@@ -951,7 +975,7 @@ class Test_Speed_Estimate extends TestCase
         $empty = Speed_Estimate::project($measurement, $metrics, array());
         $this->assertUnavailable(
             $empty,
-            'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.'
+            'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.'
         );
 
         $only_id = Speed_Estimate::project($measurement, $metrics, array('id' => 'tolka-lab'));
@@ -1079,6 +1103,20 @@ class Test_Speed_Estimate extends TestCase
         $this->assertStringNotContainsString('SECRET_PAGE_MARKUP', (string) json_encode($estimate));
         $this->assertArrayNotHasKey('polylang_extra_ms_per_language', $estimate['coefficients']);
 
+        $listed = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            array(35, 25, 8, 6, 0.7)
+        );
+        $this->assertUnavailable(
+            $listed,
+            'A Tolka speed estimate is not available. The benchmark file is missing numbers for extra milliseconds per language (polylang_extra_ms_per_language), language switcher milliseconds (polylang_switcher_ms), extra milliseconds per script (polylang_extra_ms_per_script), Tolka milliseconds per language (tolka_ms_per_language), and maximum overhead ratio (max_overhead_ratio).'
+        );
+        $this->assertSame(0.0, $listed['faster_percent']);
+        $this->assertSame('', $listed['faster_label']);
+        $this->assertNotSame(856, $listed['tolka_ms']);
+        $this->assertNotSame(14.4, $listed['faster_percent']);
+
         $blank = self::contractBenchmarks();
         $blank['polylang_switcher_ms'] = '   ';
         $blank_estimate = Speed_Estimate::project(
@@ -1191,7 +1229,7 @@ class Test_Speed_Estimate extends TestCase
             );
             $this->assertUnavailable(
                 $estimate,
-                'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.'
+                'A Tolka speed estimate is not available. The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.'
             );
             $this->assertSame(0, $estimate['current_ms']);
             $this->assertSame(0, $estimate['tolka_ms']);
@@ -1300,8 +1338,8 @@ class Test_Speed_Estimate extends TestCase
         $text = implode("\n", $output);
         $this->assertSame(0, $exit_code, $text);
         $this->assertSame(
-            "TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.\n"
-            . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.' . "\n"
+            "TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.\n"
+            . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json. Check that the file exists and that this site can read it.' . "\n"
             . "Measured page load plus coefficients from benchmarks.json\n"
             . "\n"
             . "0\n"
