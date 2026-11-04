@@ -1612,6 +1612,8 @@ function wmm_tolka_fallback_copy()
         'no' => __('No', 'migration-manager'),
         'needUrl' => __('Enter a public site URL to measure. Nothing was changed.', 'migration-manager'),
         'userinfo' => __('That address includes a username or password, so it was not measured. Nothing was changed.', 'migration-manager'),
+        'tooLong' => __('That address is longer than 2000 characters, so it was not measured. Nothing was changed.', 'migration-manager'),
+        'blockedScheme' => __('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'),
         'timeoutMeasure' => __('The speed check took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutPreview' => __('The preview took too long and was stopped. Nothing was changed.', 'migration-manager'),
         'timeoutRun' => __('The migration took too long to answer. Reload this screen before trying again. Polylang data was not deleted.', 'migration-manager'),
@@ -1702,6 +1704,19 @@ function wmm_tolka_fallback_script()
         return authority.indexOf("@") !== -1;
     }
 
+    function blockedMeasureReason(value) {
+        if (value.length > 2000) {
+            return "tooLong";
+        }
+        var compact = value.replace(/[\u0000-\u0020\u007F]/g, "");
+        var match = /^([a-z][a-z0-9+.-]*):/i.exec(compact);
+        var scheme = match ? match[1].toLowerCase() : "";
+        if (scheme === "javascript" || scheme === "data") {
+            return "blockedScheme";
+        }
+        return "";
+    }
+
     function onClick(job) {
         if (active) {
             return;
@@ -1721,6 +1736,15 @@ function wmm_tolka_fallback_script()
             }
             if (urlHasUserinfo(url)) {
                 showError(document.getElementById(job.target), text("userinfo", "That address includes a username or password, so it was not measured. Nothing was changed."));
+                return;
+            }
+            var blocked = blockedMeasureReason(url);
+            if (blocked === "tooLong") {
+                showError(document.getElementById(job.target), text("tooLong", "That address is longer than 2000 characters, so it was not measured. Nothing was changed."));
+                return;
+            }
+            if (blocked) {
+                showError(document.getElementById(job.target), text("blockedScheme", "javascript: and data: addresses are not measured. Nothing was changed."));
                 return;
             }
             body.set("url", url);
