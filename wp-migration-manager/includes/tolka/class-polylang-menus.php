@@ -2776,6 +2776,9 @@ class Polylang_Menus
     /**
      * Non-negative integer. Invalid values become 0.
      *
+     * A null byte in a stored id is removed before the number is read, so a
+     * parent such as "10" still matches its child.
+     *
      * @param mixed $value Raw id or position.
      * @return int
      */
@@ -2789,7 +2792,7 @@ class Polylang_Menus
             return $number > 0 ? $number : 0;
         }
         if (is_string($value)) {
-            $value = trim($value);
+            $value = trim($this->without_null_bytes($value));
             if ($value === '' || ! is_numeric($value)) {
                 return 0;
             }
