@@ -308,6 +308,39 @@ class Migration_Runner
     }
 
     /**
+     * Item count as an integer. This is the full list, not the sample.
+     *
+     * @param array $items
+     * @return int
+     */
+    private static function full_count($items)
+    {
+        return (int) count($items);
+    }
+
+    /**
+     * At most SAMPLE_LIMIT items, in the original order.
+     *
+     * @param array $items
+     * @return array
+     */
+    private static function take_sample($items)
+    {
+        $limit = (int) self::SAMPLE_LIMIT;
+        if ($limit < 1) {
+            return array();
+        }
+        $sample = array();
+        foreach ($items as $item) {
+            if (count($sample) >= $limit) {
+                break;
+            }
+            $sample[] = $item;
+        }
+        return $sample;
+    }
+
+    /**
      * Copy the six envelopes onto a result. Missing classes keep an empty item list.
      *
      * @param array $result
@@ -423,10 +456,10 @@ class Migration_Runner
                 }
             }
 
-            $count = count($items);
+            $count = self::full_count($items);
             $presented = array();
             $labels = array();
-            foreach (array_slice($items, 0, self::SAMPLE_LIMIT) as $item) {
+            foreach (self::take_sample($items) as $item) {
                 $presented[] = self::present_item($item, 0);
                 $labels[] = self::item_label($section, $item);
             }
