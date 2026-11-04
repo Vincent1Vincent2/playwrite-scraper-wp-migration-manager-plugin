@@ -169,11 +169,7 @@ class Polylang_Languages
 
         $items = array();
         foreach ($raw as $language) {
-            $item = $this->item_from_record($language, $default);
-            if ($item['slug'] === '') {
-                continue;
-            }
-            $items[$item['slug']] = $item;
+            $this->add_item($items, $this->item_from_record($language, $default));
         }
 
         return array_values($items);
@@ -214,7 +210,7 @@ class Polylang_Languages
             }
 
             if ($fields_ignored) {
-                $items[$slug] = $this->make_item($slug, '', '', $slug === $default, 0, '');
+                $this->add_item($items, $this->make_item($slug, '', '', $slug === $default, 0, ''));
                 continue;
             }
 
@@ -240,7 +236,7 @@ class Polylang_Languages
                 $term_id = $this->int_value($columns['term_id'][$index]);
             }
 
-            $items[$slug] = $this->make_item($slug, $name, $locale, $is_default, $term_id, $flag);
+            $this->add_item($items, $this->make_item($slug, $name, $locale, $is_default, $term_id, $flag));
         }
 
         return array_values($items);
@@ -259,15 +255,7 @@ class Polylang_Languages
 
         $items = array();
         foreach ($terms as $term) {
-            $item = $this->item_from_language_term($term, $default);
-            if ($item['slug'] === '') {
-                continue;
-            }
-            if (isset($items[$item['slug']])) {
-                $items[$item['slug']] = $this->fill_item($items[$item['slug']], $item);
-                continue;
-            }
-            $items[$item['slug']] = $item;
+            $this->add_item($items, $this->item_from_language_term($term, $default));
         }
 
         $extras = array();
@@ -440,9 +428,10 @@ class Polylang_Languages
     /**
      * Terms for a Polylang taxonomy.
      *
-     * get_terms is used when WordPress can answer. A direct read is the
-     * fallback when Polylang is inactive and the taxonomy is not registered.
-     * Rows that are missing produce an empty list, not an exception.
+     * get_terms is used when WordPress can answer. A direct read is used
+     * when Polylang is inactive, and also to add rows get_terms left out.
+     * A language with no posts can be filtered out of get_terms even when
+     * hide_empty is false. Missing rows produce an empty list, not an exception.
      *
      * @param string $taxonomy language, post_translations, or term_translations.
      * @return array
@@ -454,19 +443,66 @@ class Polylang_Languages
             return array();
         }
 
+        $terms = null;
         if (function_exists('get_terms')) {
-            $terms = get_terms(array(
+            $queried = get_terms(array(
                 'taxonomy' => $taxonomy,
                 'hide_empty' => false,
                 'orderby' => 'term_group',
                 'order' => 'ASC',
             ));
-            if (is_array($terms)) {
-                return $terms;
+            if (is_array($queried)) {
+                $terms = $queried;
             }
         }
 
-        return $this->terms_from_database($taxonomy);
+        $stored = $this->terms_from_database($taxonomy);
+        if ($terms === null) {
+            return $stored;
+        }
+
+        return $this->merge_term_rows($terms, $stored);
+    }
+
+    /**
+     * Add stored rows that get_terms did not return.
+     *
+     * A stored description replaces an empty one for the same slug.
+     *
+     * @param array $primary Rows from get_terms.
+     * @param array $stored Rows from the database.
+     * @return array
+     */
+    private function merge_term_rows($primary, $stored)
+    {
+        $known = array();
+        foreach ($primary as $index => $term) {
+            $slug = $this->string_value($this->read_field($term, 'slug'));
+            if ($slug !== '') {
+                $known[$slug] = $index;
+            }
+        }
+
+        foreach ($stored as $term) {
+            $slug = $this->string_value($this->read_field($term, 'slug'));
+            if ($slug === '') {
+                continue;
+            }
+            if (!isset($known[$slug])) {
+                $primary[] = $term;
+                $known[$slug] = count($primary) - 1;
+                continue;
+            }
+
+            $index = $known[$slug];
+            $current = $this->string_value($this->read_field($primary[$index], 'description'));
+            $incoming = $this->string_value($this->read_field($term, 'description'));
+            if ($current === '' && $incoming !== '') {
+                $primary[$index] = $term;
+            }
+        }
+
+        return $primary;
     }
 
     /**
@@ -544,6 +580,28 @@ class Polylang_Languages
     }
 
     /**
+     * Keep the first row for a slug and fill blanks from a later duplicate.
+     *
+     * @param array $items Rows keyed by slug.
+     * @param array $item Row to add.
+     * @return void
+     */
+    private function add_item(&$items, $item)
+    {
+        if (!is_array($item) || !isset($item['slug']) || $item['slug'] === '') {
+            return;
+        }
+
+        $slug = $item['slug'];
+        if (isset($items[$slug])) {
+            $items[$slug] = $this->fill_item($items[$slug], $item);
+            return;
+        }
+
+        $items[$slug] = $item;
+    }
+
+    /**
      * Prefer API rows, then fill blanks from stored terms.
      *
      * @param array $primary Rows that should keep their order.
@@ -608,13 +666,18 @@ class Polylang_Languages
             $preferred['flag'] = $fallback['flag'];
         }
 
+        if ($fallback['is_default'] === true) {
+            $preferred['is_default'] = true;
+        }
+
         return $preferred;
     }
 
     /**
      * Mark the configured default language.
      *
-     * A default slug that has no language row is not invented. One language
+     * A default slug that has no language row is not invented. Matching
+     * ignores case, so a saved value of "NO" still marks "no". One language
      * on its own is the default when Polylang did not record a choice.
      *
      * @param array $items Language rows.
@@ -628,8 +691,15 @@ class Polylang_Languages
         }
 
         if ($default !== '') {
+            $canonical = '';
+            foreach ($items as $item) {
+                if (strcasecmp($item['slug'], $default) === 0) {
+                    $canonical = $item['slug'];
+                    break;
+                }
+            }
             foreach ($items as $index => $item) {
-                $items[$index]['is_default'] = ($item['slug'] === $default);
+                $items[$index]['is_default'] = ($canonical !== '' && $item['slug'] === $canonical);
             }
             return array_values($items);
         }
@@ -795,31 +865,30 @@ class Polylang_Languages
             return is_array($decoded) ? $decoded : array();
         }
 
-        if (function_exists('maybe_unserialize')) {
-            $decoded = maybe_unserialize($value);
-            if (is_array($decoded)) {
-                return $decoded;
-            }
-            if (is_string($decoded) && $decoded !== $value) {
-                return $this->decode_stored_array($decoded, $depth + 1);
-            }
+        // Do not use maybe_unserialize(). It can create objects from a
+        // description. Only arrays and strings are accepted here.
+        if (strpos($value, 'a:') !== 0 && strpos($value, 's:') !== 0) {
             return array();
         }
 
-        if (strpos($value, 'a:') !== 0) {
-            return array();
+        $decoded = $this->unserialize_value($value);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+        if (is_string($decoded)) {
+            return $this->decode_stored_array($decoded, $depth + 1);
         }
 
-        return $this->unserialize_array($value);
+        return array();
     }
 
     /**
-     * Unserialize an array without creating objects.
+     * Unserialize without creating objects.
      *
-     * @param string $value Serialized array.
-     * @return array
+     * @param string $value Serialized value.
+     * @return mixed
      */
-    private function unserialize_array($value)
+    private function unserialize_value($value)
     {
         $decoded = false;
         set_error_handler(function () {
@@ -834,7 +903,7 @@ class Polylang_Languages
             restore_error_handler();
         }
 
-        return is_array($decoded) ? $decoded : array();
+        return $decoded;
     }
 
     /**
@@ -1074,9 +1143,9 @@ class Polylang_Languages
     private function message_failed()
     {
         if (!function_exists('__')) {
-            return 'Polylang languages could not be read. Nothing was changed. Preview the migration again once Polylang has finished loading.';
+            return 'Polylang languages could not be read. Nothing was changed. Preview the migration again.';
         }
 
-        return __('Polylang languages could not be read. Nothing was changed. Preview the migration again once Polylang has finished loading.', 'migration-manager');
+        return __('Polylang languages could not be read. Nothing was changed. Preview the migration again.', 'migration-manager');
     }
 }
