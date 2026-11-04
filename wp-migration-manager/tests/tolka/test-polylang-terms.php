@@ -69,7 +69,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Polylang is not active, so there are no term translations to migrate.'),
+            array('Polylang is not active. Term translations were not exported.'),
             $result['errors']
         );
         $this->assertSame(array('items', 'errors'), array_keys($result));
@@ -86,7 +86,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Polylang is not active, so there are no term translations to migrate.'),
+            array('Polylang is not active. Term translations were not exported.'),
             $result['errors']
         );
     }
@@ -99,7 +99,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
@@ -114,7 +114,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
@@ -141,7 +141,7 @@ class Polylang_Terms_Test extends TestCase
                 array(
                     'taxonomy' => 'category',
                     'translations' => array(
-                        'en' => array('id' => '10', 'name' => 'News', 'slug' => 'news'),
+                        'en' => array('id' => '10', 'name' => 'News', 'slug' => 'news', 'description' => 'Latest'),
                         'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter'),
                     ),
                 ),
@@ -154,13 +154,13 @@ class Polylang_Terms_Test extends TestCase
                 'taxonomy' => 'category',
                 'group' => 'term:4',
                 'translations' => array(
-                    'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter', 'parent' => 0),
-                    'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'parent' => 0),
+                    'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter', 'description' => '', 'parent' => 0),
+                    'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'description' => 'Latest', 'parent' => 0),
                 ),
             ),
         ), $result['items']);
         $this->assertSame(array('taxonomy', 'group', 'translations'), array_keys($result['items'][0]));
-        $this->assertSame(array('id', 'name', 'slug', 'parent'), array_keys($result['items'][0]['translations']['sv']));
+        $this->assertSame(array('id', 'name', 'slug', 'description', 'parent'), array_keys($result['items'][0]['translations']['sv']));
     }
 
     public function test_group_without_the_default_language_uses_the_lowest_term_id(): void
@@ -181,11 +181,15 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame('term:12', $result['items'][0]['group']);
         $this->assertSame(
-            array('id' => 30, 'name' => '', 'slug' => '', 'parent' => 0),
+            array('id' => 30, 'name' => '', 'slug' => '', 'description' => '', 'parent' => 0),
             $result['items'][0]['translations']['de']
         );
         $this->assertSame(9, $result['items'][0]['translations']['fr']['parent']);
         $this->assertSame(array('de', 'fr'), array_keys($result['items'][0]['translations']));
+        $this->assertContains(
+            'Translation group term:12 does not include the default language (en). The group is named after term 12.',
+            $result['errors']
+        );
     }
 
     public function test_a_single_language_group_is_kept(): void
@@ -328,7 +332,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array('term:10', 'term:12'), $this->groupIds($result['items']));
         $this->assertArrayNotHasKey('fr', $result['items'][1]['translations']);
         $this->assertSame(
-            array('A term is listed in more than one translation group. The extra copy was skipped.'),
+            array('Term 11 belongs to more than one translation group. The extra copy was skipped.'),
             $result['errors']
         );
     }
@@ -394,6 +398,25 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame("Children's books", $result['items'][0]['translations']['en']['name']);
     }
 
+    public function test_null_bytes_are_removed_from_term_text(): void
+    {
+        $result = $this->exportSnapshot(array(
+            'state' => 'ok',
+            'default_lang' => 'en',
+            'groups' => array(
+                array(
+                    'taxonomy' => 'category',
+                    'translations' => array(
+                        'en' => array('id' => 9, 'name' => "News\0", 'slug' => "news\0"),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame('News', $result['items'][0]['translations']['en']['name']);
+        $this->assertSame('news', $result['items'][0]['translations']['en']['slug']);
+    }
+
     public function test_storage_reads_groups_untranslated_terms_and_skips_bad_rows(): void
     {
         if (!$this->canUseDatabaseStub()) {
@@ -411,7 +434,7 @@ class Polylang_Terms_Test extends TestCase
             serialize(array('en' => 70)),
         );
         $database->catalog = array(
-            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(10, 'News', 'news', 'category', 'en', 0, 'Latest news'),
             $this->term(11, 'Nachrichten', 'nachrichten', 'category', 'de', 6),
             $this->term(15, 'Child', 'child', 'category', 'en', 10),
             $this->term(12, 'Actualités', 'actualites', 'product_cat', 'fr'),
@@ -438,8 +461,8 @@ class Polylang_Terms_Test extends TestCase
         $news = $this->itemByGroup($result['items'], 'term:10');
         $this->assertSame('category', $news['taxonomy']);
         $this->assertSame(array(
-            'de' => array('id' => 11, 'name' => 'Nachrichten', 'slug' => 'nachrichten', 'parent' => 6),
-            'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'parent' => 0),
+            'de' => array('id' => 11, 'name' => 'Nachrichten', 'slug' => 'nachrichten', 'description' => '', 'parent' => 6),
+            'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'description' => 'Latest news', 'parent' => 0),
         ), $news['translations']);
 
         $product = $this->itemByGroup($result['items'], 'term:12');
@@ -448,7 +471,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame('Actualités', $product['translations']['fr']['name']);
 
         $single = $this->itemByGroup($result['items'], 'term:21');
-        $this->assertSame(array('sv' => array('id' => 21, 'name' => 'Ensam', 'slug' => 'ensam', 'parent' => 0)), $single['translations']);
+        $this->assertSame(array('sv' => array('id' => 21, 'name' => 'Ensam', 'slug' => 'ensam', 'description' => '', 'parent' => 0)), $single['translations']);
 
         $alpha = $this->itemByGroup($result['items'], 'term:30');
         $this->assertSame(array('en'), array_keys($alpha['translations']));
@@ -479,14 +502,23 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(503, $postTags);
         $this->assertCount(509, $result['items']);
 
-        $this->assertContains('A term translation group could not be read and was skipped.', $result['errors']);
-        $this->assertContains('A translated term no longer exists and was skipped.', $result['errors']);
-        $this->assertContains('A translated term belongs to a different taxonomy and was skipped.', $result['errors']);
+        $this->assertContains(
+            'A term translation group could not be read because its stored description is invalid. That group was skipped.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 99999 was listed in a translation group, but that term no longer exists. It was left out of the export.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 31 belongs to post_tag, so it was left out of the category translation group.',
+            $result['errors']
+        );
         $this->assertContains(
             'A term has no Polylang language. It is included with a blank language so it is not dropped.',
             $result['errors']
         );
-        $this->assertNotContains('Polylang is not active, so there are no term translations to migrate.', $result['errors']);
+        $this->assertNotContains('Polylang is not active. Term translations were not exported.', $result['errors']);
     }
 
     public function test_language_rows_count_as_polylang_when_no_groups_exist_yet(): void
@@ -509,6 +541,42 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_large_translation_groups_are_read_in_batches(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $map = array();
+        for ($i = 1; $i <= 501; $i++) {
+            $map['l' . $i] = 4000 + $i;
+        }
+        $database->descriptions = array(serialize($map));
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+
+        $batches = 0;
+        foreach ($database->queries as $sql) {
+            if (strpos($sql, ' IN (') !== false) {
+                $batches++;
+            }
+        }
+
+        $this->assertSame(2, $batches);
+        $this->assertSame(array(), $result['items']);
+        $this->assertStringContainsString(
+            'Term 4001 was listed in a translation group',
+            implode("\n", $result['errors'])
+        );
+        $this->assertContains(
+            '481 more term problems were left out of this list so it stays readable.',
+            $result['errors']
+        );
+        $this->assertCount(21, $result['errors']);
+    }
+
     public function test_a_database_failure_is_a_sentence_and_not_a_fatal(): void
     {
         if (!$this->canUseDatabaseStub()) {
@@ -523,7 +591,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
@@ -629,7 +697,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
@@ -701,7 +769,7 @@ class Polylang_Terms_Test extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function term($id, $name, $slug, $taxonomy, $lang, $parent = 0)
+    private function term($id, $name, $slug, $taxonomy, $lang, $parent = 0, $description = '')
     {
         return array(
             'id' => $id,
@@ -710,6 +778,7 @@ class Polylang_Terms_Test extends TestCase
             'taxonomy' => $taxonomy,
             'lang' => $lang,
             'parent' => $parent,
+            'description' => $description,
         );
     }
 
@@ -928,6 +997,7 @@ class Polylang_Terms_Database
             'slug' => $term['slug'],
             'taxonomy' => $term['taxonomy'],
             'parent' => isset($term['parent']) ? (int) $term['parent'] : 0,
+            'description' => isset($term['description']) ? $term['description'] : '',
         );
     }
 }

@@ -46,7 +46,8 @@ class Polylang_Terms
      * Export term translation groups and terms Polylang never linked.
      *
      * Each item has taxonomy, group (`term:{id}`), and translations.
-     * A translation is keyed by language slug and has id, name, slug, and parent.
+     * A translation is keyed by language slug and has id, name, slug, description, and parent.
+     * description is the term description in that language.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
      * The group id is the default-language term when that translation exists,
      * otherwise the lowest term id in the group.
@@ -61,7 +62,7 @@ class Polylang_Terms
         } catch (\Throwable $e) {
             return array(
                 'items' => array(),
-                'errors' => array($this->text('Term translations could not be read. Existing Polylang data was left unchanged.')),
+                'errors' => array($this->failureSentence()),
             );
         }
     }
@@ -131,14 +132,23 @@ class Polylang_Terms
 
         $items = array();
         $used = array();
-        $duplicate = false;
+        $duplicateIds = array();
         $unassigned = 0;
         $groups = isset($snapshot['groups']) && is_array($snapshot['groups']) ? $snapshot['groups'] : array();
 
         foreach ($groups as $group) {
-            $item = $this->itemFromGroup($group, $default, $used, $duplicate);
-            if ($item !== null) {
-                $items[] = $item;
+            $item = $this->itemFromGroup($group, $default, $used, $duplicateIds);
+            if ($item === null) {
+                continue;
+            }
+            $items[] = $item;
+            if ($default !== '' && !isset($item['translations'][$default]) && count($item['translations']) > 1) {
+                $errors[] = sprintf(
+                    $this->text('Translation group %1$s does not include the default language (%2$s). The group is named after term %3$d.'),
+                    $item['group'],
+                    $default,
+                    $this->groupNumber($item['group'])
+                );
             }
         }
 
@@ -150,9 +160,14 @@ class Polylang_Terms
             }
         }
 
-        if ($duplicate) {
-            $errors[] = $this->text('A term is listed in more than one translation group. The extra copy was skipped.');
+        $duplicateSentences = array();
+        foreach ($duplicateIds as $duplicateId) {
+            $duplicateSentences[] = sprintf(
+                $this->text('Term %d belongs to more than one translation group. The extra copy was skipped.'),
+                (int) $duplicateId
+            );
         }
+        $this->appendCapped($errors, $duplicateSentences);
         if ($unassigned > 0 && $assignKind === 'default') {
             $errors[] = $this->unassignedSentence($unassigned, $assignLanguage, 'default');
         } elseif ($unassigned > 0 && $assignKind === 'stored') {
@@ -166,10 +181,10 @@ class Polylang_Terms
         }
 
         if ($items === array() && $state === 'inactive') {
-            $errors[] = $this->text('Polylang is not active, so there are no term translations to migrate.');
+            $errors[] = $this->inactiveSentence();
         }
         if ($items === array() && $state === 'failed') {
-            $errors[] = $this->text('Term translations could not be read. Existing Polylang data was left unchanged.');
+            $errors[] = $this->failureSentence();
         }
 
         usort($items, function ($left, $right) {
@@ -188,7 +203,7 @@ class Polylang_Terms
      * @param bool $duplicate
      * @return array<string, mixed>|null
      */
-    private function itemFromGroup($group, $default, array &$used, &$duplicate)
+    private function itemFromGroup($group, $default, array &$used, array &$duplicateIds)
     {
         if (!is_array($group)) {
             return null;
@@ -210,7 +225,7 @@ class Polylang_Terms
                 continue;
             }
             if (isset($translations[$key]) || isset($used[$normalized['id']]) || isset($seenHere[$normalized['id']])) {
-                $duplicate = true;
+                $duplicateIds[$normalized['id']] = (int) $normalized['id'];
                 continue;
             }
             $seenHere[$normalized['id']] = true;
@@ -275,6 +290,7 @@ class Polylang_Terms
                     'id' => $id,
                     'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
                     'slug' => $this->stringValue(isset($term['slug']) ? $term['slug'] : ''),
+                    'description' => $this->stringValue(isset($term['description']) ? $term['description'] : ''),
                     'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
                 ),
             ),
@@ -294,7 +310,7 @@ class Polylang_Terms
 
         $errors = array();
         if (!empty($listed['failed'])) {
-            $errors[] = $this->text('Some terms could not be listed and were skipped.');
+            $errors[] = $this->listFailureSentence($listed['failed']);
         }
 
         $index = array();
@@ -306,8 +322,8 @@ class Polylang_Terms
         $groupedIds = array();
         $seenMaps = array();
         $apiFailures = 0;
-        $missing = 0;
-        $mismatched = 0;
+        $missing = array();
+        $mismatched = array();
 
         foreach ($listed['terms'] as $term) {
             $termId = (int) $term['id'];
@@ -352,24 +368,11 @@ class Polylang_Terms
             if ($built['group'] !== null) {
                 $groups[] = $built['group'];
             }
-            $missing += $built['missing'];
-            $mismatched += $built['mismatched'];
+            $missing = array_merge($missing, $built['missing']);
+            $mismatched = array_merge($mismatched, $built['mismatched']);
         }
 
-        if ($missing > 0) {
-            $errors[] = $this->countSentence(
-                $missing,
-                'A translated term no longer exists and was skipped.',
-                '%d translated terms no longer exist and were skipped.'
-            );
-        }
-        if ($mismatched > 0) {
-            $errors[] = $this->countSentence(
-                $mismatched,
-                'A translated term belongs to a different taxonomy and was skipped.',
-                '%d translated terms belong to a different taxonomy and were skipped.'
-            );
-        }
+        $this->appendTermProblems($errors, $missing, $mismatched);
         if ($apiFailures > 0) {
             $errors[] = $this->countSentence(
                 $apiFailures,
@@ -399,6 +402,7 @@ class Polylang_Terms
                 'id' => $termId,
                 'name' => $term['name'],
                 'slug' => $term['slug'],
+                'description' => isset($term['description']) ? $term['description'] : '',
                 'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
             );
         }
@@ -417,19 +421,20 @@ class Polylang_Terms
      * @param array<string, int> $clean
      * @param array<int, array<string, mixed>> $index
      * @param array<int, bool> $groupedIds
-     * @return array{group: array<string, mixed>|null, missing: int, mismatched: int}
+     * @param bool $authoritativeIndex
+     * @return array{group: array<string, mixed>|null, missing: array<int, int>, mismatched: array<int, array<string, mixed>>}
      */
-    private function translationsFromMap($clean, $fallbackTaxonomy, array $index, array &$groupedIds)
+    private function translationsFromMap($clean, $fallbackTaxonomy, array $index, array &$groupedIds, $authoritativeIndex = false)
     {
         $translations = array();
         $taxonomy = is_string($fallbackTaxonomy) ? $fallbackTaxonomy : '';
-        $missing = 0;
-        $mismatched = 0;
+        $missing = array();
+        $mismatched = array();
 
         foreach ($clean as $lang => $translatedId) {
-            $details = $this->detailsForId($translatedId, $index);
+            $details = $this->detailsForId($translatedId, $index, $authoritativeIndex);
             if ($details === null) {
-                $missing++;
+                $missing[] = $translatedId;
                 continue;
             }
             if ($this->isInternalTaxonomy($details['taxonomy'])) {
@@ -439,7 +444,11 @@ class Polylang_Terms
             if ($taxonomy === '') {
                 $taxonomy = $details['taxonomy'];
             } elseif ($details['taxonomy'] !== $taxonomy) {
-                $mismatched++;
+                $mismatched[] = array(
+                    'id' => $translatedId,
+                    'taxonomy' => $details['taxonomy'],
+                    'group_taxonomy' => $taxonomy,
+                );
                 $groupedIds[$translatedId] = true;
                 continue;
             }
@@ -448,6 +457,7 @@ class Polylang_Terms
                 'id' => $translatedId,
                 'name' => $details['name'],
                 'slug' => $details['slug'],
+                'description' => isset($details['description']) ? $details['description'] : '',
                 'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
             );
         }
@@ -508,11 +518,12 @@ class Polylang_Terms
             }
         }
 
-        if ($corrupt > 0) {
-            $errors[] = $this->countSentence(
-                $corrupt,
-                'A term translation group could not be read and was skipped.',
-                '%d term translation groups could not be read and were skipped.'
+        if ($corrupt === 1) {
+            $errors[] = $this->text('A term translation group could not be read because its stored description is invalid. That group was skipped.');
+        } elseif ($corrupt > 1) {
+            $errors[] = sprintf(
+                $this->text('%d term translation groups could not be read because their stored descriptions are invalid. Those groups were skipped.'),
+                $corrupt
             );
         }
 
@@ -544,32 +555,19 @@ class Polylang_Terms
 
         $groups = array();
         $groupedIds = array();
-        $missing = 0;
-        $mismatched = 0;
+        $missing = array();
+        $mismatched = array();
         foreach ($decodedGroups as $clean) {
-            $built = $this->translationsFromMap($clean, '', $details, $groupedIds);
-            $missing += $built['missing'];
-            $mismatched += $built['mismatched'];
+            $built = $this->translationsFromMap($clean, '', $details, $groupedIds, true);
+            $missing = array_merge($missing, $built['missing']);
+            $mismatched = array_merge($mismatched, $built['mismatched']);
             if ($built['group'] === null) {
                 continue;
             }
             $groups[] = $built['group'];
             $taxonomies[$built['group']['taxonomy']] = $built['group']['taxonomy'];
         }
-        if ($missing > 0) {
-            $errors[] = $this->countSentence(
-                $missing,
-                'A translated term no longer exists and was skipped.',
-                '%d translated terms no longer exist and were skipped.'
-            );
-        }
-        if ($mismatched > 0) {
-            $errors[] = $this->countSentence(
-                $mismatched,
-                'A translated term belongs to a different taxonomy and was skipped.',
-                '%d translated terms belong to a different taxonomy and were skipped.'
-            );
-        }
+        $this->appendTermProblems($errors, $missing, $mismatched);
 
         $untranslated = array();
         if ($evidence) {
@@ -580,7 +578,10 @@ class Polylang_Terms
                 }
                 $rows = $this->fetchTermsForTaxonomy($taxonomy);
                 if ($rows === null) {
-                    $errors[] = $this->text('Some terms could not be listed and were skipped.');
+                    $errors[] = sprintf(
+                        $this->text('The %s terms could not be listed and were skipped.'),
+                        $taxonomy
+                    );
                     continue;
                 }
                 foreach ($rows as $term) {
@@ -594,6 +595,7 @@ class Polylang_Terms
                         'id' => $termId,
                         'name' => $term['name'],
                         'slug' => $term['slug'],
+                        'description' => isset($term['description']) ? $term['description'] : '',
                         'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
                     );
                 }
@@ -619,7 +621,7 @@ class Polylang_Terms
      * @param array<int, array<string, mixed>> $index
      * @return array<string, mixed>|null
      */
-    private function detailsForId($id, array $index)
+    private function detailsForId($id, array $index, $authoritativeIndex = false)
     {
         $id = (int) $id;
         if ($id <= 0) {
@@ -627,6 +629,9 @@ class Polylang_Terms
         }
         if (isset($index[$id])) {
             return $index[$id];
+        }
+        if ($authoritativeIndex) {
+            return null;
         }
         if (function_exists('get_term')) {
             try {
@@ -654,13 +659,13 @@ class Polylang_Terms
     }
 
     /**
-     * @return array{terms: array<int, array<string, mixed>>, failed: int}|null
+     * @return array{terms: array<int, array<string, mixed>>, failed: array<int, string>}|null
      */
     private function listTerms(array $taxonomies)
     {
         $terms = array();
         $seen = array();
-        $failed = 0;
+        $failed = array();
         $queried = 0;
 
         foreach ($taxonomies as $taxonomy) {
@@ -670,7 +675,7 @@ class Polylang_Terms
             $queried++;
             $batch = $this->listTaxonomyTerms($taxonomy);
             if ($batch === null) {
-                $failed++;
+                $failed[] = $taxonomy;
                 continue;
             }
             foreach ($batch as $term) {
@@ -682,7 +687,7 @@ class Polylang_Terms
             }
         }
 
-        if ($queried > 0 && $failed === $queried) {
+        if ($queried > 0 && count($failed) === $queried) {
             return null;
         }
 
@@ -996,19 +1001,38 @@ class Polylang_Terms
             return array();
         }
 
+        $all = array();
+        foreach (array_chunk($clean, $this->pageSize) as $chunk) {
+            $rows = $this->fetchTermChunk($chunk);
+            if ($rows === null) {
+                return null;
+            }
+            foreach ($rows as $row) {
+                $all[] = $row;
+            }
+        }
+        return $all;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function fetchTermChunk(array $ids)
+    {
         $terms = $this->table('terms');
         $taxonomy = $this->table('term_taxonomy');
-        if ($terms === '' || $taxonomy === '') {
+        if ($terms === '' || $taxonomy === '' || $ids === array()) {
             return null;
         }
 
-        $placeholders = implode(', ', array_fill(0, count($clean), '%d'));
-        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent
+        $placeholders = implode(', ', array_fill(0, count($ids), '%d'));
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent, tt.description
             FROM {$terms} AS t
             INNER JOIN {$taxonomy} AS tt ON tt.term_id = t.term_id
             WHERE t.term_id IN ({$placeholders})";
 
-        return $this->dbResults($sql, $clean);
+        return $this->dbResults($sql, $ids);
     }
 
     /**
@@ -1029,7 +1053,7 @@ class Polylang_Terms
         $all = array();
         $seen = array();
         $guard = 0;
-        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent, tt.description
             FROM {$terms} AS t
             INNER JOIN {$taxonomyTable} AS tt ON tt.term_id = t.term_id
             WHERE tt.taxonomy = %s
@@ -1232,6 +1256,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term->name) ? $term->name : '');
             $slug = $this->stringValue(isset($term->slug) ? $term->slug : '');
             $taxonomy = $this->stringValue(isset($term->taxonomy) ? $term->taxonomy : '');
+            $description = $this->stringValue(isset($term->description) ? $term->description : '');
             $parent = $this->parentId(isset($term->parent) ? $term->parent : 0);
         } elseif (is_array($term)) {
             if (isset($term['term_id'])) {
@@ -1244,6 +1269,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term['name']) ? $term['name'] : '');
             $slug = $this->stringValue(isset($term['slug']) ? $term['slug'] : '');
             $taxonomy = $this->stringValue(isset($term['taxonomy']) ? $term['taxonomy'] : '');
+            $description = $this->stringValue(isset($term['description']) ? $term['description'] : '');
             $parent = $this->parentId(isset($term['parent']) ? $term['parent'] : 0);
         } else {
             return null;
@@ -1261,6 +1287,7 @@ class Polylang_Terms
             'name' => $name,
             'slug' => $slug,
             'taxonomy' => $taxonomy,
+            'description' => $description,
             'parent' => $parent,
         );
     }
@@ -1275,11 +1302,13 @@ class Polylang_Terms
             $id = isset($row['id']) ? (int) $row['id'] : 0;
             $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
             $slug = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
+            $description = $this->stringValue(isset($row['description']) ? $row['description'] : '');
             $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
         } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
             $id = (int) $row;
             $name = '';
             $slug = '';
+            $description = '';
             $parent = 0;
         } else {
             return null;
@@ -1291,6 +1320,7 @@ class Polylang_Terms
             'id' => $id,
             'name' => $name,
             'slug' => $slug,
+            'description' => $description,
             'parent' => $parent,
         );
     }
@@ -1477,7 +1507,108 @@ class Polylang_Terms
     }
 
     /**
+     * @return string
+     */
+    private function inactiveSentence()
+    {
+        return $this->text('Polylang is not active. Term translations were not exported.');
+    }
+
+    /**
+     * @return string
+     */
+    private function failureSentence()
+    {
+        return $this->text('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.');
+    }
+
+    /**
+     * @param array<int, string> $errors
+     * @param array<int, int> $missing
+     * @param array<int, array<string, mixed>> $mismatched
+     * @return void
+     */
+    private function appendTermProblems(array &$errors, array $missing, array $mismatched)
+    {
+        $sentences = array();
+        foreach ($missing as $id) {
+            $sentences[] = sprintf(
+                $this->text('Term %d was listed in a translation group, but that term no longer exists. It was left out of the export.'),
+                (int) $id
+            );
+        }
+        foreach ($mismatched as $row) {
+            if (!is_array($row) || empty($row['id'])) {
+                continue;
+            }
+            $taxonomy = isset($row['taxonomy']) ? $this->stringValue($row['taxonomy']) : '';
+            $groupTaxonomy = isset($row['group_taxonomy']) ? $this->stringValue($row['group_taxonomy']) : '';
+            if ($groupTaxonomy === '') {
+                $groupTaxonomy = 'term';
+            }
+            $sentences[] = sprintf(
+                $this->text('Term %1$d belongs to %2$s, so it was left out of the %3$s translation group.'),
+                (int) $row['id'],
+                $taxonomy !== '' ? $taxonomy : 'another taxonomy',
+                $groupTaxonomy
+            );
+        }
+        $this->appendCapped($errors, $sentences);
+    }
+
+    /**
+     * Keep the wizard readable when hundreds of terms have the same kind of problem.
+     *
+     * @param array<int, string> $errors
+     * @param array<int, string> $sentences
+     * @return void
+     */
+    private function appendCapped(array &$errors, array $sentences)
+    {
+        $limit = 20;
+        $count = count($sentences);
+        $shown = 0;
+        foreach ($sentences as $sentence) {
+            if ($shown >= $limit) {
+                break;
+            }
+            $errors[] = $sentence;
+            $shown++;
+        }
+        if ($count > $limit) {
+            $errors[] = sprintf(
+                $this->text('%d more term problems were left out of this list so it stays readable.'),
+                $count - $limit
+            );
+        }
+    }
+
+    /**
+     * @param array<int, string> $taxonomies
+     * @return string
+     */
+    private function listFailureSentence(array $taxonomies)
+    {
+        $names = array();
+        foreach ($taxonomies as $taxonomy) {
+            if (is_string($taxonomy) && $taxonomy !== '' && !isset($names[$taxonomy])) {
+                $names[$taxonomy] = $taxonomy;
+            }
+        }
+        $names = array_values($names);
+        if (count($names) === 1) {
+            return sprintf($this->text('The %s terms could not be listed and were skipped.'), $names[0]);
+        }
+        return sprintf(
+            $this->text('Terms in these taxonomies could not be listed and were skipped: %s.'),
+            implode(', ', $names)
+        );
+    }
+
+    /**
      * @param int $count
+     * @param string $language
+     * @param string $kind
      * @return string
      */
     private function unassignedSentence($count, $language, $kind)
@@ -1627,10 +1758,10 @@ class Polylang_Terms
     private function stringValue($value)
     {
         if (is_string($value)) {
-            return $value;
+            return str_replace("\0", '', $value);
         }
         if (is_int($value) || is_float($value)) {
-            return (string) $value;
+            return str_replace("\0", '', (string) $value);
         }
         return '';
     }
