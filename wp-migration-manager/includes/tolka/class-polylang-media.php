@@ -1,0 +1,1727 @@
+<?php
+
+/**
+ * Export Polylang media for the Tolka migration.
+ *
+ * Translated media is a group of attachment posts that share one file.
+ * Alt text and titles are stored on each attachment. This class only reads
+ * that data. It does not delete Polylang rows, options, files, or meta.
+ *
+ * @package MigrationManager
+ */
+
+namespace WMM\Tolka;
+
+if (!defined('ABSPATH') && PHP_SAPI !== 'cli' && PHP_SAPI !== 'phpdbg') {
+    exit;
+}
+
+/**
+ * Reads Polylang attachment translations into migration items.
+ */
+class Polylang_Media
+{
+    /**
+     * Preferred language order for one export() call.
+     *
+     * @var array|null
+     */
+    private $language_order = null;
+
+    /**
+     * Export media translation groups.
+     *
+     * Each item is one group: the default-language attachment when that
+     * translation exists, the shared file, and alt and title maps keyed by
+     * language slug. An attachment that has a language but no translated
+     * copies is its own item.
+     *
+     * @return array
+     */
+    public function export()
+    {
+        $this->language_order = null;
+
+        try {
+            if (!$this->polylang_is_present()) {
+                return $this->envelope(array(), array(
+                    $this->text('Polylang is not active on this site, so media could not be read.'),
+                ));
+            }
+
+            $read = $this->read_library();
+            if (!is_array($read)) {
+                return $this->envelope(array(), array(
+                    $this->text('Media could not be read from this site. Nothing was changed.'),
+                ));
+            }
+
+            $parts = $this->items_from_parts(
+                isset($read['translation_rows']) ? $read['translation_rows'] : array(),
+                isset($read['language_rows']) ? $read['language_rows'] : array(),
+                isset($read['attachment_ids']) ? $read['attachment_ids'] : array(),
+                isset($read['known_languages']) ? $read['known_languages'] : array(),
+                isset($read['default_lang']) ? $read['default_lang'] : '',
+                isset($read['records']) ? $read['records'] : null
+            );
+        } catch (\Throwable $e) {
+            return $this->envelope(array(), array(
+                $this->text('Media could not be read from this site. Nothing was changed.'),
+            ));
+        }
+
+        $skipped = (int) $parts['skipped'] + (isset($read['skipped']) ? (int) $read['skipped'] : 0);
+        return $this->envelope($parts['items'], $this->messages_for($skipped));
+    }
+
+    /**
+     * @param int $skipped
+     * @return array
+     */
+    private function messages_for($skipped)
+    {
+        if ((int) $skipped <= 0) {
+            return array();
+        }
+
+        return array(
+            $this->text('Some media could not be read and were left out of this export. Nothing was changed.'),
+        );
+    }
+
+    /**
+     * Build export items from already loaded Polylang rows.
+     *
+     * Records may be null when titles and file meta should be loaded here.
+     *
+     * @param array $translation_rows
+     * @param array $language_rows
+     * @param array $attachment_ids
+     * @param array $known_languages
+     * @param string $default_lang
+     * @param array|null $records
+     * @return array
+     */
+    private function items_from_parts($translation_rows, $language_rows, $attachment_ids, $known_languages, $default_lang, $records)
+    {
+        $built = $this->groups_from_rows($translation_rows, $language_rows, $attachment_ids, $known_languages);
+        if (!is_array($records)) {
+            $records = $this->records_for($this->ids_in_groups($built['groups']));
+        }
+
+        return array(
+            'items' => $this->assemble_items($built['groups'], $default_lang, $records),
+            'skipped' => (int) $built['skipped'],
+            'seen' => $built['seen'],
+        );
+    }
+
+    /**
+     * @param array $items
+     * @param array $errors
+     * @return array
+     */
+    private function envelope($items, $errors)
+    {
+        $clean_items = array();
+        if (is_array($items)) {
+            foreach ($items as $item) {
+                if (is_array($item)) {
+                    $clean_items[] = $item;
+                }
+            }
+        }
+
+        $clean_errors = array();
+        if (is_array($errors)) {
+            foreach ($errors as $error) {
+                if (is_string($error) && $error !== '') {
+                    $clean_errors[] = $error;
+                }
+            }
+        }
+
+        return array(
+            'items' => $clean_items,
+            'errors' => $clean_errors,
+        );
+    }
+
+    /**
+     * Polylang is present when its API, classes, taxonomies, options, or rows exist.
+     *
+     * @return bool
+     */
+    private function polylang_is_present()
+    {
+        if (function_exists('pll_languages_list')
+            || function_exists('pll_get_post_translations')
+            || function_exists('pll_get_post_language')
+            || function_exists('pll_default_language')
+        ) {
+            return true;
+        }
+
+        if (class_exists('PLL', false) || class_exists('Polylang', false)) {
+            return true;
+        }
+
+        if (function_exists('taxonomy_exists')
+            && (taxonomy_exists('language') || taxonomy_exists('post_translations') || taxonomy_exists('term_translations'))
+        ) {
+            return true;
+        }
+
+        if (function_exists('get_option')) {
+            $options = get_option('polylang');
+            if (is_array($options) && $options !== array()) {
+                return true;
+            }
+        }
+
+        return $this->database_has_polylang();
+    }
+
+    /**
+     * @return bool
+     */
+    private function database_has_polylang()
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || !isset($wpdb->term_taxonomy)) {
+            return false;
+        }
+
+        $table = $this->table_name($wpdb->term_taxonomy);
+        if ($table === '' || !method_exists($wpdb, 'prepare') || !method_exists($wpdb, 'get_var')) {
+            return false;
+        }
+
+        $sql = $wpdb->prepare(
+            "SELECT term_taxonomy_id FROM {$table} WHERE taxonomy IN (%s, %s, %s) LIMIT 1",
+            'language',
+            'post_translations',
+            'term_translations'
+        );
+        if (!is_string($sql) || $sql === '') {
+            return false;
+        }
+
+        $found = $wpdb->get_var($sql);
+        return $found !== null && $found !== '';
+    }
+
+    /**
+     * @return array|null
+     */
+    private function read_library()
+    {
+        $default_lang = $this->default_language();
+        $known = $this->known_language_slugs();
+        $collected = null;
+
+        if (function_exists('pll_get_post_translations') || function_exists('pll_get_post_language')) {
+            try {
+                $collected = $this->collect_from_api();
+            } catch (\Throwable $e) {
+                $collected = null;
+            }
+        }
+
+        if (!is_array($collected)) {
+            $collected = $this->collect_from_storage();
+        }
+
+        if (!is_array($collected)) {
+            return null;
+        }
+
+        $collected['known_languages'] = $known;
+        $collected['default_lang'] = $default_lang;
+        if (!isset($collected['records']) || !is_array($collected['records'])) {
+            $collected['records'] = null;
+        }
+        if (!isset($collected['skipped'])) {
+            $collected['skipped'] = 0;
+        }
+
+        return $collected;
+    }
+
+    /**
+     * @return array|null
+     */
+    private function collect_from_api()
+    {
+        $ids = $this->attachment_ids();
+        if (!is_array($ids)) {
+            return null;
+        }
+
+        $rows = array();
+        $language_rows = array();
+        $seen_groups = array();
+        $claimed = array();
+        $skipped = 0;
+
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id <= 0 || isset($claimed[$id])) {
+                continue;
+            }
+
+            try {
+                $map = $this->api_translation_map($id);
+                if ($map !== array() && !$this->map_has_id($map, $id)) {
+                    $lang = $this->api_post_language($id);
+                    if ($lang !== '' && !isset($map[$lang])) {
+                        $map[$lang] = $id;
+                    }
+                }
+            } catch (\Throwable $e) {
+                $skipped++;
+                continue;
+            }
+
+            if ($map === array()) {
+                $lang = $this->api_post_language($id);
+                if ($lang !== '') {
+                    $language_rows[] = array(
+                        'id' => $id,
+                        'lang' => $lang,
+                    );
+                }
+                continue;
+            }
+
+            $key = $this->id_key(array_values($map));
+            if (isset($seen_groups[$key])) {
+                $claimed[$id] = true;
+                continue;
+            }
+            $seen_groups[$key] = true;
+
+            $members = array();
+            foreach ($map as $lang => $member_id) {
+                $member_id = (int) $member_id;
+                $claimed[$member_id] = true;
+                if (!isset($members[$member_id])) {
+                    $members[$member_id] = $lang;
+                }
+            }
+
+            $rows[] = array(
+                'description' => $map,
+                'members' => $members,
+            );
+        }
+
+        return array(
+            'translation_rows' => $rows,
+            'language_rows' => $language_rows,
+            'attachment_ids' => $ids,
+            'skipped' => $skipped,
+        );
+    }
+
+    /**
+     * @param int $id
+     * @return array
+     */
+    private function api_translation_map($id)
+    {
+        if (!function_exists('pll_get_post_translations')) {
+            return array();
+        }
+
+        try {
+            $translations = pll_get_post_translations($id);
+        } catch (\Throwable $e) {
+            return array();
+        }
+
+        if (!is_array($translations)) {
+            return array();
+        }
+
+        $map = array();
+        foreach ($translations as $lang => $translated_id) {
+            $slug = $this->language_slug($lang);
+            $translated_id = (int) $translated_id;
+            if ($slug === '' || $translated_id <= 0 || isset($map[$slug])) {
+                continue;
+            }
+            if (!$this->is_exportable_attachment($translated_id)) {
+                continue;
+            }
+            $map[$slug] = $translated_id;
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param int $id
+     * @return string
+     */
+    private function api_post_language($id)
+    {
+        if (!function_exists('pll_get_post_language')) {
+            return '';
+        }
+
+        try {
+            $lang = pll_get_post_language($id, 'slug');
+        } catch (\Throwable $e) {
+            try {
+                $lang = pll_get_post_language($id);
+            } catch (\Throwable $e) {
+                return '';
+            }
+        }
+
+        return $this->language_slug($lang);
+    }
+
+    /**
+     * @return array|null
+     */
+    private function collect_from_storage()
+    {
+        try {
+            $collected = $this->collect_from_database();
+        } catch (\Throwable $e) {
+            $collected = null;
+        }
+
+        if (is_array($collected)) {
+            return $collected;
+        }
+
+        try {
+            return $this->collect_from_term_api();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * @return array|null
+     */
+    private function collect_from_database()
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null) {
+            return null;
+        }
+
+        $posts = $this->table_name(isset($wpdb->posts) ? $wpdb->posts : '');
+        $terms = $this->table_name(isset($wpdb->terms) ? $wpdb->terms : '');
+        $term_taxonomy = $this->table_name(isset($wpdb->term_taxonomy) ? $wpdb->term_taxonomy : '');
+        $term_relationships = $this->table_name(isset($wpdb->term_relationships) ? $wpdb->term_relationships : '');
+        if ($posts === '' || $terms === '' || $term_taxonomy === '' || $term_relationships === '') {
+            return null;
+        }
+
+        $attachment_ids = $this->attachment_ids();
+        if (!is_array($attachment_ids)) {
+            return null;
+        }
+
+        $translation_rows = $this->translation_rows_from_db($wpdb, $posts, $terms, $term_taxonomy, $term_relationships);
+        if (!is_array($translation_rows)) {
+            return null;
+        }
+
+        $language_rows = $this->language_rows_from_db($wpdb, $posts, $terms, $term_taxonomy, $term_relationships);
+        if (!is_array($language_rows)) {
+            $language_rows = array();
+        }
+
+        return array(
+            'translation_rows' => $translation_rows,
+            'language_rows' => $language_rows,
+            'attachment_ids' => $attachment_ids,
+            'skipped' => 0,
+        );
+    }
+
+    /**
+     * @param object $wpdb
+     * @param string $posts
+     * @param string $terms
+     * @param string $term_taxonomy
+     * @param string $term_relationships
+     * @return array|null
+     */
+    private function translation_rows_from_db($wpdb, $posts, $terms, $term_taxonomy, $term_relationships)
+    {
+        $sql = "SELECT tt.term_taxonomy_id, tt.description, tr.object_id, lang.slug AS language_slug
+            FROM {$term_taxonomy} tt
+            INNER JOIN {$term_relationships} tr ON tr.term_taxonomy_id = tt.term_taxonomy_id
+            INNER JOIN {$posts} p ON p.ID = tr.object_id
+                AND p.post_type = 'attachment'
+                AND p.post_status IN (" . $this->status_sql() . ")
+            LEFT JOIN {$term_relationships} tr_lang ON tr_lang.object_id = tr.object_id
+            LEFT JOIN {$term_taxonomy} tt_lang ON tt_lang.term_taxonomy_id = tr_lang.term_taxonomy_id
+                AND tt_lang.taxonomy = 'language'
+            LEFT JOIN {$terms} lang ON lang.term_id = tt_lang.term_id
+            WHERE tt.taxonomy = %s";
+
+        $rows = $this->query_rows($wpdb, $sql, array('post_translations'));
+        if (!is_array($rows)) {
+            return null;
+        }
+
+        $buckets = array();
+        foreach ($rows as $row) {
+            $term_id = (int) $this->row_value($row, 'term_taxonomy_id');
+            $object_id = (int) $this->row_value($row, 'object_id');
+            if ($term_id <= 0 || $object_id <= 0) {
+                continue;
+            }
+            if (!isset($buckets[$term_id])) {
+                $description = $this->row_value($row, 'description');
+                $buckets[$term_id] = array(
+                    'description' => $description === null ? '' : $description,
+                    'members' => array(),
+                );
+            }
+            $lang = $this->language_slug($this->row_value($row, 'language_slug'));
+            if (!isset($buckets[$term_id]['members'][$object_id])) {
+                $buckets[$term_id]['members'][$object_id] = $lang;
+            } elseif ($buckets[$term_id]['members'][$object_id] === '' && $lang !== '') {
+                $buckets[$term_id]['members'][$object_id] = $lang;
+            }
+        }
+
+        return array_values($buckets);
+    }
+
+    /**
+     * @param object $wpdb
+     * @param string $posts
+     * @param string $terms
+     * @param string $term_taxonomy
+     * @param string $term_relationships
+     * @return array|null
+     */
+    private function language_rows_from_db($wpdb, $posts, $terms, $term_taxonomy, $term_relationships)
+    {
+        $sql = "SELECT p.ID AS attachment_id, t.slug AS language_slug
+            FROM {$posts} p
+            INNER JOIN {$term_relationships} tr ON tr.object_id = p.ID
+            INNER JOIN {$term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+                AND tt.taxonomy = 'language'
+            INNER JOIN {$terms} t ON t.term_id = tt.term_id
+            WHERE p.post_type = 'attachment'
+                AND p.post_status IN (" . $this->status_sql() . ")";
+
+        $rows = $this->query_rows($wpdb, $sql, array());
+        if (!is_array($rows)) {
+            return null;
+        }
+
+        $language_rows = array();
+        $seen = array();
+        foreach ($rows as $row) {
+            $id = (int) $this->row_value($row, 'attachment_id');
+            $lang = $this->language_slug($this->row_value($row, 'language_slug'));
+            if ($id <= 0 || $lang === '' || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $language_rows[] = array(
+                'id' => $id,
+                'lang' => $lang,
+            );
+        }
+
+        return $language_rows;
+    }
+
+    /**
+     * @return array|null
+     */
+    private function collect_from_term_api()
+    {
+        if (!function_exists('wp_get_object_terms')) {
+            return null;
+        }
+        if (function_exists('taxonomy_exists')
+            && !taxonomy_exists('language')
+            && !taxonomy_exists('post_translations')
+        ) {
+            return null;
+        }
+
+        $ids = $this->attachment_ids();
+        if (!is_array($ids)) {
+            return null;
+        }
+
+        $languages = array();
+        foreach ($this->object_terms($ids, 'language') as $term) {
+            $id = (int) $this->row_value($term, 'object_id');
+            $lang = $this->language_slug($this->row_value($term, 'slug'));
+            if ($id > 0 && $lang !== '' && !isset($languages[$id])) {
+                $languages[$id] = $lang;
+            }
+        }
+
+        $language_rows = array();
+        foreach ($languages as $id => $lang) {
+            $language_rows[] = array(
+                'id' => (int) $id,
+                'lang' => $lang,
+            );
+        }
+
+        $buckets = array();
+        foreach ($this->object_terms($ids, 'post_translations') as $term) {
+            $id = (int) $this->row_value($term, 'object_id');
+            $term_key = (int) $this->row_value($term, 'term_taxonomy_id');
+            if ($term_key <= 0) {
+                $term_key = (int) $this->row_value($term, 'term_id');
+            }
+            if ($id <= 0 || $term_key <= 0) {
+                continue;
+            }
+            if (!isset($buckets[$term_key])) {
+                $description = $this->row_value($term, 'description');
+                $buckets[$term_key] = array(
+                    'description' => $description === null ? '' : $description,
+                    'members' => array(),
+                );
+            }
+            $lang = isset($languages[$id]) ? $languages[$id] : '';
+            if (!isset($buckets[$term_key]['members'][$id]) || ($buckets[$term_key]['members'][$id] === '' && $lang !== '')) {
+                $buckets[$term_key]['members'][$id] = $lang;
+            }
+        }
+
+        return array(
+            'translation_rows' => array_values($buckets),
+            'language_rows' => $language_rows,
+            'attachment_ids' => $ids,
+            'skipped' => 0,
+        );
+    }
+
+    /**
+     * @param array $ids
+     * @param string $taxonomy
+     * @return array
+     */
+    private function object_terms($ids, $taxonomy)
+    {
+        if (!function_exists('wp_get_object_terms') || !is_array($ids) || $ids === array()) {
+            return array();
+        }
+
+        $terms = array();
+        $chunks = array_chunk($ids, 200);
+        foreach ($chunks as $chunk) {
+            $found = wp_get_object_terms($chunk, $taxonomy, array(
+                'fields' => 'all_with_object_id',
+            ));
+            if (function_exists('is_wp_error') && is_wp_error($found)) {
+                continue;
+            }
+            if (!is_array($found)) {
+                continue;
+            }
+            foreach ($found as $term) {
+                $terms[] = $term;
+            }
+        }
+
+        return $terms;
+    }
+
+    /**
+     * Turn Polylang rows into one map per media item.
+     *
+     * A translation description is the source of truth. Relationship rows fill
+     * gaps when that description is missing or incomplete. Polylang does not
+     * create a translation term for an attachment that has no translations,
+     * so a language row becomes a one-language group.
+     *
+     * @param array $translation_rows
+     * @param array $language_rows
+     * @param array $attachment_ids
+     * @param array $known_languages
+     * @return array
+     */
+    private function groups_from_rows($translation_rows, $language_rows, $attachment_ids, $known_languages)
+    {
+        $lookup = array();
+        if (is_array($attachment_ids)) {
+            foreach ($attachment_ids as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $lookup[$id] = true;
+                }
+            }
+        }
+
+        $known = array();
+        if (is_array($known_languages)) {
+            foreach ($known_languages as $slug) {
+                $slug = $this->language_slug($slug);
+                if ($slug !== '') {
+                    $known[$slug] = true;
+                }
+            }
+        }
+
+        $groups = array();
+        $seen = array();
+        $skipped = 0;
+
+        if (is_array($translation_rows)) {
+            foreach ($translation_rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $parsed = $this->map_from_row($row, $lookup, $known);
+                $skipped += (int) $parsed['skipped'];
+                $this->append_maps($groups, $seen, $parsed['maps']);
+            }
+        }
+
+        if (is_array($language_rows)) {
+            foreach ($language_rows as $language_row) {
+                if (!is_array($language_row)) {
+                    continue;
+                }
+                $id = isset($language_row['id']) ? (int) $language_row['id'] : 0;
+                $lang = $this->language_slug(isset($language_row['lang']) ? $language_row['lang'] : '');
+                if ($id <= 0 || isset($seen[$id])) {
+                    continue;
+                }
+                if ($lookup !== array() && !isset($lookup[$id])) {
+                    continue;
+                }
+                if ($lang === '') {
+                    continue;
+                }
+                if ($known !== array() && !isset($known[$lang])) {
+                    $skipped++;
+                    continue;
+                }
+                $seen[$id] = true;
+                $groups[] = $this->order_map(array($lang => $id));
+            }
+        }
+
+        return array(
+            'groups' => $groups,
+            'seen' => $seen,
+            'skipped' => $skipped,
+        );
+    }
+
+    /**
+     * @param array $row
+     * @param array $lookup
+     * @param array $known
+     * @return array
+     */
+    private function map_from_row($row, $lookup, $known)
+    {
+        $members = array();
+        if (isset($row['members']) && is_array($row['members'])) {
+            foreach ($row['members'] as $member_id => $member_lang) {
+                $member_id = (int) $member_id;
+                if ($member_id <= 0) {
+                    continue;
+                }
+                $slug = $this->language_slug($member_lang);
+                if (!isset($members[$member_id]) || ($members[$member_id] === '' && $slug !== '')) {
+                    $members[$member_id] = $slug;
+                }
+            }
+        }
+
+        $decoded = $this->decode_stored_array(isset($row['description']) ? $row['description'] : null);
+        $map = array();
+        foreach ($decoded as $lang => $raw_id) {
+            $slug = $this->language_slug($lang);
+            $attachment_id = (int) $raw_id;
+            if ($slug === '' || $attachment_id <= 0 || isset($map[$slug])) {
+                continue;
+            }
+            if ($known !== array() && !isset($known[$slug])) {
+                continue;
+            }
+            if (!isset($members[$attachment_id]) && !isset($lookup[$attachment_id])) {
+                continue;
+            }
+            $map[$slug] = $attachment_id;
+        }
+
+        $placed = array();
+        foreach ($map as $attachment_id) {
+            $placed[(int) $attachment_id] = true;
+        }
+
+        $overflow = array();
+        $skipped = 0;
+        foreach ($members as $member_id => $slug) {
+            if (isset($placed[$member_id])) {
+                continue;
+            }
+            if ($slug === '' || ($known !== array() && !isset($known[$slug]))) {
+                $skipped++;
+                continue;
+            }
+            if (isset($map[$slug])) {
+                $overflow[] = array($slug => $member_id);
+            } else {
+                $map[$slug] = $member_id;
+            }
+            $placed[$member_id] = true;
+        }
+
+        $maps = array();
+        if ($map !== array()) {
+            $maps[] = $map;
+        }
+        foreach ($overflow as $extra) {
+            $maps[] = $extra;
+        }
+
+        return array(
+            'maps' => $maps,
+            'skipped' => $skipped,
+        );
+    }
+
+    /**
+     * @param array $groups
+     * @param array $seen
+     * @param array $maps
+     * @return void
+     */
+    private function append_maps(&$groups, &$seen, $maps)
+    {
+        if (!is_array($maps)) {
+            return;
+        }
+
+        foreach ($maps as $map) {
+            if (!is_array($map)) {
+                continue;
+            }
+            $fresh = array();
+            foreach ($map as $lang => $id) {
+                $slug = $this->language_slug($lang);
+                $id = (int) $id;
+                if ($slug === '' || $id <= 0 || isset($seen[$id]) || isset($fresh[$slug])) {
+                    continue;
+                }
+                $fresh[$slug] = $id;
+            }
+            if ($fresh === array()) {
+                continue;
+            }
+            foreach ($fresh as $id) {
+                $seen[$id] = true;
+            }
+            $groups[] = $this->order_map($fresh);
+        }
+    }
+
+    /**
+     * @param array $groups
+     * @param string $default_lang
+     * @param array $records
+     * @return array
+     */
+    private function assemble_items($groups, $default_lang, $records)
+    {
+        $items = array();
+        if (!is_array($groups)) {
+            return $items;
+        }
+        if (!is_array($records)) {
+            $records = array();
+        }
+
+        foreach ($groups as $map) {
+            if (!is_array($map)) {
+                continue;
+            }
+            $normalized = array();
+            foreach ($map as $lang => $id) {
+                $slug = $this->language_slug($lang);
+                $id = (int) $id;
+                if ($slug === '' || $id <= 0 || isset($normalized[$slug])) {
+                    continue;
+                }
+                $normalized[$slug] = $id;
+            }
+            if ($normalized === array()) {
+                continue;
+            }
+            $normalized = $this->order_map($normalized);
+            $attachment_id = $this->canonical_attachment_id($normalized, $default_lang);
+            $items[] = array(
+                'attachment_id' => $attachment_id,
+                'file' => $this->file_from_records($normalized, $attachment_id, $records),
+                'alt' => $this->string_map($normalized, $records, 'alt'),
+                'title' => $this->string_map($normalized, $records, 'title'),
+            );
+        }
+
+        usort($items, function ($left, $right) {
+            $left_id = isset($left['attachment_id']) ? (int) $left['attachment_id'] : 0;
+            $right_id = isset($right['attachment_id']) ? (int) $right['attachment_id'] : 0;
+            if ($left_id !== $right_id) {
+                return ($left_id < $right_id) ? -1 : 1;
+            }
+            $left_file = isset($left['file']) ? (string) $left['file'] : '';
+            $right_file = isset($right['file']) ? (string) $right['file'] : '';
+            return strcmp($left_file, $right_file);
+        });
+
+        return $items;
+    }
+
+    /**
+     * The canonical attachment is the default language copy, otherwise the lowest ID.
+     *
+     * @param array $map
+     * @param string $default_lang
+     * @return int
+     */
+    private function canonical_attachment_id($map, $default_lang)
+    {
+        foreach ($map as $lang => $id) {
+            if ($this->same_language($lang, $default_lang)) {
+                return (int) $id;
+            }
+        }
+
+        $ids = array_map('intval', array_values($map));
+        sort($ids, SORT_NUMERIC);
+        return (int) $ids[0];
+    }
+
+    /**
+     * @param array $map
+     * @param int $canonical_id
+     * @param array $records
+     * @return string
+     */
+    private function file_from_records($map, $canonical_id, $records)
+    {
+        $file = $this->record_string($records, $canonical_id, 'file');
+        if ($file !== '') {
+            return $file;
+        }
+
+        $ids = array_map('intval', array_values($map));
+        sort($ids, SORT_NUMERIC);
+        foreach ($ids as $id) {
+            $file = $this->record_string($records, $id, 'file');
+            if ($file !== '') {
+                return $file;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array $map
+     * @param array $records
+     * @param string $field
+     * @return array
+     */
+    private function string_map($map, $records, $field)
+    {
+        $out = array();
+        foreach ($map as $lang => $id) {
+            $out[$lang] = $this->record_string($records, $id, $field);
+        }
+        return $out;
+    }
+
+    /**
+     * @param array $records
+     * @param int $id
+     * @param string $field
+     * @return string
+     */
+    private function record_string($records, $id, $field)
+    {
+        $id = (int) $id;
+        if (!isset($records[$id]) || !is_array($records[$id]) || !array_key_exists($field, $records[$id])) {
+            return '';
+        }
+        return $this->string_value($records[$id][$field]);
+    }
+
+    /**
+     * @param array $map
+     * @return array
+     */
+    private function order_map($map)
+    {
+        $ordered = array();
+        foreach ($this->language_order() as $slug) {
+            if (isset($map[$slug])) {
+                $ordered[$slug] = $map[$slug];
+            }
+        }
+
+        $rest = array();
+        foreach ($map as $slug => $id) {
+            if (!isset($ordered[$slug])) {
+                $rest[$slug] = $id;
+            }
+        }
+        if ($rest !== array()) {
+            ksort($rest, SORT_STRING);
+            foreach ($rest as $slug => $id) {
+                $ordered[$slug] = $id;
+            }
+        }
+
+        return $ordered;
+    }
+
+    /**
+     * @return array
+     */
+    private function language_order()
+    {
+        if (is_array($this->language_order)) {
+            return $this->language_order;
+        }
+
+        $order = array();
+        if (function_exists('pll_languages_list')) {
+            try {
+                $list = pll_languages_list(array('fields' => 'slug'));
+            } catch (\Throwable $e) {
+                $list = array();
+            }
+            if (is_array($list)) {
+                foreach ($list as $slug) {
+                    $slug = $this->language_slug($slug);
+                    if ($slug !== '' && !in_array($slug, $order, true)) {
+                        $order[] = $slug;
+                    }
+                }
+            }
+        }
+
+        $this->language_order = $order;
+        return $order;
+    }
+
+    /**
+     * @return array
+     */
+    private function known_language_slugs()
+    {
+        if (function_exists('pll_languages_list')) {
+            try {
+                $list = pll_languages_list(array('fields' => 'slug'));
+            } catch (\Throwable $e) {
+                $list = null;
+            }
+            if (is_array($list)) {
+                return $this->clean_slugs($list);
+            }
+        }
+
+        $from_db = $this->language_slugs_from_db();
+        if (is_array($from_db)) {
+            return $from_db;
+        }
+
+        if (function_exists('get_terms') && function_exists('taxonomy_exists') && taxonomy_exists('language')) {
+            $terms = get_terms(array(
+                'taxonomy' => 'language',
+                'hide_empty' => false,
+                'fields' => 'slugs',
+            ));
+            if (is_array($terms)) {
+                return $this->clean_slugs($terms);
+            }
+        }
+
+        return array();
+    }
+
+    /**
+     * @return array|null
+     */
+    private function language_slugs_from_db()
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || !isset($wpdb->terms) || !isset($wpdb->term_taxonomy)) {
+            return null;
+        }
+
+        $terms = $this->table_name($wpdb->terms);
+        $term_taxonomy = $this->table_name($wpdb->term_taxonomy);
+        if ($terms === '' || $term_taxonomy === '') {
+            return null;
+        }
+
+        $rows = $this->query_rows(
+            $wpdb,
+            "SELECT t.slug AS language_slug
+            FROM {$terms} t
+            INNER JOIN {$term_taxonomy} tt ON tt.term_id = t.term_id
+            WHERE tt.taxonomy = %s",
+            array('language')
+        );
+        if (!is_array($rows)) {
+            return null;
+        }
+
+        $slugs = array();
+        foreach ($rows as $row) {
+            $slugs[] = $this->row_value($row, 'language_slug');
+        }
+        return $this->clean_slugs($slugs);
+    }
+
+    /**
+     * @param array $slugs
+     * @return array
+     */
+    private function clean_slugs($slugs)
+    {
+        $clean = array();
+        if (!is_array($slugs)) {
+            return $clean;
+        }
+        foreach ($slugs as $slug) {
+            $slug = $this->language_slug($slug);
+            if ($slug !== '' && !in_array($slug, $clean, true)) {
+                $clean[] = $slug;
+            }
+        }
+        return $clean;
+    }
+
+    /**
+     * @return string
+     */
+    private function default_language()
+    {
+        if (function_exists('pll_default_language')) {
+            try {
+                $slug = pll_default_language('slug');
+            } catch (\Throwable $e) {
+                $slug = '';
+            }
+            $slug = $this->language_slug($slug);
+            if ($slug !== '') {
+                return $slug;
+            }
+        }
+
+        if (function_exists('get_option')) {
+            $options = get_option('polylang');
+            if (is_array($options) && isset($options['default_lang'])) {
+                return $this->language_slug($options['default_lang']);
+            }
+        }
+
+        return $this->default_language_from_db();
+    }
+
+    /**
+     * @return string
+     */
+    private function default_language_from_db()
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || !isset($wpdb->options)) {
+            return '';
+        }
+
+        $table = $this->table_name($wpdb->options);
+        if ($table === '' || !method_exists($wpdb, 'prepare') || !method_exists($wpdb, 'get_var')) {
+            return '';
+        }
+
+        $sql = $wpdb->prepare(
+            "SELECT option_value FROM {$table} WHERE option_name = %s LIMIT 1",
+            'polylang'
+        );
+        if (!is_string($sql) || $sql === '') {
+            return '';
+        }
+
+        $raw = $wpdb->get_var($sql);
+        $options = $this->decode_stored_array($raw);
+        if (isset($options['default_lang'])) {
+            return $this->language_slug($options['default_lang']);
+        }
+
+        return '';
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    private function language_slug($value)
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+        $slug = trim($value);
+        if ($slug === '' || strlen($slug) > 64) {
+            return '';
+        }
+        if (preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $slug) !== 1) {
+            return '';
+        }
+        return $slug;
+    }
+
+    /**
+     * @param string $left
+     * @param string $right
+     * @return bool
+     */
+    private function same_language($left, $right)
+    {
+        $left = $this->language_slug($left);
+        $right = $this->language_slug($right);
+        if ($left === '' || $right === '') {
+            return false;
+        }
+        return strtolower($left) === strtolower($right);
+    }
+
+    /**
+     * @param mixed $raw
+     * @return array
+     */
+    private function decode_stored_array($raw)
+    {
+        if (is_array($raw)) {
+            return $raw;
+        }
+        if (!is_string($raw)) {
+            return array();
+        }
+
+        $raw = trim($raw);
+        if ($raw === '' || strlen($raw) > 1000000) {
+            return array();
+        }
+
+        if (function_exists('maybe_unserialize')) {
+            $data = maybe_unserialize($raw);
+            if (is_array($data)) {
+                return $data;
+            }
+        }
+
+        $data = $this->safe_unserialize($raw);
+        if (is_array($data)) {
+            return $data;
+        }
+
+        $stripped = stripslashes($raw);
+        if ($stripped === $raw) {
+            return array();
+        }
+
+        if (function_exists('maybe_unserialize')) {
+            $data = maybe_unserialize($stripped);
+            if (is_array($data)) {
+                return $data;
+            }
+        }
+
+        $data = $this->safe_unserialize($stripped);
+        return is_array($data) ? $data : array();
+    }
+
+    /**
+     * @param string $raw
+     * @return mixed
+     */
+    private function safe_unserialize($raw)
+    {
+        if (!is_string($raw) || $raw === '' || strlen($raw) > 1000000) {
+            return null;
+        }
+        if ($raw !== 'N;' && preg_match('/^(a|s|i|b|d|O|C):/', $raw) !== 1) {
+            return null;
+        }
+
+        set_error_handler(function () {
+            return true;
+        });
+        try {
+            $data = unserialize($raw, array('allowed_classes' => false));
+        } catch (\Throwable $e) {
+            $data = false;
+        } finally {
+            restore_error_handler();
+        }
+
+        if ($data === false && $raw !== 'b:0;') {
+            return null;
+        }
+
+        return $data;
+    }
+
+    /**
+     * @return array|null
+     */
+    private function attachment_ids()
+    {
+        if (function_exists('get_posts')) {
+            $ids = $this->attachment_ids_from_posts();
+            if (is_array($ids)) {
+                return $ids;
+            }
+        }
+
+        return $this->attachment_ids_from_db();
+    }
+
+    /**
+     * @return array|null
+     */
+    private function attachment_ids_from_posts()
+    {
+        $ids = array();
+        $seen = array();
+        $page = 1;
+
+        do {
+            $batch = get_posts(array(
+                'post_type' => 'attachment',
+                'post_status' => $this->exportable_statuses(),
+                'posts_per_page' => 200,
+                'paged' => $page,
+                'orderby' => 'ID',
+                'order' => 'ASC',
+                'fields' => 'ids',
+                'suppress_filters' => true,
+                'lang' => '',
+                'no_found_rows' => true,
+                'cache_results' => false,
+                'update_post_meta_cache' => false,
+                'update_post_term_cache' => false,
+                'ignore_sticky_posts' => true,
+            ));
+
+            if (function_exists('is_wp_error') && is_wp_error($batch)) {
+                return null;
+            }
+            if (!is_array($batch)) {
+                return null;
+            }
+            if ($batch === array()) {
+                break;
+            }
+
+            $added = 0;
+            foreach ($batch as $id) {
+                $id = (int) $id;
+                if ($id <= 0 || isset($seen[$id])) {
+                    continue;
+                }
+                $seen[$id] = true;
+                $ids[] = $id;
+                $added++;
+            }
+
+            if ($added === 0 || count($batch) < 200) {
+                break;
+            }
+
+            $page++;
+        } while ($page <= 5000);
+
+        return $ids;
+    }
+
+    /**
+     * @return array|null
+     */
+    private function attachment_ids_from_db()
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || !isset($wpdb->posts)) {
+            return null;
+        }
+
+        $posts = $this->table_name($wpdb->posts);
+        if ($posts === '') {
+            return null;
+        }
+
+        $rows = $this->query_rows(
+            $wpdb,
+            "SELECT ID FROM {$posts}
+            WHERE post_type = 'attachment'
+                AND post_status IN (" . $this->status_sql() . ")
+            ORDER BY ID ASC",
+            array()
+        );
+        if (!is_array($rows)) {
+            return null;
+        }
+
+        $ids = array();
+        foreach ($rows as $row) {
+            $id = (int) $this->row_value($row, 'ID');
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * @param int $id
+     * @return bool
+     */
+    private function is_exportable_attachment($id)
+    {
+        $id = (int) $id;
+        if ($id <= 0) {
+            return false;
+        }
+
+        if (function_exists('get_post_type') && function_exists('get_post_status')) {
+            if (get_post_type($id) !== 'attachment') {
+                return false;
+            }
+            $status = get_post_status($id);
+            return is_string($status) && in_array($status, $this->exportable_statuses(), true);
+        }
+
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || !isset($wpdb->posts)) {
+            return false;
+        }
+        $posts = $this->table_name($wpdb->posts);
+        if ($posts === '' || !method_exists($wpdb, 'prepare') || !method_exists($wpdb, 'get_row')) {
+            return false;
+        }
+
+        $sql = $wpdb->prepare(
+            "SELECT post_type, post_status FROM {$posts} WHERE ID = %d",
+            $id
+        );
+        if (!is_string($sql) || $sql === '') {
+            return false;
+        }
+
+        $output = defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A';
+        $row = $wpdb->get_row($sql, $output);
+        if (!is_array($row) && !is_object($row)) {
+            return false;
+        }
+
+        return $this->row_value($row, 'post_type') === 'attachment'
+            && in_array((string) $this->row_value($row, 'post_status'), $this->exportable_statuses(), true);
+    }
+
+    /**
+     * @return array
+     */
+    private function exportable_statuses()
+    {
+        return array('inherit', 'private', 'publish', 'draft', 'pending', 'future');
+    }
+
+    /**
+     * @return string
+     */
+    private function status_sql()
+    {
+        return "'inherit', 'private', 'publish', 'draft', 'pending', 'future'";
+    }
+
+    /**
+     * @param array $ids
+     * @return array
+     */
+    private function records_for($ids)
+    {
+        $records = array();
+        if (!is_array($ids)) {
+            return $records;
+        }
+
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id <= 0 || isset($records[$id])) {
+                continue;
+            }
+            $records[$id] = array(
+                'file' => $this->meta_string($id, '_wp_attached_file'),
+                'alt' => $this->meta_string($id, '_wp_attachment_image_alt'),
+                'title' => $this->attachment_title($id),
+            );
+        }
+
+        return $records;
+    }
+
+    /**
+     * @param int $id
+     * @param string $key
+     * @return string
+     */
+    private function meta_string($id, $key)
+    {
+        if (function_exists('get_post_meta')) {
+            return $this->string_value(get_post_meta($id, $key, true));
+        }
+
+        $value = $this->meta_from_db($id, $key);
+        if (is_string($value) && function_exists('maybe_unserialize')) {
+            $value = maybe_unserialize($value);
+        }
+        return $this->string_value($value);
+    }
+
+    /**
+     * @param int $id
+     * @param string $key
+     * @return mixed
+     */
+    private function meta_from_db($id, $key)
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || !isset($wpdb->postmeta) || !method_exists($wpdb, 'get_var') || !method_exists($wpdb, 'prepare')) {
+            return '';
+        }
+
+        $table = $this->table_name($wpdb->postmeta);
+        if ($table === '') {
+            return '';
+        }
+
+        $sql = $wpdb->prepare(
+            "SELECT meta_value FROM {$table} WHERE post_id = %d AND meta_key = %s LIMIT 1",
+            (int) $id,
+            $key
+        );
+        if (!is_string($sql) || $sql === '') {
+            return '';
+        }
+
+        return $wpdb->get_var($sql);
+    }
+
+    /**
+     * @param int $id
+     * @return string
+     */
+    private function attachment_title($id)
+    {
+        if (function_exists('get_post')) {
+            $post = get_post($id);
+            if (is_object($post) && isset($post->post_title)) {
+                return $this->string_value($post->post_title);
+            }
+        }
+
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || !isset($wpdb->posts) || !method_exists($wpdb, 'get_var') || !method_exists($wpdb, 'prepare')) {
+            return '';
+        }
+
+        $table = $this->table_name($wpdb->posts);
+        if ($table === '') {
+            return '';
+        }
+
+        $sql = $wpdb->prepare(
+            "SELECT post_title FROM {$table} WHERE ID = %d",
+            (int) $id
+        );
+        if (!is_string($sql) || $sql === '') {
+            return '';
+        }
+
+        return $this->string_value($wpdb->get_var($sql));
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    private function string_value($value)
+    {
+        if (is_array($value)) {
+            $value = reset($value);
+        }
+        if (is_bool($value) || $value === null || is_object($value)) {
+            return '';
+        }
+        if (is_int($value) || is_float($value)) {
+            $value = (string) $value;
+        }
+        if (!is_string($value)) {
+            return '';
+        }
+        return $value;
+    }
+
+    /**
+     * @param array $groups
+     * @return array
+     */
+    private function ids_in_groups($groups)
+    {
+        $ids = array();
+        if (!is_array($groups)) {
+            return $ids;
+        }
+        foreach ($groups as $map) {
+            if (!is_array($map)) {
+                continue;
+            }
+            foreach ($map as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $ids[$id] = $id;
+                }
+            }
+        }
+        return array_values($ids);
+    }
+
+    /**
+     * @param array $ids
+     * @return string
+     */
+    private function id_key($ids)
+    {
+        $clean = array();
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = true;
+            }
+        }
+        $list = array_keys($clean);
+        sort($list, SORT_NUMERIC);
+        return implode(',', $list);
+    }
+
+    /**
+     * @param array $map
+     * @param int $id
+     * @return bool
+     */
+    private function map_has_id($map, $id)
+    {
+        $id = (int) $id;
+        foreach ($map as $member_id) {
+            if ((int) $member_id === $id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return object|null
+     */
+    private function wpdb()
+    {
+        if (!isset($GLOBALS['wpdb']) || !is_object($GLOBALS['wpdb'])) {
+            return null;
+        }
+        return $GLOBALS['wpdb'];
+    }
+
+    /**
+     * @param string $name
+     * @return string
+     */
+    private function table_name($name)
+    {
+        if (!is_string($name) || preg_match('/^[A-Za-z0-9_]+$/', $name) !== 1) {
+            return '';
+        }
+        return $name;
+    }
+
+    /**
+     * @param object $wpdb
+     * @param string $sql
+     * @param array $args
+     * @return array|null
+     */
+    private function query_rows($wpdb, $sql, $args)
+    {
+        if (!is_object($wpdb) || !method_exists($wpdb, 'get_results')) {
+            return null;
+        }
+
+        if (is_array($args) && $args !== array()) {
+            if (!method_exists($wpdb, 'prepare')) {
+                return null;
+            }
+            $prepared = call_user_func_array(array($wpdb, 'prepare'), array_merge(array($sql), $args));
+            if (!is_string($prepared) || $prepared === '') {
+                return null;
+            }
+            $sql = $prepared;
+        }
+
+        $before = isset($wpdb->last_error) ? (string) $wpdb->last_error : '';
+        $output = defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A';
+        $rows = $wpdb->get_results($sql, $output);
+        $after = isset($wpdb->last_error) ? (string) $wpdb->last_error : '';
+        if (!is_array($rows) || ($after !== '' && $after !== $before)) {
+            return null;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param mixed $row
+     * @param string $key
+     * @return mixed
+     */
+    private function row_value($row, $key)
+    {
+        if (is_array($row) && array_key_exists($key, $row)) {
+            return $row[$key];
+        }
+        if (is_object($row) && isset($row->$key)) {
+            return $row->$key;
+        }
+        return null;
+    }
+
+    /**
+     * @param string $message
+     * @return string
+     */
+    private function text($message)
+    {
+        if (function_exists('__')) {
+            return __($message, 'migration-manager');
+        }
+        return $message;
+    }
+}
