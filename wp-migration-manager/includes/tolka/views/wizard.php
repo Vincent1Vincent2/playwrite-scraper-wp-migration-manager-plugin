@@ -52,49 +52,6 @@ foreach ($wmm_tolka_partial_files as $wmm_tolka_partial_key => $wmm_tolka_partia
     ob_start();
     $wmm_tolka_include_partial($wmm_tolka_partial_path);
     $wmm_tolka_partial_captured = ob_get_clean();
-    if (!is_string($wmm_tolka_partial_captured)) {
-        continue;
-    }
-
-    if ($wmm_tolka_partial_key === 'speed') {
-        $wmm_tolka_partial_captured = str_replace(
-            'wmm-tolka-speed-value',
-            'wmm-tolka-speed-value wmm-tolka-value',
-            $wmm_tolka_partial_captured
-        );
-
-        $wmm_tolka_speed_waiting = function_exists('esc_html__')
-            ? esc_html__('Not measured yet', 'migration-manager')
-            : 'Not measured yet';
-
-        $wmm_tolka_speed_markup = preg_replace_callback(
-            '/<p\b([^>]*\bid="wmm-tolka-basis"[^>]*)>(.*?)<\/p>/s',
-            static function ($wmm_tolka_basis_match) use ($wmm_tolka_speed_waiting) {
-                $wmm_tolka_basis_attrs = preg_replace('/\s+hidden(?=[\s>\/]|$)/', '', $wmm_tolka_basis_match[1]);
-                $wmm_tolka_basis_inner = trim($wmm_tolka_basis_match[2]);
-                if ($wmm_tolka_basis_inner === '') {
-                    $wmm_tolka_basis_inner = $wmm_tolka_speed_waiting;
-                }
-
-                return '<p' . $wmm_tolka_basis_attrs . '>' . $wmm_tolka_basis_inner . '</p>';
-            },
-            $wmm_tolka_partial_captured
-        );
-        if (is_string($wmm_tolka_speed_markup)) {
-            $wmm_tolka_partial_captured = $wmm_tolka_speed_markup;
-        }
-
-        $wmm_tolka_speed_markup = preg_replace(
-            '/(<p\b[^>]*\bid="wmm-tolka-speed-summary"[^>]*)(>)/',
-            '$1 data-wmm-tolka-generated="1"$2',
-            $wmm_tolka_partial_captured,
-            1
-        );
-        if (is_string($wmm_tolka_speed_markup)) {
-            $wmm_tolka_partial_captured = $wmm_tolka_speed_markup;
-        }
-    }
-
     if (is_string($wmm_tolka_partial_captured)) {
         $wmm_tolka_partial_html[$wmm_tolka_partial_key] = $wmm_tolka_partial_captured;
     }
@@ -308,31 +265,31 @@ $wmm_tolka_help_ready = trim($wmm_tolka_help_html) !== '';
                             <h3 class="wmm-tolka-speed-heading" id="wmm-tolka-speed-heading">
                                 <?php esc_html_e('Estimated speed', 'migration-manager'); ?>
                             </h3>
-                            <p class="wmm-tolka-speed-summary description" id="wmm-tolka-speed-summary" data-field="summary" data-wmm-tolka-generated="1">
+                            <p class="wmm-tolka-speed-summary description" id="wmm-tolka-speed-summary" data-field="summary">
                                 <?php esc_html_e('No measurement yet. Choose Measure speed to load the public site URL. The result shows the current load, the estimated Tolka load, and how much faster Tolka is.', 'migration-manager'); ?>
                             </p>
                             <dl class="wmm-tolka-speed-figures">
-                                <div class="wmm-tolka-speed-figure wmm-tolka-speed-current">
+                                <div class="wmm-tolka-speed-figure">
                                     <dt class="wmm-tolka-speed-label" id="wmm-tolka-current-load-label">
                                         <?php esc_html_e('Current load', 'migration-manager'); ?>
                                     </dt>
-                                    <dd class="wmm-tolka-speed-value wmm-tolka-value" id="wmm-tolka-current-load" data-field="current_ms" data-ms="" aria-labelledby="wmm-tolka-current-load-label">
+                                    <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-current" id="wmm-tolka-current-load" data-wmm-tolka="current_ms" data-field="current_ms" data-ms="" aria-labelledby="wmm-tolka-current-load-label">
                                         <?php esc_html_e('Not measured yet', 'migration-manager'); ?>
                                     </dd>
                                 </div>
-                                <div class="wmm-tolka-speed-figure wmm-tolka-speed-tolka">
+                                <div class="wmm-tolka-speed-figure">
                                     <dt class="wmm-tolka-speed-label" id="wmm-tolka-tolka-load-label">
                                         <?php esc_html_e('Estimated Tolka load', 'migration-manager'); ?>
                                     </dt>
-                                    <dd class="wmm-tolka-speed-value wmm-tolka-value" id="wmm-tolka-tolka-load" data-field="tolka_ms" data-ms="" aria-labelledby="wmm-tolka-tolka-load-label">
+                                    <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-tolka" id="wmm-tolka-tolka-load" data-wmm-tolka="tolka_ms" data-field="tolka_ms" data-ms="" aria-labelledby="wmm-tolka-tolka-load-label">
                                         <?php esc_html_e('Not measured yet', 'migration-manager'); ?>
                                     </dd>
                                 </div>
-                                <div class="wmm-tolka-speed-figure wmm-tolka-speed-faster">
+                                <div class="wmm-tolka-speed-figure">
                                     <dt class="wmm-tolka-speed-label" id="wmm-tolka-faster-label">
                                         <?php esc_html_e('Percent faster', 'migration-manager'); ?>
                                     </dt>
-                                    <dd class="wmm-tolka-speed-value wmm-tolka-value" id="wmm-tolka-faster" data-field="faster_label" data-faster-percent="" aria-labelledby="wmm-tolka-faster-label">
+                                    <dd class="wmm-tolka-speed-value wmm-tolka-value wmm-tolka-speed-faster" id="wmm-tolka-faster" data-wmm-tolka="faster" data-field="faster_label" data-faster-percent="" aria-labelledby="wmm-tolka-faster-label">
                                         <?php esc_html_e('Not measured yet', 'migration-manager'); ?>
                                     </dd>
                                 </div>
@@ -342,8 +299,10 @@ $wmm_tolka_help_ready = trim($wmm_tolka_help_html) !== '';
                                 <?php esc_html_e('The speed percent is an estimate for the single page you load. It is not a result for every page on the site.', 'migration-manager'); ?>
                             </p>
                             <p class="wmm-tolka-speed-basis-label" hidden><?php esc_html_e('Basis', 'migration-manager'); ?></p>
-                            <p class="wmm-tolka-speed-basis" id="wmm-tolka-basis" data-field="basis"><?php esc_html_e('Not measured yet', 'migration-manager'); ?></p>
-                            <p class="wmm-tolka-provenance" id="wmm-tolka-provenance-note" data-field="provenance_note" data-wmm-tolka="provenance_note" role="note" hidden></p>
+                            <p class="wmm-tolka-speed-basis wmm-tolka-value" id="wmm-tolka-basis" data-wmm-tolka="basis" data-field="basis"><?php esc_html_e('Not measured yet', 'migration-manager'); ?></p>
+                            <div class="wmm-tolka-provenance wmm-tolka-provenance-note" data-wmm-tolka="provenance_note" hidden>
+                                <p class="wmm-tolka-value" id="wmm-tolka-provenance-note" data-field="provenance_note" role="note" hidden></p>
+                            </div>
                             <p class="wmm-tolka-speed-error" id="wmm-tolka-speed-error" data-field="error" hidden></p>
                         </div>
                     <?php endif; ?>
