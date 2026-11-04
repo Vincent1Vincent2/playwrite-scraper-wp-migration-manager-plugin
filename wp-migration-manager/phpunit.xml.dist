@@ -4,6 +4,7 @@ Tolka migration tests. From wp-migration-manager, run:
 phpunit -c phpunit.xml.dist
 
 The suite scans tests/tolka/test-*.php and does not load WordPress.
+It does not load wp-load.php and does not define WordPress functions.
 Missing Tolka classes are skipped by the test that needs them.
 -->
 <phpunit bootstrap="tests/tolka/bootstrap.php" colors="true">
