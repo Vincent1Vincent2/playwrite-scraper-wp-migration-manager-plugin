@@ -370,7 +370,7 @@ class Speed_Estimate
         }
 
         if ($benchmarks === array()) {
-            return self::translate('The benchmark coefficients are missing from includes/tolka/data/benchmarks.json.');
+            return self::translate('The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.');
         }
 
         $sentences = array();
