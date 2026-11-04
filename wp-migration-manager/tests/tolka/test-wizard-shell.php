@@ -943,7 +943,16 @@ namespace WMM\Tolka {
                 'http://[::1]/',
                 'http://[::ffff:127.0.0.1]/',
                 'http://[::ffff:10.0.0.8]/',
+                'http://[::ffff:7f00:1]/',
+                'http://[fd00::1]/',
+                'http://[fe80::1]/',
                 'http://2130706433/',
+                'http://0177.0.0.1/',
+                'http://012.0.0.1/',
+                'http://0177.1/',
+                'http://0x7f000001/',
+                'http://0x7f.0.0.1/',
+                'http://0x7f.1/',
             );
 
             foreach ($rejected as $url) {
@@ -982,6 +991,10 @@ namespace WMM\Tolka {
                 'http://8.8.8.8/',
                 'http://172.32.0.1/',
                 'https://example.com/localhost',
+                'http://0x8.8.8.8/',
+                'http://0x08080808/',
+                'http://[2001:db8::1]/',
+                'http://[fec0::1]/',
             );
 
             foreach ($allowed as $url) {
@@ -996,6 +1009,55 @@ namespace WMM\Tolka {
                 });
                 $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success'], $url);
                 $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls'], $url);
+            }
+        }
+
+        public function test_fallback_script_keeps_private_ipv6_off_the_request()
+        {
+            $this->requireStubs();
+            $html = $this->render();
+            $this->assertSame(
+                1,
+                preg_match('/\/\* wmm-tolka-url-checks:start \*\/(.*?)\/\* wmm-tolka-url-checks:end \*\//s', $html, $matches)
+            );
+            $call = strpos($html, 'if (urlIsLocal(url))');
+            $send = strpos($html, 'body.set("url", url)');
+            $this->assertNotFalse($call);
+            $this->assertNotFalse($send);
+            $this->assertLessThan($send, $call);
+
+            $cases = array(
+                'http://[fd00::1]/' => true,
+                'http://[fe80::1]/' => true,
+                'http://[::ffff:127.0.0.1]/' => true,
+                'http://[::ffff:7f00:1]/' => true,
+                'http://[::ffff:10.0.0.8]/' => true,
+                'http://0177.0.0.1/' => true,
+                'http://0x7f000001/' => true,
+                'http://127.1/' => true,
+                'http://2130706433/' => true,
+                'http://8.8.8.8/' => false,
+                'http://172.32.0.1/' => false,
+                'http://0x8.8.8.8/' => false,
+                'http://0x08080808/' => false,
+                'https://example.com/path' => false,
+                'http://[2001:db8::1]/' => false,
+                'http://[fec0::1]/' => false,
+            );
+            $runner = tempnam(sys_get_temp_dir(), 'wmm-url-');
+            $script = "global.window = { URL: URL };\n" . $matches[1] . "\n";
+            $script .= 'var cases = ' . json_encode(array_keys($cases)) . ";\n";
+            $script .= 'var results = {}; cases.forEach(function (url) { results[url] = urlIsLocal(url); }); process.stdout.write(JSON.stringify(results));';
+            file_put_contents($runner, $script);
+
+            $output = shell_exec('node ' . escapeshellarg($runner) . ' 2>&1');
+            unlink($runner);
+
+            $this->assertIsString($output);
+            $results = json_decode($output, true);
+            $this->assertIsArray($results, $output);
+            foreach ($cases as $url => $local) {
+                $this->assertSame($local, $results[$url], $url);
             }
         }
 
