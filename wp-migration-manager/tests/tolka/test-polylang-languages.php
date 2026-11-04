@@ -987,6 +987,35 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_three_real_languages_stay_when_internal_rows_are_present()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+            $this->language_term(8, 'Svenska', 'sv', 'sv_SE', 'se', 1, 0),
+            $this->language_term(12, 'Deutsch', 'de', 'de_DE', 'de', 2, 0),
+            $this->language_term(40, 'pll_en', 'pll_en', 'en_US', 'us', 3, 0),
+            $this->language_term(41, 'pll_sv', 'pll_sv', 'sv_SE', 'se', 4, 0),
+            $this->language_term(42, 'pll_de', 'pll_de', 'de_DE', 'de', 5, 0),
+        ), 'de');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('de', 'en', 'sv'), array_keys($by_slug));
+        $this->assertTrue($by_slug['de']['is_default']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertFalse($by_slug['sv']['is_default']);
+        $this->assertSame('Deutsch', $by_slug['de']['name']);
+        $this->assertSame('de_DE', $by_slug['de']['locale']);
+        $this->assertSame(12, $by_slug['de']['term_id']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertSame(8, $by_slug['sv']['term_id']);
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+        $this->assertArrayNotHasKey('pll_de', $by_slug);
+    }
+
     public function test_internal_rows_stay_out_on_a_second_export()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
