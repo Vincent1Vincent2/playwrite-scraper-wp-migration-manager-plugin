@@ -648,8 +648,58 @@ class Polylang_Terms_Test extends TestCase
         $this->assertIsString($encoded);
         $this->assertStringNotContainsString('nav_menu', $encoded);
         $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertSame($first, $second);
         $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertSame(
+            $this->groupIds($second['items']),
+            array_values(array_unique($this->groupIds($second['items'])))
+        );
         $this->assertCount(4, $second['items']);
+    }
+
+    public function test_a_second_export_matches_after_slug_case_is_normalized(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = '<p>Meny åäö</p> &amp; <em>News</em>';
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(80, 'Höst', 'HÖST', 'category', 'sv', '3', $html),
+            $this->term(81, 'Äpple', 'höst', 'category', 'sv', 0),
+            $this->term(70, 'Main', 'MAIN', 'nav_menu', 'sv', 0, $html),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $third = $exporter->export();
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame($first, $second);
+        $this->assertSame($second, $third);
+        $this->assertSame(array('term:80', 'term:81'), $this->groupIds($second['items']));
+        $this->assertSame(
+            $this->groupIds($second['items']),
+            array_values(array_unique($this->groupIds($second['items'])))
+        );
+        $this->assertSame('höst', $this->itemByGroup($second['items'], 'term:80')['translations']['sv']['slug']);
+        $this->assertSame('höst', $this->itemByGroup($second['items'], 'term:81')['translations']['sv']['slug']);
+        $this->assertSame('Höst', $this->itemByGroup($second['items'], 'term:80')['translations']['sv']['name']);
+        $this->assertSame($html, $this->itemByGroup($second['items'], 'term:80')['translations']['sv']['description']);
+        $this->assertSame(3, $this->itemByGroup($second['items'], 'term:80')['translations']['sv']['parent']);
+        $this->assertIsInt($this->itemByGroup($second['items'], 'term:80')['translations']['sv']['parent']);
+        $this->assertSame(0, $this->itemByGroup($second['items'], 'term:81')['translations']['sv']['parent']);
+        $this->assertSame('', $this->itemByGroup($second['items'], 'term:81')['translations']['sv']['description']);
+        $this->assertIsString($this->itemByGroup($second['items'], 'term:81')['translations']['sv']['description']);
+        $this->assertNotContains('term:70', $this->groupIds($second['items']));
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertCount(2, $second['items']);
     }
 
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
