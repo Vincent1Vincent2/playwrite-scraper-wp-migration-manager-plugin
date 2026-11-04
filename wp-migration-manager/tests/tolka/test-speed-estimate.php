@@ -777,6 +777,36 @@ class Test_Speed_Estimate extends TestCase
         }
     }
 
+    public function test_provenance_text_is_copied_exactly_on_success_and_failure()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $benchmarks['provenance'] = 'placeholder';
+        $benchmarks['provenance_note'] = "Line one.\nLine two. ";
+        $metrics = array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4);
+
+        $success = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            $metrics,
+            $benchmarks
+        );
+        $this->assertTrue($success['ok']);
+        $this->assertSame('placeholder', $success['provenance']);
+        $this->assertSame("Line one.\nLine two. ", $success['provenance_note']);
+        $this->assertSame(14.4, $success['faster_percent']);
+
+        $failure = Speed_Estimate::project(
+            array('ok' => false, 'total_ms' => 1000),
+            $metrics,
+            $benchmarks
+        );
+        $this->assertFalse($failure['ok']);
+        $this->assertSame('placeholder', $failure['provenance']);
+        $this->assertSame("Line one.\nLine two. ", $failure['provenance_note']);
+        $this->assertSame(0, $failure['current_ms']);
+        $this->assertSame(0.0, $failure['faster_percent']);
+        $this->assertSame('', $failure['faster_label']);
+    }
+
     public function test_zero_coefficients_do_not_invent_a_speedup()
     {
         $benchmarks = self::contractBenchmarks();
@@ -1531,6 +1561,13 @@ class Test_Speed_Estimate extends TestCase
             $object = $directory . '/object.json';
             file_put_contents($object, '{}');
             $this->assertSame(array(), $read($object));
+
+            $partial = $directory . '/partial.json';
+            file_put_contents($partial, '{"id":"tolka-lab","polylang_switcher_ms":25}');
+            $loaded_partial = $read($partial);
+            $this->assertSame(25, $loaded_partial['polylang_switcher_ms']);
+            $this->assertArrayNotHasKey('polylang_extra_ms_per_language', $loaded_partial);
+            $this->assertArrayNotHasKey('max_overhead_ratio', $loaded_partial);
 
             $nested = $directory . '/nested.json';
             file_put_contents($nested, str_repeat('[', 40) . str_repeat(']', 40));
