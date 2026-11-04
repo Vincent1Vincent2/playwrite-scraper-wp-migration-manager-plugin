@@ -497,9 +497,44 @@ class Speed_Estimate
             'basis' => self::BASIS,
             'provenance' => self::text_field($benchmarks, 'provenance'),
             'provenance_note' => self::text_field($benchmarks, 'provenance_note'),
-            'coefficients' => $benchmarks,
+            'coefficients' => self::json_safe_array($benchmarks),
             'error' => $error,
         );
+    }
+
+    /**
+     * Copy coefficients into a shape wp_send_json can encode.
+     *
+     * INF, NAN, and resources would make the whole admin response fail.
+     *
+     * @param array $value
+     * @param int   $depth
+     * @return array
+     */
+    private static function json_safe_array(array $value, $depth = 0)
+    {
+        if ($depth > 8) {
+            return array();
+        }
+
+        $safe = array();
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $safe[$key] = self::json_safe_array($item, $depth + 1);
+                continue;
+            }
+            if (is_string($item) || is_int($item) || is_bool($item) || $item === null) {
+                $safe[$key] = $item;
+                continue;
+            }
+            if (is_float($item)) {
+                $safe[$key] = is_finite($item) ? $item : null;
+                continue;
+            }
+            $safe[$key] = null;
+        }
+
+        return $safe;
     }
 
     /**
@@ -643,7 +678,7 @@ class Speed_Estimate
         if (is_string($value)) {
             $normalized = strtolower(trim($value));
 
-            return in_array($normalized, array('1', 'true', 'yes'), true);
+            return in_array($normalized, array('1', 'true', 'yes', 'on'), true);
         }
 
         return false;
