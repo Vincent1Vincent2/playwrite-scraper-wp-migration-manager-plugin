@@ -130,7 +130,7 @@ class Migration_Runner
             'sample' => $view['sample'],
             'sections' => $view['sections'],
             'state' => self::run_state($ok, $saved, $attempted, $view['counts']),
-            'message' => self::run_message($ok, $saved, $attempted, $view['counts']),
+            'message' => self::run_message($ok, $saved, $attempted, $view),
         );
     }
 
@@ -380,6 +380,12 @@ class Migration_Runner
             } else {
                 $status = 'ready';
                 $message = sprintf(self::line($meta['many']), $count);
+                if ($count > self::SAMPLE_LIMIT) {
+                    $message .= ' ' . sprintf(
+                        self::line('The preview shows the first %d.'),
+                        self::SAMPLE_LIMIT
+                    );
+                }
             }
 
             $counts[$section] = $count;
@@ -494,11 +500,12 @@ class Migration_Runner
      * @param bool  $ok
      * @param bool  $saved
      * @param bool  $attempted
-     * @param array $counts
+     * @param array $view
      * @return string
      */
-    private static function run_message($ok, $saved, $attempted, $counts)
+    private static function run_message($ok, $saved, $attempted, $view)
     {
+        $counts = $view['counts'];
         if ($ok) {
             $total = array_sum($counts);
             if ($total === 0) {
@@ -510,6 +517,21 @@ class Migration_Runner
             );
         }
         if ($saved) {
+            $skipped = 0;
+            foreach (self::section_keys() as $section) {
+                if ($view['sections'][$section]['status'] === 'missing') {
+                    $skipped++;
+                }
+            }
+            if ($skipped === 1) {
+                return self::line('The Tolka package was saved, but 1 section was skipped. Review the errors before using it. Existing Polylang data was not changed.');
+            }
+            if ($skipped > 1) {
+                return sprintf(
+                    self::line('The Tolka package was saved, but %d sections were skipped. Review the errors before using it. Existing Polylang data was not changed.'),
+                    $skipped
+                );
+            }
             return self::line('The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.');
         }
         if ($attempted) {
@@ -577,15 +599,18 @@ class Migration_Runner
         }
 
         if ($section === 'posts') {
-            $title = self::field_text($item, 'title');
-            if ($title !== '') {
-                return $title;
+            $label = self::field_text($item, 'title');
+            if ($label === '') {
+                $label = self::field_text($item, 'group');
             }
-            $group = self::field_text($item, 'group');
-            if ($group !== '') {
-                return $group;
+            if ($label === '') {
+                return self::line($meta['untitled']);
             }
-            return self::line($meta['untitled']);
+            $status = self::field_text($item, 'status');
+            if ($status !== '' && strtolower($status) !== 'publish') {
+                $label .= ' (' . $status . ')';
+            }
+            return $label;
         }
 
         if ($section === 'terms') {
@@ -606,6 +631,10 @@ class Migration_Runner
 
         if ($section === 'strings') {
             $name = self::field_text($item, 'name');
+            $context = self::field_text($item, 'context');
+            if ($name !== '' && $context !== '' && strtolower($context) !== strtolower($name)) {
+                return $name . ' (' . $context . ')';
+            }
             if ($name !== '') {
                 return $name;
             }
@@ -618,10 +647,13 @@ class Migration_Runner
 
         if ($section === 'menus') {
             $name = self::field_text($item, 'name');
+            $location = self::field_text($item, 'location');
+            if ($name !== '' && $location !== '' && strtolower($name) !== strtolower($location)) {
+                return $name . ' (' . $location . ')';
+            }
             if ($name !== '') {
                 return $name;
             }
-            $location = self::field_text($item, 'location');
             if ($location !== '') {
                 return $location;
             }
@@ -928,6 +960,7 @@ class Migration_Runner
                     if ($key === '') {
                         $key = 'item';
                     }
+                    $key = self::unique_key($out, $key);
                 } elseif (!is_int($key)) {
                     continue;
                 }
@@ -937,6 +970,23 @@ class Migration_Runner
             return $out;
         }
         return self::line('Unsupported value');
+    }
+
+    /**
+     * @param array  $out
+     * @param string $key
+     * @return string
+     */
+    private static function unique_key($out, $key)
+    {
+        if (!array_key_exists($key, $out)) {
+            return $key;
+        }
+        $suffix = 2;
+        while (array_key_exists($key . ' ' . $suffix, $out) && $suffix < 100) {
+            $suffix++;
+        }
+        return $key . ' ' . $suffix;
     }
 
     /**
