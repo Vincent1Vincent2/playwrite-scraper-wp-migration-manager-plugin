@@ -599,6 +599,149 @@ PHP
         $this->assertSame('se', $by_slug['sv']['flag']);
     }
 
+    public function test_broken_default_language_call_falls_back_to_the_saved_option()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_default_language($field = 'slug')
+{
+    throw new RuntimeException('Polylang is not ready.');
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return array(
+                (object) array(
+                    'term_id' => 4,
+                    'name' => 'English',
+                    'slug' => 'en',
+                    'term_group' => 0,
+                    'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                    'count' => 1,
+                ),
+                (object) array(
+                    'term_id' => 8,
+                    'name' => 'Svenska',
+                    'slug' => 'sv',
+                    'term_group' => 1,
+                    'description' => 'a:2:{s:6:"locale";s:5:"sv_SE";s:9:"flag_code";s:2:"se";}',
+                    'count' => 0,
+                ),
+            );
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return 'a:1:{s:12:"default_lang";s:2:"sv";}';
+    }
+};
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+    }
+
+    public function test_duplicate_api_rows_keep_the_name_locale_and_flag()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'en',
+            'name' => 'English',
+            'locale' => 'en_US',
+            'term_id' => 4,
+            'flag_code' => '',
+            'is_default' => true,
+        ),
+        (object) array(
+            'slug' => 'en',
+            'name' => 'en',
+            'locale' => '',
+            'term_id' => 0,
+            'flag_code' => 'us',
+            'is_default' => false,
+        ),
+    );
+}
+
+function pll_default_language($field = 'slug')
+{
+    return 'en';
+}
+PHP
+        );
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertSame(4, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
+    public function test_a_later_duplicate_can_mark_the_default_language()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'en',
+            'name' => 'English',
+            'locale' => 'en_US',
+            'term_id' => 4,
+            'flag_code' => 'us',
+            'is_default' => false,
+        ),
+        (object) array(
+            'slug' => 'fr',
+            'name' => 'Français',
+            'locale' => 'fr_FR',
+            'term_id' => 6,
+            'flag_code' => 'fr',
+            'is_default' => false,
+        ),
+        (object) array(
+            'slug' => 'fr',
+            'name' => 'fr',
+            'locale' => '',
+            'term_id' => 0,
+            'flag_code' => '',
+            'is_default' => true,
+        ),
+    );
+}
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertTrue($by_slug['fr']['is_default']);
+        $this->assertSame('Français', $by_slug['fr']['name']);
+        $this->assertSame('fr_FR', $by_slug['fr']['locale']);
+        $this->assertSame(6, $by_slug['fr']['term_id']);
+    }
+
     public function test_default_language_matches_ignoring_case_and_array_records()
     {
         $result = $this->export_isolated(<<<'PHP'

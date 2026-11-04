@@ -169,11 +169,7 @@ class Polylang_Languages
 
         $items = array();
         foreach ($raw as $language) {
-            $item = $this->item_from_record($language, $default);
-            if ($item['slug'] === '') {
-                continue;
-            }
-            $items[$item['slug']] = $item;
+            $this->add_item($items, $this->item_from_record($language, $default));
         }
 
         return array_values($items);
@@ -214,7 +210,7 @@ class Polylang_Languages
             }
 
             if ($fields_ignored) {
-                $items[$slug] = $this->make_item($slug, '', '', $slug === $default, 0, '');
+                $this->add_item($items, $this->make_item($slug, '', '', $slug === $default, 0, ''));
                 continue;
             }
 
@@ -240,7 +236,7 @@ class Polylang_Languages
                 $term_id = $this->int_value($columns['term_id'][$index]);
             }
 
-            $items[$slug] = $this->make_item($slug, $name, $locale, $is_default, $term_id, $flag);
+            $this->add_item($items, $this->make_item($slug, $name, $locale, $is_default, $term_id, $flag));
         }
 
         return array_values($items);
@@ -259,15 +255,7 @@ class Polylang_Languages
 
         $items = array();
         foreach ($terms as $term) {
-            $item = $this->item_from_language_term($term, $default);
-            if ($item['slug'] === '') {
-                continue;
-            }
-            if (isset($items[$item['slug']])) {
-                $items[$item['slug']] = $this->fill_item($items[$item['slug']], $item);
-                continue;
-            }
-            $items[$item['slug']] = $item;
+            $this->add_item($items, $this->item_from_language_term($term, $default));
         }
 
         $extras = array();
@@ -592,6 +580,28 @@ class Polylang_Languages
     }
 
     /**
+     * Keep the first row for a slug and fill blanks from a later duplicate.
+     *
+     * @param array $items Rows keyed by slug.
+     * @param array $item Row to add.
+     * @return void
+     */
+    private function add_item(&$items, $item)
+    {
+        if (!is_array($item) || !isset($item['slug']) || $item['slug'] === '') {
+            return;
+        }
+
+        $slug = $item['slug'];
+        if (isset($items[$slug])) {
+            $items[$slug] = $this->fill_item($items[$slug], $item);
+            return;
+        }
+
+        $items[$slug] = $item;
+    }
+
+    /**
      * Prefer API rows, then fill blanks from stored terms.
      *
      * @param array $primary Rows that should keep their order.
@@ -656,13 +666,18 @@ class Polylang_Languages
             $preferred['flag'] = $fallback['flag'];
         }
 
+        if ($fallback['is_default'] === true) {
+            $preferred['is_default'] = true;
+        }
+
         return $preferred;
     }
 
     /**
      * Mark the configured default language.
      *
-     * A default slug that has no language row is not invented. One language
+     * A default slug that has no language row is not invented. Matching
+     * ignores case, so a saved value of "NO" still marks "no". One language
      * on its own is the default when Polylang did not record a choice.
      *
      * @param array $items Language rows.
