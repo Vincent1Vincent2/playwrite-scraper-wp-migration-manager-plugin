@@ -541,6 +541,37 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_large_translation_groups_are_read_in_batches(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $map = array();
+        for ($i = 1; $i <= 501; $i++) {
+            $map['l' . $i] = 4000 + $i;
+        }
+        $database->descriptions = array(serialize($map));
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+
+        $batches = 0;
+        foreach ($database->queries as $sql) {
+            if (strpos($sql, ' IN (') !== false) {
+                $batches++;
+            }
+        }
+
+        $this->assertSame(2, $batches);
+        $this->assertSame(array(), $result['items']);
+        $this->assertStringContainsString(
+            'Term 4001 was listed in a translation group',
+            implode("\n", $result['errors'])
+        );
+    }
+
     public function test_a_database_failure_is_a_sentence_and_not_a_fatal(): void
     {
         if (!$this->canUseDatabaseStub()) {

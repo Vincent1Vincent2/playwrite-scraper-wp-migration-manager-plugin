@@ -419,9 +419,10 @@ class Polylang_Terms
      * @param array<string, int> $clean
      * @param array<int, array<string, mixed>> $index
      * @param array<int, bool> $groupedIds
-     * @return array{group: array<string, mixed>|null, missing: int, mismatched: int}
+     * @param bool $authoritativeIndex
+     * @return array{group: array<string, mixed>|null, missing: array<int, int>, mismatched: array<int, array<string, mixed>>}
      */
-    private function translationsFromMap($clean, $fallbackTaxonomy, array $index, array &$groupedIds)
+    private function translationsFromMap($clean, $fallbackTaxonomy, array $index, array &$groupedIds, $authoritativeIndex = false)
     {
         $translations = array();
         $taxonomy = is_string($fallbackTaxonomy) ? $fallbackTaxonomy : '';
@@ -429,7 +430,7 @@ class Polylang_Terms
         $mismatched = array();
 
         foreach ($clean as $lang => $translatedId) {
-            $details = $this->detailsForId($translatedId, $index);
+            $details = $this->detailsForId($translatedId, $index, $authoritativeIndex);
             if ($details === null) {
                 $missing[] = $translatedId;
                 continue;
@@ -555,7 +556,7 @@ class Polylang_Terms
         $missing = array();
         $mismatched = array();
         foreach ($decodedGroups as $clean) {
-            $built = $this->translationsFromMap($clean, '', $details, $groupedIds);
+            $built = $this->translationsFromMap($clean, '', $details, $groupedIds, true);
             $missing = array_merge($missing, $built['missing']);
             $mismatched = array_merge($mismatched, $built['mismatched']);
             if ($built['group'] === null) {
@@ -618,7 +619,7 @@ class Polylang_Terms
      * @param array<int, array<string, mixed>> $index
      * @return array<string, mixed>|null
      */
-    private function detailsForId($id, array $index)
+    private function detailsForId($id, array $index, $authoritativeIndex = false)
     {
         $id = (int) $id;
         if ($id <= 0) {
@@ -626,6 +627,9 @@ class Polylang_Terms
         }
         if (isset($index[$id])) {
             return $index[$id];
+        }
+        if ($authoritativeIndex) {
+            return null;
         }
         if (function_exists('get_term')) {
             try {
@@ -995,19 +999,38 @@ class Polylang_Terms
             return array();
         }
 
+        $all = array();
+        foreach (array_chunk($clean, $this->pageSize) as $chunk) {
+            $rows = $this->fetchTermChunk($chunk);
+            if ($rows === null) {
+                return null;
+            }
+            foreach ($rows as $row) {
+                $all[] = $row;
+            }
+        }
+        return $all;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function fetchTermChunk(array $ids)
+    {
         $terms = $this->table('terms');
         $taxonomy = $this->table('term_taxonomy');
-        if ($terms === '' || $taxonomy === '') {
+        if ($terms === '' || $taxonomy === '' || $ids === array()) {
             return null;
         }
 
-        $placeholders = implode(', ', array_fill(0, count($clean), '%d'));
+        $placeholders = implode(', ', array_fill(0, count($ids), '%d'));
         $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent, tt.description
             FROM {$terms} AS t
             INNER JOIN {$taxonomy} AS tt ON tt.term_id = t.term_id
             WHERE t.term_id IN ({$placeholders})";
 
-        return $this->dbResults($sql, $clean);
+        return $this->dbResults($sql, $ids);
     }
 
     /**
