@@ -2302,7 +2302,21 @@
         title = succeeded ? "Migration finished." : "Migration did not finish.";
       }
       title = finishSentence(title);
+      if (summary) {
+        summary = finishSentence(summary);
+      }
       var lines = Array.isArray(report.lines) ? report.lines : [];
+      if (!succeeded) {
+        title = dropCompleteClaim(title);
+        summary = dropCompleteClaim(summary);
+        lines = lines.map(function (line) {
+          var pair = reportPair(line);
+          if (!pair) {
+            return line;
+          }
+          return { label: pair.label, value: dropCompleteClaim(pair.value) };
+        });
+      }
 
       if (fillReportTable(container, lines, title, summary, errors, missing, succeeded)) {
         writeReportLines(container, lines);
@@ -2494,6 +2508,19 @@
     } catch (e) {
       return "";
     }
+  }
+
+  function dropCompleteClaim(value) {
+    var sentence = String(value == null ? "" : value);
+    var claim = "The migration is complete.";
+    var replacement = "The migration did not finish.";
+    if (sentence.trim() === "The migration is complete") {
+      return replacement;
+    }
+    if (sentence.indexOf(claim) === -1) {
+      return sentence;
+    }
+    return sentence.split(claim).join(replacement);
   }
 
   function reportClosing(ok, summary) {
