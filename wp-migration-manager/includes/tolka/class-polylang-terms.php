@@ -199,7 +199,7 @@ class Polylang_Terms
                     continue;
                 }
                 $row['name'] = $this->stringValue(isset($row['name']) ? $row['name'] : '');
-                $row['slug'] = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
+                $row['slug'] = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
                 $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
                 $items[$index]['translations'][$lang] = $row;
             }
@@ -319,7 +319,7 @@ class Polylang_Terms
                 $lang => array(
                     'id' => $id,
                     'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
-                    'slug' => $this->stringValue(isset($term['slug']) ? $term['slug'] : ''),
+                    'slug' => $this->slugValue(isset($term['slug']) ? $term['slug'] : ''),
                     'description' => $this->plainText(isset($term['description']) ? $term['description'] : ''),
                     'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
                 ),
@@ -489,7 +489,7 @@ class Polylang_Terms
             $translations[$lang] = array(
                 'id' => $translatedId,
                 'name' => $this->stringValue(isset($details['name']) ? $details['name'] : ''),
-                'slug' => $this->stringValue($details['slug']),
+                'slug' => $this->slugValue(isset($details['slug']) ? $details['slug'] : ''),
                 'description' => $this->plainText(isset($details['description']) ? $details['description'] : ''),
                 'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
             );
@@ -1491,7 +1491,7 @@ class Polylang_Terms
         if (is_array($row)) {
             $id = isset($row['id']) ? (int) $row['id'] : 0;
             $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
-            $slug = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
+            $slug = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
             $description = $this->plainText(isset($row['description']) ? $row['description'] : '');
             $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
         } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
@@ -2059,6 +2059,25 @@ class Polylang_Terms
             return str_replace("\0", '', (string) $value);
         }
         return '';
+    }
+
+    /**
+     * A slug of only whitespace is empty. Any other slug is kept, including å, ä, and ö.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function slugValue($value)
+    {
+        $slug = $this->stringValue($value);
+        if ($slug === '') {
+            return '';
+        }
+        $whitespace = preg_match('/^\s+$/u', $slug);
+        if ($whitespace === 1 || trim($slug) === '') {
+            return '';
+        }
+        return $slug;
     }
 
     /**

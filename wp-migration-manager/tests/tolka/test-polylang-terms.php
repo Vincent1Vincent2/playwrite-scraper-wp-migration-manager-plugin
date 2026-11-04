@@ -560,6 +560,56 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(1, $second['items']);
     }
 
+    public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(60, '  åäö  ', " \t\n ", 'category', 'sv', '  6  '),
+            $this->term(61, '', " \xC2\xA0 ", 'category', 'sv', 0),
+            $this->term(62, 'Räkor', '  räkor-åäö  ', 'category', 'sv', 0),
+            $this->term(63, 'Null slug', "\0 \t \0", 'post_tag', 'sv', null),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $spaced = $this->itemByGroup($second['items'], 'term:60');
+        $this->assertSame('  åäö  ', $spaced['translations']['sv']['name']);
+        $this->assertSame('', $spaced['translations']['sv']['slug']);
+        $this->assertSame(6, $spaced['translations']['sv']['parent']);
+        $this->assertIsInt($spaced['translations']['sv']['parent']);
+
+        $blank = $this->itemByGroup($second['items'], 'term:61');
+        $this->assertSame('', $blank['translations']['sv']['name']);
+        $this->assertSame('', $blank['translations']['sv']['slug']);
+        $this->assertSame(0, $blank['translations']['sv']['parent']);
+        $this->assertIsInt($blank['translations']['sv']['parent']);
+
+        $kept = $this->itemByGroup($second['items'], 'term:62');
+        $this->assertSame('Räkor', $kept['translations']['sv']['name']);
+        $this->assertSame('  räkor-åäö  ', $kept['translations']['sv']['slug']);
+        $this->assertSame(0, $kept['translations']['sv']['parent']);
+
+        $nullSlug = $this->itemByGroup($second['items'], 'term:63');
+        $this->assertSame('', $nullSlug['translations']['sv']['slug']);
+        $this->assertSame('Null slug', $nullSlug['translations']['sv']['name']);
+        $this->assertSame(0, $nullSlug['translations']['sv']['parent']);
+
+        $this->assertCount(4, $second['items']);
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertSame(
+            $this->groupIds($second['items']),
+            array_values(array_unique($this->groupIds($second['items'])))
+        );
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(
