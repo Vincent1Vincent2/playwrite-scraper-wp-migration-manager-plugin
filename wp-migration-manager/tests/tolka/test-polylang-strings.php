@@ -241,7 +241,42 @@ class WMM_Tolka_Strings_Db
     /**
      * @var bool
      */
+    public $fail_languages = false;
+
+    /**
+     * @var bool
+     */
+    public $fail_term_meta = false;
+
+    /**
+     * @var bool
+     */
+    public $fail_posts = false;
+
+    /**
+     * @var bool
+     */
+    public $fail_post_meta = false;
+
+    /**
+     * @var bool
+     */
+    public $fail_term_lookup = false;
+
+    /**
+     * @var bool
+     */
+    public $fail_named_icl_columns = false;
+
+    /**
+     * @var bool
+     */
     public $throw_on_translation_taxonomy = false;
+
+    /**
+     * @var bool
+     */
+    public $throw_on_languages = false;
 
     /**
      * @var string[]
@@ -311,18 +346,37 @@ class WMM_Tolka_Strings_Db
             throw new RuntimeException('missing taxonomy');
         }
         if (strpos($plain, "taxonomy = 'language'") !== false) {
+            if ($this->throw_on_languages) {
+                throw new RuntimeException('language taxonomy threw');
+            }
+            if ($this->fail_languages) {
+                $this->last_error = 'language taxonomy is unreadable';
+                return null;
+            }
             return $this->language_rows;
         }
         if (strpos($plain, 'post_translations') !== false || strpos($plain, 'term_translations') !== false) {
             return array();
         }
         if (strpos($plain, '_pll_strings_translations') !== false && strpos($plain, 'post_id') !== false) {
+            if ($this->fail_post_meta) {
+                $this->last_error = 'post meta is unreadable';
+                return null;
+            }
             return $this->post_meta_rows;
         }
         if (strpos($plain, '_pll_strings_translations') !== false) {
+            if ($this->fail_term_meta) {
+                $this->last_error = 'term meta is unreadable';
+                return null;
+            }
             return $this->term_meta_rows;
         }
         if (strpos($plain, 'polylang_mo') !== false && strpos($plain, 'post_type') !== false) {
+            if ($this->fail_posts) {
+                $this->last_error = 'posts are unreadable';
+                return null;
+            }
             return $this->post_rows;
         }
         if (strpos($plain, 'option_name') !== false) {
@@ -333,20 +387,24 @@ class WMM_Tolka_Strings_Db
             return $this->option_rows;
         }
         if (strpos($plain, 'icl_string_translations') !== false) {
-            if ($this->fail_icl_translations) {
+            if ($this->fail_icl_translations || ($this->fail_named_icl_columns && stripos($plain, 'select *') === false)) {
                 $this->last_error = 'translation table is unreadable';
                 return null;
             }
             return $this->icl_translation_rows;
         }
         if (strpos($plain, 'icl_strings') !== false) {
-            if ($this->fail_icl_strings) {
+            if ($this->fail_icl_strings || ($this->fail_named_icl_columns && stripos($plain, 'select *') === false)) {
                 $this->last_error = 'string table is unreadable';
                 return null;
             }
             return $this->icl_string_rows;
         }
         if (strpos($plain, 'term_id IN') !== false) {
+            if ($this->fail_term_lookup) {
+                $this->last_error = 'term lookup failed';
+                return null;
+            }
             return $this->term_slug_rows;
         }
 
@@ -391,6 +449,30 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             array('Polylang is not active on this site, and no string translations were found.'),
             $result['errors']
         );
+    }
+
+    /**
+     * Languages can exist while no string catalogue has been saved.
+     *
+     * @return void
+     */
+    public function test_polylang_inactive_with_no_stored_strings_returns_an_empty_list_and_an_error()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = (new Polylang_Strings())->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            array('Polylang is not active on this site, and no string translations were found.'),
+            $result['errors']
+        );
+        $this->assertDoesNotWrite($db);
     }
 
     /**
@@ -471,6 +553,120 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertSame('Ouvert', $result['items'][1]['translations']['fr']);
         $this->assertSame('Hours', $result['items'][0]['name']);
         $this->assertSame('Footer note', $result['items'][1]['name']);
+    }
+
+    /**
+     * The same original registered twice, and stored twice, is one string.
+     * A later catalogue row replaces the earlier translation.
+     *
+     * @return void
+     */
+    public function test_duplicate_originals_are_exported_once()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'fr' => array(
+                    array('Open daily', 'Ouvert'),
+                    array('Open daily', 'Ouvert tous les jours'),
+                ),
+            ),
+        ));
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Hours', $result['items'][0]['name']);
+        $this->assertSame('Widget', $result['items'][0]['context']);
+        $this->assertSame('Open daily', $result['items'][0]['string']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame('Ouvert tous les jours', $result['items'][0]['translations']['fr']);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array('Open daily', 'Ouvert'),
+                    array('Open daily', 'Ouvert tous les jours'),
+                )),
+            ),
+        );
+        $exported = $this->probe($db, array(), false)->export();
+        $this->assertCount(1, $exported['items']);
+        $this->assertSame('Ouvert tous les jours', $exported['items'][0]['translations']['fr']);
+        $this->assertSame('', $exported['items'][0]['translations']['en']);
+    }
+
+    /**
+     * An empty saved translation leaves that language blank and keeps the others.
+     *
+     * @return void
+     */
+    public function test_a_language_with_an_empty_translation_stays_blank()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr', 'de'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'fr' => array(array('Open daily', 'Ouvert')),
+                'de' => array(array('Open daily', '')),
+            ),
+        ));
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(
+            array(
+                'en' => '',
+                'fr' => 'Ouvert',
+                'de' => '',
+            ),
+            $result['items'][0]['translations']
+        );
+
+        $kept = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array(
+                'fr' => array(
+                    array('Open daily', 'Ouvert'),
+                    array('Open daily', ''),
+                ),
+            ),
+        ));
+        $this->assertSame('Ouvert', $kept['items'][0]['translations']['fr']);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+            array('term_id' => 12, 'slug' => 'de'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Open daily', 'Ouvert'))),
+            ),
+            array(
+                'term_id' => 12,
+                'meta_value' => serialize(array(array('Open daily', ''))),
+            ),
+        );
+        $exported = $this->probe($db, array(), true)->export();
+        $this->assertSame('Ouvert', $exported['items'][0]['translations']['fr']);
+        $this->assertSame('', $exported['items'][0]['translations']['de']);
+        $this->assertCount(1, $exported['items']);
     }
 
     /**
@@ -569,6 +765,8 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             'single pair' => array(array('Hello', 'Bonjour'), ''),
             'serialized' => array($serialized, ''),
             'slashed serialized' => array(addslashes($serialized), ''),
+            'serialized twice' => array(serialize($serialized), ''),
+            'slashed and serialized twice' => array(addslashes(serialize($serialized)), ''),
             'json map' => array('{"Hello":"Bonjour"}', ''),
             'plural forms' => array(array(array('Hello', array('', 'Bonjour'))), ''),
             'entry with a name' => array(
@@ -598,7 +796,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         ));
 
         $this->assertSame(
-            array('String translations for one language could not be read and were skipped.'),
+            array('Some string translations could not be read and were skipped.'),
             $result['errors']
         );
         $this->assertCount(1, $result['items']);
@@ -994,6 +1192,353 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
 
         $this->assertNotEmpty($result['items']);
         $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_source_named_entries_is_not_treated_as_a_nested_catalogue()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array(
+                'fr' => array(
+                    'entries' => 'Valeurs',
+                    'Hello' => 'Bonjour',
+                ),
+            ),
+        ));
+
+        $by_string = array();
+        foreach ($result['items'] as $item) {
+            $by_string[$item['string']] = $item['translations']['fr'];
+        }
+        $this->assertSame('Valeurs', $by_string['entries']);
+        $this->assertSame('Bonjour', $by_string['Hello']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_stored_mo_object_is_read_from_its_entries()
+    {
+        $entry = new stdClass();
+        $entry->singular = 'Hello';
+        $entry->translations = array('Bonjour');
+        $entry->name = 'greet';
+        $entry->context = 'theme';
+        $mo = new stdClass();
+        $mo->entries = array($entry);
+
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array('fr' => serialize($mo)),
+        ));
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('greet', $result['items'][0]['name']);
+        $this->assertSame('theme', $result['items'][0]['context']);
+        $this->assertSame('Hello', $result['items'][0]['string']);
+        $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_later_term_meta_row_replaces_an_older_copy_of_the_same_string()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'First'))),
+            ),
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array('Hello', 'Second'),
+                    array('Extra', 'Plus'),
+                )),
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+        $by_string = array();
+        foreach ($result['items'] as $item) {
+            $by_string[$item['string']] = $item['translations']['fr'];
+        }
+
+        $this->assertSame('Second', $by_string['Hello']);
+        $this->assertSame('Plus', $by_string['Extra']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_throwing_language_query_does_not_discard_stored_strings()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->throw_on_languages = true;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Bonjour'))),
+            ),
+        );
+        $db->term_slug_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
+        $this->assertContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $result['errors']
+        );
+        $this->assertNotContains(
+            'String translations could not be read. Existing Polylang data was left unchanged.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_translation_of_zero_is_not_treated_as_empty()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array('name' => 'count', 'string' => 'None', 'context' => 'plugin'),
+            ),
+            'mo' => array(
+                'fr' => array(array('None', '0')),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame('0', $result['items'][0]['translations']['fr']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_duplicate_wpml_rows_stay_one_string()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr', 'de'),
+            'wpml_rows' => array(
+                array(
+                    'name' => 'banner',
+                    'string' => 'Welcome',
+                    'context' => 'plugin',
+                    'translations' => array('fr' => 'Bienvenue'),
+                ),
+                array(
+                    'name' => 'banner',
+                    'string' => 'Welcome',
+                    'context' => 'plugin',
+                    'translations' => array('fr' => 'Ignored', 'de' => 'Willkommen'),
+                ),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Bienvenue', $result['items'][0]['translations']['fr']);
+        $this->assertSame('Willkommen', $result['items'][0]['translations']['de']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_strings_are_kept_when_the_language_list_query_fails()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_languages = true;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Bonjour'))),
+            ),
+        );
+        $db->term_slug_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
+        $this->assertContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $result['errors']
+        );
+        $this->assertNotContains(
+            'String translations for a language that is no longer installed were skipped.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_legacy_posts_remain_when_term_meta_cannot_be_read()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_term_meta = true;
+        $db->language_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->post_rows = array(
+            array(
+                'ID' => 5,
+                'post_title' => 'polylang_mo_11',
+                'post_content' => serialize(array(array('Hello', 'Salut'))),
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Salut', $result['items'][0]['translations']['fr']);
+        $this->assertContains(
+            'Some string translations could not be read and were skipped.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_term_meta_remains_when_legacy_posts_cannot_be_read()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_posts = true;
+        $db->language_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Bonjour'))),
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
+        $this->assertContains(
+            'Some string translations could not be read and were skipped.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_failed_slug_lookup_is_not_described_as_a_removed_language()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_term_lookup = true;
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 99,
+                'meta_value' => serialize(array(array('Ghost', 'Fantome'))),
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+        $strings = array();
+        foreach ($result['items'] as $item) {
+            $strings[] = $item['string'];
+        }
+
+        $this->assertNotContains('Ghost', $strings);
+        $this->assertContains(
+            'Some string translations could not be read and were skipped.',
+            $result['errors']
+        );
+        $this->assertNotContains(
+            'String translations for a language that is no longer installed were skipped.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_wpml_rows_are_read_when_the_usual_column_names_are_rejected()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->has_icl_strings = true;
+        $db->has_icl_translations = true;
+        $db->fail_named_icl_columns = true;
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->icl_string_rows = array(
+            array(
+                'id' => 7,
+                'context' => '',
+                'gettext_context' => 'plugin',
+                'name' => 'banner',
+                'value' => 'Welcome',
+                'language' => 'en',
+            ),
+        );
+        $db->icl_translation_rows = array(
+            array(
+                'string_id' => 7,
+                'language' => 'fr',
+                'value' => '',
+                'mo_string' => 'Bienvenue',
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('banner', $result['items'][0]['name']);
+        $this->assertSame('plugin', $result['items'][0]['context']);
+        $this->assertSame('Welcome', $result['items'][0]['string']);
+        $this->assertSame('Bienvenue', $result['items'][0]['translations']['fr']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_invalid_utf8_is_cleaned_so_the_preview_can_be_encoded()
+    {
+        $broken = "caf\xC3";
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'registered' => array(
+                array(
+                    'name' => $broken,
+                    'string' => $broken,
+                    'context' => $broken,
+                ),
+            ),
+            'mo' => array(
+                'fr' => array(array($broken, $broken)),
+            ),
+        ));
+
+        $item = $result['items'][0];
+        $this->assertSame($item['string'], $item['name']);
+        $this->assertSame($item['string'], $item['translations']['fr']);
+        $this->assertTrue(mb_check_encoding($item['string'], 'UTF-8'));
+        $this->assertTrue(mb_check_encoding($item['context'], 'UTF-8'));
+        $this->assertNotFalse(json_encode($result));
+        $this->assertStringContainsString('caf', $item['string']);
     }
 
     /**

@@ -38,6 +38,27 @@ class Polylang_Strings
     private $option_read_failed = false;
 
     /**
+     * The language taxonomy query failed.
+     *
+     * @var bool
+     */
+    private $language_list_failed = false;
+
+    /**
+     * A catalogue query failed and some stored strings may be missing.
+     *
+     * @var bool
+     */
+    private $catalogue_query_failed = false;
+
+    /**
+     * Looking up a language slug by term id failed.
+     *
+     * @var bool
+     */
+    private $slug_lookup_failed = false;
+
+    /**
      * Collect string translations.
      *
      * @return array{items: array<int, array>, errors: string[]}
@@ -132,7 +153,7 @@ class Polylang_Strings
         }
 
         if ($unreadable) {
-            $errors[] = $this->text('String translations for one language could not be read and were skipped.');
+            $errors[] = $this->text('Some string translations could not be read and were skipped.');
         }
         if (!empty($snapshot['orphan_groups'])) {
             $errors[] = $this->text('String translations for a language that is no longer installed were skipped.');
@@ -196,9 +217,15 @@ class Polylang_Strings
     {
         $this->saved_options = null;
         $this->option_read_failed = false;
+        $this->language_list_failed = false;
+        $this->catalogue_query_failed = false;
+        $this->slug_lookup_failed = false;
         $errors = array();
         $active = $this->polylang_is_active();
         $languages = $this->read_languages();
+        if ($this->language_list_failed) {
+            $errors[] = $this->text('The language list could not be read. String translations that could still be matched are included.');
+        }
         $this->note_translation_taxonomies();
 
         $registered = $this->read_api_strings();
@@ -333,6 +360,7 @@ class Polylang_Strings
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
+            $this->language_list_failed = true;
             return array();
         }
 
@@ -548,10 +576,12 @@ class Polylang_Strings
                 $unknown[] = (int) $term_id;
             }
         }
+        $lookup_failed = false;
         if ($unknown) {
             foreach ($this->read_term_slugs($unknown) as $term_id => $slug) {
                 $slug_by_term[(int) $term_id] = $slug;
             }
+            $lookup_failed = $this->slug_lookup_failed;
         }
 
         $mo = array();
@@ -560,7 +590,9 @@ class Polylang_Strings
         foreach ($buckets as $term_id => $raw_buckets) {
             $slug = isset($slug_by_term[(int) $term_id]) ? $slug_by_term[(int) $term_id] : '';
             if ($slug === '') {
-                $orphans++;
+                if (!$lookup_failed) {
+                    $orphans++;
+                }
                 continue;
             }
             foreach ($raw_buckets as $raw) {
@@ -582,8 +614,8 @@ class Polylang_Strings
         foreach ($mo as $slug => $pairs) {
             $catalogues[$slug] = array_values($pairs);
         }
-        if ($damaged) {
-            $errors[] = $this->text('String translations for one language could not be read and were skipped.');
+        if ($damaged || $this->catalogue_query_failed || $lookup_failed) {
+            $errors[] = $this->text('Some string translations could not be read and were skipped.');
         }
 
         return array(
@@ -629,6 +661,7 @@ class Polylang_Strings
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
+            $this->catalogue_query_failed = true;
             return;
         }
 
@@ -639,6 +672,10 @@ class Polylang_Strings
                 '_pll_strings_translations'
             );
             $meta_rows = $this->query_rows($meta_sql);
+            if (!is_array($meta_rows)) {
+                $this->catalogue_query_failed = true;
+                $meta_rows = array();
+            }
             if (is_array($meta_rows)) {
                 foreach ($meta_rows as $meta_row) {
                     $meta_row = $this->row_array($meta_row);
@@ -690,6 +727,7 @@ class Polylang_Strings
         );
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
+            $this->catalogue_query_failed = true;
             return;
         }
         foreach ($rows as $row) {
@@ -748,6 +786,7 @@ class Polylang_Strings
         $sql = call_user_func_array(array($db, 'prepare'), array_merge(array($query), $ids));
         $rows = $this->query_rows($sql);
         if (!is_array($rows)) {
+            $this->slug_lookup_failed = true;
             return array();
         }
 
@@ -784,8 +823,10 @@ class Polylang_Strings
             return array();
         }
 
-        $sql = "SELECT id, context, name, value, language FROM {$strings_table}";
-        $rows = $this->query_rows($sql);
+        $rows = $this->read_table_rows(
+            "SELECT id, context, name, value, language FROM {$strings_table}",
+            $strings_table
+        );
         if (!is_array($rows)) {
             $errors[] = $this->text('A legacy string table could not be read, so those strings were skipped.');
             return array();
@@ -793,8 +834,9 @@ class Polylang_Strings
 
         $translations = array();
         if ($translations_table !== '' && $this->table_exists($translations_table)) {
-            $translation_rows = $this->query_rows(
-                "SELECT string_id, language, value FROM {$translations_table}"
+            $translation_rows = $this->read_table_rows(
+                "SELECT string_id, language, value FROM {$translations_table}",
+                $translations_table
             );
             if (!is_array($translation_rows)) {
                 $errors[] = $this->text('A legacy string table could not be read, so those strings were skipped.');
@@ -802,15 +844,18 @@ class Polylang_Strings
             }
             foreach ($translation_rows as $translation_row) {
                 $translation_row = $this->row_array($translation_row);
-                if (!is_array($translation_row) || !isset($translation_row['string_id'])) {
+                if (!is_array($translation_row)) {
                     continue;
                 }
-                $string_id = (int) $translation_row['string_id'];
+                $string_id = (int) $this->field($translation_row, array('string_id'));
+                if ($string_id <= 0) {
+                    continue;
+                }
                 if (!isset($translations[$string_id])) {
                     $translations[$string_id] = array();
                 }
-                $language = isset($translation_row['language']) ? $this->clean_slug($translation_row['language']) : '';
-                $value = isset($translation_row['value']) ? $this->to_text($translation_row['value']) : null;
+                $language = $this->clean_slug($this->field($translation_row, array('language', 'lang')));
+                $value = $this->to_text($this->field($translation_row, array('value', 'mo_string', 'translation')));
                 if ($language === '' || $value === null || $value === '') {
                     continue;
                 }
@@ -824,16 +869,63 @@ class Polylang_Strings
             if (!is_array($row)) {
                 continue;
             }
-            $string_id = isset($row['id']) ? (int) $row['id'] : 0;
+            $string_id = (int) $this->field($row, array('id'));
             $items[] = array(
-                'name' => isset($row['name']) ? $row['name'] : '',
-                'string' => isset($row['value']) ? $row['value'] : '',
-                'context' => isset($row['context']) ? $row['context'] : '',
+                'name' => $this->field($row, array('name')),
+                'string' => $this->field($row, array('value', 'string_value')),
+                'context' => $this->field($row, array('context', 'gettext_context')),
                 'translations' => isset($translations[$string_id]) ? $translations[$string_id] : array(),
             );
         }
 
         return $items;
+    }
+
+    /**
+     * Read a table, then try every column if the expected names are rejected.
+     *
+     * @param string $sql   Preferred query.
+     * @param string $table Validated table name.
+     * @return array|null
+     */
+    protected function read_table_rows($sql, $table)
+    {
+        $rows = $this->query_rows($sql);
+        if (is_array($rows)) {
+            return $rows;
+        }
+        if ($table === '') {
+            return null;
+        }
+
+        return $this->query_rows('SELECT * FROM ' . $table);
+    }
+
+    /**
+     * First non-empty column from a row, compared case-insensitively.
+     *
+     * @param array    $row   Database row.
+     * @param string[] $names Column names, most specific first.
+     * @return mixed|null
+     */
+    protected function field(array $row, array $names)
+    {
+        $lower = array();
+        foreach ($row as $key => $value) {
+            $lower[strtolower((string) $key)] = $value;
+        }
+        foreach ($names as $name) {
+            if (!array_key_exists($name, $lower)) {
+                continue;
+            }
+            if ($lower[$name] === null || $lower[$name] === '') {
+                continue;
+            }
+
+            return $lower[$name];
+        }
+
+        return null;
     }
 
     /**
@@ -1009,13 +1101,17 @@ class Polylang_Strings
         }
         if (is_string($raw)) {
             $decoded = $this->decode_stored($raw);
-            if (!is_array($decoded)) {
+            if ($decoded === null) {
                 return null;
             }
             $raw = $decoded;
         }
         if (is_object($raw)) {
-            $raw = get_object_vars($raw);
+            $vars = get_object_vars($raw);
+            if (isset($vars['entries'])) {
+                return $this->decode_bucket($vars['entries']);
+            }
+            $raw = $vars;
         }
         if (!is_array($raw)) {
             return null;
@@ -1023,11 +1119,20 @@ class Polylang_Strings
         if (!$raw) {
             return array();
         }
+        if (isset($raw['entries']) && (is_array($raw['entries']) || is_object($raw['entries']))) {
+            return $this->decode_bucket($raw['entries']);
+        }
 
         if (!$this->is_list($raw)) {
             $pairs = array();
             foreach ($raw as $source => $translation) {
-                $pair = $this->pair_from_parts($source, $translation, null, null);
+                $pair = null;
+                if (is_array($translation) || is_object($translation)) {
+                    $pair = $this->decode_pair($translation);
+                }
+                if ($pair === null) {
+                    $pair = $this->pair_from_parts($source, $translation, null, null);
+                }
                 if ($pair !== null) {
                     $pairs[] = $pair;
                 }
@@ -1158,23 +1263,33 @@ class Polylang_Strings
     /**
      * Unserialize a catalogue without creating objects.
      *
+     * A catalogue is sometimes serialized twice, or stored with slashes, after
+     * an older export and import. Nested strings are unwrapped a few times.
+     *
      * @param string $value Serialized or JSON text.
-     * @return array|null
+     * @param int    $depth How many wrappers have already been removed.
+     * @return array|object|null
      */
-    protected function decode_stored($value)
+    protected function decode_stored($value, $depth = 0)
     {
-        if (!is_string($value)) {
+        if ($depth > 4 || !is_string($value) || $value === '') {
             return null;
         }
         $decoded = $this->safe_unserialize($value);
-        if (is_array($decoded)) {
+        if (is_string($decoded) && $decoded !== '') {
+            $unwrapped = $this->decode_stored($decoded, $depth + 1);
+            if ($unwrapped !== null) {
+                return $unwrapped;
+            }
+        }
+        if (is_array($decoded) || is_object($decoded)) {
             return $decoded;
         }
         $stripped = stripslashes($value);
         if ($stripped !== $value) {
-            $decoded = $this->safe_unserialize($stripped);
-            if (is_array($decoded)) {
-                return $decoded;
+            $unwrapped = $this->decode_stored($stripped, $depth + 1);
+            if ($unwrapped !== null) {
+                return $unwrapped;
             }
         }
         $json = json_decode($value, true);
@@ -1299,7 +1414,7 @@ class Polylang_Strings
             return '';
         }
 
-        return $slug;
+        return $this->utf8($slug);
     }
 
     /**
@@ -1309,13 +1424,47 @@ class Polylang_Strings
     protected function to_text($value)
     {
         if (is_string($value)) {
-            return $value;
+            return $this->utf8($value);
         }
         if (is_int($value) || is_float($value)) {
-            return (string) $value;
+            return $this->utf8((string) $value);
         }
 
         return null;
+    }
+
+    /**
+     * Keep exported text in UTF-8 so the migration preview can be encoded as JSON.
+     *
+     * @param string $text Raw stored text.
+     * @return string
+     */
+    protected function utf8($text)
+    {
+        if ($text === '') {
+            return $text;
+        }
+        if (function_exists('wp_check_invalid_utf8')) {
+            $clean = wp_check_invalid_utf8($text, true);
+            return is_string($clean) ? $clean : '';
+        }
+        if (function_exists('mb_check_encoding') && mb_check_encoding($text, 'UTF-8')) {
+            return $text;
+        }
+        if (function_exists('mb_convert_encoding')) {
+            $clean = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+        if (function_exists('iconv')) {
+            $clean = iconv('UTF-8', 'UTF-8//IGNORE', $text);
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+
+        return $text;
     }
 
     /**
@@ -1420,9 +1569,13 @@ class Polylang_Strings
         if (!$db || !is_string($sql) || $sql === '') {
             return null;
         }
-        $db->last_error = '';
-        $output = defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A';
-        $rows = $db->get_results($sql, $output);
+        try {
+            $db->last_error = '';
+            $output = defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A';
+            $rows = $db->get_results($sql, $output);
+        } catch (\Throwable $e) {
+            return null;
+        }
         if (!empty($db->last_error)) {
             return null;
         }
@@ -1443,8 +1596,12 @@ class Polylang_Strings
         if (!$db || $table === '') {
             return false;
         }
-        $sql = $db->prepare('SHOW TABLES LIKE %s', $db->esc_like($table));
-        $found = $db->get_var($sql);
+        try {
+            $sql = $db->prepare('SHOW TABLES LIKE %s', $db->esc_like($table));
+            $found = $db->get_var($sql);
+        } catch (\Throwable $e) {
+            return false;
+        }
         if (!is_string($found) || $found === '') {
             return false;
         }
