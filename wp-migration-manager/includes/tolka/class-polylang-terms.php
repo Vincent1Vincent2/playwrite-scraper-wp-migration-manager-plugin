@@ -160,12 +160,14 @@ class Polylang_Terms
             }
         }
 
+        $duplicateSentences = array();
         foreach ($duplicateIds as $duplicateId) {
-            $errors[] = sprintf(
+            $duplicateSentences[] = sprintf(
                 $this->text('Term %d belongs to more than one translation group. The extra copy was skipped.'),
                 (int) $duplicateId
             );
         }
+        $this->appendCapped($errors, $duplicateSentences);
         if ($unassigned > 0 && $assignKind === 'default') {
             $errors[] = $this->unassignedSentence($unassigned, $assignLanguage, 'default');
         } elseif ($unassigned > 0 && $assignKind === 'stored') {
@@ -1528,8 +1530,9 @@ class Polylang_Terms
      */
     private function appendTermProblems(array &$errors, array $missing, array $mismatched)
     {
+        $sentences = array();
         foreach ($missing as $id) {
-            $errors[] = sprintf(
+            $sentences[] = sprintf(
                 $this->text('Term %d was listed in a translation group, but that term no longer exists. It was left out of the export.'),
                 (int) $id
             );
@@ -1543,11 +1546,39 @@ class Polylang_Terms
             if ($groupTaxonomy === '') {
                 $groupTaxonomy = 'term';
             }
-            $errors[] = sprintf(
+            $sentences[] = sprintf(
                 $this->text('Term %1$d belongs to %2$s, so it was left out of the %3$s translation group.'),
                 (int) $row['id'],
                 $taxonomy !== '' ? $taxonomy : 'another taxonomy',
                 $groupTaxonomy
+            );
+        }
+        $this->appendCapped($errors, $sentences);
+    }
+
+    /**
+     * Keep the wizard readable when hundreds of terms have the same kind of problem.
+     *
+     * @param array<int, string> $errors
+     * @param array<int, string> $sentences
+     * @return void
+     */
+    private function appendCapped(array &$errors, array $sentences)
+    {
+        $limit = 20;
+        $count = count($sentences);
+        $shown = 0;
+        foreach ($sentences as $sentence) {
+            if ($shown >= $limit) {
+                break;
+            }
+            $errors[] = $sentence;
+            $shown++;
+        }
+        if ($count > $limit) {
+            $errors[] = sprintf(
+                $this->text('%d more term problems were left out of this list so it stays readable.'),
+                $count - $limit
             );
         }
     }

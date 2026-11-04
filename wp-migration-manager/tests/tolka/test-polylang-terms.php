@@ -570,6 +570,11 @@ class Polylang_Terms_Test extends TestCase
             'Term 4001 was listed in a translation group',
             implode("\n", $result['errors'])
         );
+        $this->assertContains(
+            '481 more term problems were left out of this list so it stays readable.',
+            $result['errors']
+        );
+        $this->assertCount(21, $result['errors']);
     }
 
     public function test_a_database_failure_is_a_sentence_and_not_a_fatal(): void
