@@ -755,6 +755,28 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0.7, $again['max_overhead_ratio']);
         $this->assertSame('placeholder', $again['provenance']);
         $this->assertSame(self::PROVENANCE_NOTE, $again['provenance_note']);
+
+        $strings = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => '1000'),
+            array('language_count' => '1', 'has_polylang_switcher' => false, 'script_count' => '0'),
+            Speed_Estimate::benchmarks()
+        );
+        $this->assertTrue($strings['ok']);
+        $this->assertSame(971, $strings['tolka_ms']);
+        $this->assertSame(2.9, $strings['faster_percent']);
+        $this->assertSame('2.9% faster', $strings['faster_label']);
+        $this->assertSame($estimate['coefficients'], $strings['coefficients']);
+
+        $two = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 0),
+            Speed_Estimate::benchmarks()
+        );
+        $this->assertTrue($two['ok']);
+        $this->assertSame(942, $two['tolka_ms']);
+        $this->assertSame(5.8, $two['faster_percent']);
+        $this->assertSame('5.8% faster', $two['faster_label']);
+        $this->assertNotSame($estimate['faster_percent'], $two['faster_percent']);
     }
 
     public function test_negative_measured_time_uses_one_millisecond()
