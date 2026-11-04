@@ -53,7 +53,7 @@ class Polylang_Terms
      * An empty name is still exported. The term is not dropped when its slug is empty.
      * HTML in a description is kept. A null byte in a description is removed.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
-     * Calling export() again on the same instance does not append duplicate groups.
+     * Calling export() again on the same instance returns the same groups after slug case is normalized.
      * The group id is the default-language term when that translation exists,
      * otherwise the lowest term id in the group.
      *
