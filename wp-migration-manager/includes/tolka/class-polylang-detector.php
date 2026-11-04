@@ -1018,6 +1018,10 @@ class Polylang_Detector
         if (strncmp($contents, "\xEF\xBB\xBF", 3) === 0) {
             $contents = substr($contents, 3);
         }
+        // Windows (\r\n) and old Mac (\r) endings become \n before the header
+        // match, so a trailing space or \r cannot stick to a version such as 3.9.1.
+        $contents = str_replace("\r\n", "\n", $contents);
+        $contents = str_replace("\r", "\n", $contents);
 
         return $contents;
     }
