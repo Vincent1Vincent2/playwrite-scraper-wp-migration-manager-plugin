@@ -496,6 +496,23 @@ HTML;
         $this->assertSame(1, $capped_result['language_count']);
     }
 
+    public function test_script_inside_noscript_template_or_iframe_does_not_count()
+    {
+        $cases = array(
+            '<noscript><script src="/hidden.js"></script></noscript><script src="/theme.js"></script>',
+            '<template><script src="/hidden.js"></script></template><script src="/theme.js"></script>',
+            '<iframe><script src="/hidden.js"></script></iframe><script src="/theme.js"></script>',
+        );
+
+        foreach ($cases as $html) {
+            $result = $this->analyze($html . '<link rel="alternate" hreflang="x-default" href="/">');
+
+            $this->assertSame(1, $result['script_count'], $html);
+            $this->assertSame(0, $result['hreflang_count'], $html);
+            $this->assertSame(1, $result['language_count'], $html);
+        }
+    }
+
     public function test_x_default_is_not_a_language_when_it_is_the_only_alternate()
     {
         $cases = array(
