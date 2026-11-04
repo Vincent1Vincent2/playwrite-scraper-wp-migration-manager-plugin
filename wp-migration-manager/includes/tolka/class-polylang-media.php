@@ -1185,6 +1185,9 @@ class Polylang_Media
         if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $file) === 1) {
             return false;
         }
+        if (isset($file[1]) && $file[0] === '/' && $file[1] === '/') {
+            return false;
+        }
         if ($file[0] === '/') {
             return true;
         }

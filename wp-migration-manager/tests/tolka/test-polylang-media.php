@@ -56,6 +56,63 @@ class Test_Polylang_Media extends TestCase
         $this->assertNotFalse(json_encode($result));
     }
 
+    public function test_untranslated_attachment_keeps_a_remote_file_url()
+    {
+        $url = 'https://cdn.example/photos/floor-plan.pdf?v=2';
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 42, 'lang' => 'en'),
+        ), array(42), array('en'), 'en', array(
+            42 => array(
+                'file' => $url,
+                'alt' => 'Floor plan',
+                'title' => 'Floor plan',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 42, $url, array(
+            'en' => 'Floor plan',
+        ), array(
+            'en' => 'Floor plan',
+        ));
+    }
+
+    public function test_two_language_group_keeps_a_protocol_relative_file_url()
+    {
+        $url = '//cdn.example/2024/05/hero.jpg';
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => $url, 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertSame($url, $result['items'][0]['file']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+    }
+
+    public function test_two_language_group_keeps_the_canonical_file_url()
+    {
+        $url = 'https://cdn.example/photos/hero.jpg';
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => $url, 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame($url, $result['items'][0]['file']);
+        $this->assertSame(array('en' => 'Harbor', 'fr' => 'Port'), $result['items'][0]['alt']);
+    }
+
     public function test_attachment_with_no_translation()
     {
         $result = $this->itemsFrom(array(), array(
