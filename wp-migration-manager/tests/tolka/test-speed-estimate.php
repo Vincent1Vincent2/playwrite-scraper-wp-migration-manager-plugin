@@ -822,6 +822,70 @@ class Test_Speed_Estimate extends TestCase
         $this->assertStringNotContainsString('971', $bad_json);
     }
 
+    public function test_one_language_with_switcher_is_5_4_percent_faster()
+    {
+        // Shipped coefficients: L = 1, switcher on, no scripts, current = 1000.
+        // raw = 35 + 25 = 60. overhead = 60. tolka = 1000 - 60 + 6 = 946.
+        // percent = round(54 / 1000 * 100, 1) = 5.4.
+        // No switcher stays raw = 35, tolka = 971, percent = 2.9.
+        $loaded = Speed_Estimate::benchmarks();
+        $metrics_on = array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0);
+        $metrics_off = array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0);
+        $measurement = array('ok' => true, 'total_ms' => 1000);
+
+        $on = Speed_Estimate::project($measurement, $metrics_on, $loaded);
+        $off = Speed_Estimate::project($measurement, $metrics_off, $loaded);
+
+        $this->assertTrue($on['ok']);
+        $this->assertSame(1000, $on['current_ms']);
+        $this->assertSame(946, $on['tolka_ms']);
+        $this->assertSame(60, $on['overhead_ms']);
+        $this->assertSame(5.4, $on['faster_percent']);
+        $this->assertSame('5.4% faster', $on['faster_label']);
+        $this->assertSame('', $on['error']);
+        $this->assertLessThanOrEqual($on['current_ms'], $on['tolka_ms']);
+        $this->assertLessThanOrEqual(100, $on['faster_percent']);
+
+        $this->assertTrue($off['ok']);
+        $this->assertSame(971, $off['tolka_ms']);
+        $this->assertSame(35, $off['overhead_ms']);
+        $this->assertSame(2.9, $off['faster_percent']);
+        $this->assertSame('2.9% faster', $off['faster_label']);
+        $this->assertSame($loaded['polylang_switcher_ms'], $on['overhead_ms'] - $off['overhead_ms']);
+        $this->assertSame(25, $on['overhead_ms'] - $off['overhead_ms']);
+        $this->assertSame($off['coefficients'], $on['coefficients']);
+        $this->assertSame(35, $on['coefficients']['polylang_extra_ms_per_language']);
+        $this->assertSame(25, $on['coefficients']['polylang_switcher_ms']);
+        $this->assertSame(8, $on['coefficients']['polylang_extra_ms_per_script']);
+        $this->assertSame(6, $on['coefficients']['tolka_ms_per_language']);
+        $this->assertSame(0.7, $on['coefficients']['max_overhead_ratio']);
+        $this->assertSame('placeholder', $on['provenance']);
+        $this->assertSame(self::PROVENANCE_NOTE, $on['provenance_note']);
+
+        $measurement_off = $measurement;
+        $measurement_off['has_polylang_switcher'] = false;
+        $forced_off = Speed_Estimate::project($measurement_off, $metrics_on, $loaded);
+        $this->assertSame(971, $forced_off['tolka_ms']);
+        $this->assertSame(2.9, $forced_off['faster_percent']);
+        $this->assertSame('2.9% faster', $forced_off['faster_label']);
+        $this->assertNotSame(5.4, $forced_off['faster_percent']);
+
+        $words = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => '1000'),
+            array('language_count' => '1', 'has_polylang_switcher' => 'yes', 'script_count' => '0'),
+            Speed_Estimate::benchmarks()
+        );
+        $this->assertSame(946, $words['tolka_ms']);
+        $this->assertSame(5.4, $words['faster_percent']);
+        $this->assertSame('5.4% faster', $words['faster_label']);
+
+        $again = Speed_Estimate::benchmarks();
+        $this->assertSame(35, $again['polylang_extra_ms_per_language']);
+        $this->assertSame(25, $again['polylang_switcher_ms']);
+        $this->assertSame(0.7, $again['max_overhead_ratio']);
+        $this->assertSame('placeholder', $again['provenance']);
+    }
+
     public function test_negative_measured_time_uses_one_millisecond()
     {
         $estimate = Speed_Estimate::project(

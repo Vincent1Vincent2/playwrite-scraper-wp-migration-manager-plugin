@@ -91,6 +91,7 @@ class Speed_Estimate
      * A total_ms of 0 still estimates from a 1 ms floor and returns a percent.
      * A language_count of 0 is one language. With the shipped coefficients,
      * 1000 ms, one language, no switcher, and zero scripts is 2.9% faster.
+     * The same page with the switcher on is 5.4% faster.
      *
      * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
