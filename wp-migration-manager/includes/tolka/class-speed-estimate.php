@@ -80,8 +80,9 @@ class Speed_Estimate
      * The returned array always has ok, current_ms, tolka_ms, faster_percent,
      * faster_label, overhead_ms, basis, provenance, provenance_note,
      * coefficients, and error. On success, faster_label is "{percent}% faster"
-     * with one decimal, error is empty, and provenance and provenance_note are
-     * copied from the benchmarks argument. On failure, the three times are 0,
+     * with one decimal, error is empty, provenance and provenance_note are
+     * copied from the benchmarks argument, and coefficients are the five
+     * numbers used in the formula. On failure, the three times are 0,
      * faster_percent is 0, faster_label is empty, and error is the sentence
      * to show the admin. basis is always the benchmarks.json sentence.
      * benchmarks() returns the five coefficient keys stored in the file.
