@@ -270,11 +270,16 @@ class Polylang_Languages
             $items[$item['slug']] = $item;
         }
 
+        $extras = array();
         foreach ($this->slugs_from_translations() as $slug) {
             if (isset($items[$slug])) {
                 continue;
             }
-            $items[$slug] = $this->make_item($slug, '', '', $slug === $default, 0, '');
+            $extras[$slug] = $this->make_item($slug, '', '', $slug === $default, 0, '');
+        }
+        ksort($extras, SORT_STRING);
+        foreach ($extras as $slug => $item) {
+            $items[$slug] = $item;
         }
 
         return array_values($items);
@@ -743,12 +748,17 @@ class Polylang_Languages
             $name = $slug;
         }
 
+        $term_id = $this->int_value($term_id);
+        if ($term_id < 0) {
+            $term_id = 0;
+        }
+
         return array(
             'slug' => $slug,
             'name' => $name,
             'locale' => $this->string_value($locale),
             'is_default' => ($is_default === true || $is_default === 1 || $is_default === '1'),
-            'term_id' => $this->int_value($term_id),
+            'term_id' => $term_id,
             'flag' => $this->string_value($flag),
         );
     }
@@ -1050,10 +1060,10 @@ class Polylang_Languages
     private function message_active_empty()
     {
         if (!function_exists('__')) {
-            return 'Polylang is active, but no languages were found. Add a language in Languages, then preview the migration again.';
+            return 'Polylang is active, but no languages were found. Add a language under Languages in Polylang, then preview the migration again.';
         }
 
-        return __('Polylang is active, but no languages were found. Add a language in Languages, then preview the migration again.', 'migration-manager');
+        return __('Polylang is active, but no languages were found. Add a language under Languages in Polylang, then preview the migration again.', 'migration-manager');
     }
 
     /**

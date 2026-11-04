@@ -206,6 +206,39 @@ class Test_Polylang_Languages extends PHPUnit\Framework\TestCase
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_a_bad_description_does_not_leave_the_error_handler_in_place()
+    {
+        $db = new Polylang_Languages_Test_Db();
+        $db->language_rows = array(
+            (object) array(
+                'term_id' => 4,
+                'name' => 'English',
+                'slug' => 'en',
+                'term_group' => 0,
+                'description' => 'a:1:{s:6:"locale";O:8:"stdClass":0:{}}',
+                'count' => 0,
+            ),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $seen = 0;
+        set_error_handler(function () use (&$seen) {
+            $seen++;
+            return true;
+        });
+
+        try {
+            $result = Polylang_Languages::export();
+            trigger_error('probe', E_USER_NOTICE);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(1, $seen);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('', $result['items'][0]['locale']);
+    }
+
     public function test_database_failure_explains_the_empty_list_and_changes_nothing()
     {
         $db = new Polylang_Languages_Test_Db();
@@ -360,7 +393,7 @@ PHP
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            'Polylang is active, but no languages were found. Add a language in Languages, then preview the migration again.',
+            'Polylang is active, but no languages were found. Add a language under Languages in Polylang, then preview the migration again.',
             $result['errors'][0]
         );
     }
@@ -758,6 +791,66 @@ PHP
         $this->assertSame('Français', $result['items'][0]['name']);
         $this->assertSame('fr_FR', $result['items'][0]['locale']);
         $this->assertTrue($result['items'][0]['is_default']);
+    }
+
+    public function test_older_description_flag_array_rows_and_translation_order()
+    {
+        $english = array(
+            'term_id' => -5,
+            'name' => 'English',
+            'slug' => 'en',
+            'term_group' => 0,
+            'description' => serialize(array(
+                'locale' => 'en_CA',
+                'flag' => 'CA',
+            )),
+            'count' => 0,
+        );
+        $db = new Polylang_Languages_Test_Db();
+        $db->option_value = serialize(array('default_lang' => 'en'));
+        $db->language_rows = array($english);
+        $db->post_translation_rows = array(
+            (object) array(
+                'description' => serialize(array(
+                    'sv' => 3,
+                    'de' => 2,
+                    'fr' => 1,
+                )),
+            ),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('en', 'de', 'fr', 'sv'), array_keys($by_slug));
+        $this->assertSame('en_CA', $by_slug['en']['locale']);
+        $this->assertSame('ca', $by_slug['en']['flag']);
+        $this->assertSame(0, $by_slug['en']['term_id']);
+        $this->assertTrue($by_slug['en']['is_default']);
+        $this->assertFalse($by_slug['de']['is_default']);
+        $this->assertSame('de', $by_slug['de']['name']);
+    }
+
+    public function test_custom_flag_url_is_kept_when_no_flag_code_is_stored()
+    {
+        $language = (object) array(
+            'slug' => 'cy',
+            'name' => 'Cymraeg',
+            'locale' => 'cy',
+            'term_id' => 12,
+            'flag_code' => '',
+            'custom_flag_url' => 'https://example.com/flags/cy.png',
+            'flag' => '<img alt="" />',
+            'is_default' => false,
+        );
+
+        $item = $this->invoke('item_from_record', array($language, 'cy'));
+
+        $this->assertSame('https://example.com/flags/cy.png', $item['flag']);
+        $this->assertSame('Cymraeg', $item['name']);
+        $this->assertFalse($item['is_default']);
+        $this->assertSame(12, $item['term_id']);
     }
 
     public function test_stored_flag_code_replaces_flag_markup()
