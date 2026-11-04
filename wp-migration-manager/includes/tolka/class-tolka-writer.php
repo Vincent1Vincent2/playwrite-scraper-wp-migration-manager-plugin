@@ -109,11 +109,7 @@ class Tolka_Writer
         $collected = self::collect($package, $errors, $hidden);
 
         if (!self::sections_are_lists($package)) {
-            self::add_error(
-                $errors,
-                $hidden,
-                'The Tolka package was not saved because part of it was not a list.'
-            );
+            $errors[] = self::failure('The Tolka package was not saved because part of it was not a list.');
             return self::result($collected['counts'], $errors, $hidden, false);
         }
 

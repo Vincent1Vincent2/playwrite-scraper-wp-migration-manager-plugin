@@ -710,6 +710,31 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         }
     }
 
+    public function test_unsaved_package_is_explained_after_many_row_errors()
+    {
+        $posts = array();
+        for ($index = 0; $index < 40; $index++) {
+            $posts[] = array(
+                'group' => 'post:' . $index,
+                'translations' => array(
+                    'en' => array('title' => 'Missing'),
+                ),
+            );
+        }
+
+        $result = Tolka_Writer::write(array(
+            'posts' => $posts,
+            'terms' => 'bad',
+        ));
+
+        $this->assertFalse($result['ok']);
+        $this->assertNull($GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertStringContainsString(
+            'The Tolka package was not saved because part of it was not a list.',
+            implode("\n", $result['errors'])
+        );
+    }
+
     public function test_write_outside_wordpress_reports_a_clear_error()
     {
         unset($GLOBALS['wmm_tolka_schema_driver']);
