@@ -200,6 +200,10 @@ class Polylang_Posts
         if (isset($locales[$slug])) {
             return $locales[$slug];
         }
+        $underscore = str_replace('-', '_', $slug);
+        if ($underscore !== $slug && isset($locales[$underscore])) {
+            return $locales[$underscore];
+        }
         return $slug;
     }
 
@@ -1052,9 +1056,8 @@ class Polylang_Posts
                 continue;
             }
             $lang = trim($lang);
-            $locales = $this->locale_to_slug();
-            if ($lang !== '' && isset($locales[$lang])) {
-                $lang = $locales[$lang];
+            if ($lang !== '') {
+                $lang = $this->slug_for_language_key($lang);
             }
             $post_id = $this->normalize_post_id($post_id);
             if ($lang === '' || $post_id <= 0 || isset($used[$post_id])) {

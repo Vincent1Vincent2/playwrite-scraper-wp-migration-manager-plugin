@@ -1246,6 +1246,37 @@ class Polylang_Posts_Test extends TestCase
         );
     }
 
+    public function test_hyphenated_locale_is_rewritten_for_a_draft()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->language_terms = array(
+            array(
+                'slug' => 'en',
+                'term_description' => serialize(array('locale' => 'en_US')),
+            ),
+        );
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 15,
+                'description' => serialize(array('en-US' => 5)),
+            ),
+        );
+        $fake->languages = array(5 => 'en');
+        $fake->posts_rows = array(
+            5 => $this->db_post(5, 'draft', 'Hello', '', 'page', '', 'Page draft'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:5', $result['items'][0]['group']);
+        $this->assertSame('page', $result['items'][0]['type']);
+        $this->assertSame(array('en'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('Page draft', $result['items'][0]['translations']['en']['content']);
+    }
+
     public function test_locale_keys_are_rewritten_to_language_slugs_for_a_draft()
     {
         $this->skip_when_wordpress_or_polylang_is_loaded();
