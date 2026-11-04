@@ -1222,6 +1222,31 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_a_slug_list_omits_internal_pll_languages()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array('en', 'pll_en', 'pll_sv', 'sv');
+}
+
+function pll_default_language($field = 'slug')
+{
+    return 'sv';
+}
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+    }
+
     public function test_the_api_default_pll_sv_marks_sv()
     {
         $result = $this->export_isolated(<<<'PHP'
