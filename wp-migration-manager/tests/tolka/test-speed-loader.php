@@ -1060,26 +1060,35 @@ class Speed_Loader_Test extends TestCase
     public function test_redirect_credentials_are_not_echoed()
     {
         $this->requireHarness();
-        Speed_Loader_Harness::$resolved = array('1.1.1.1');
-        Speed_Loader_Harness::$queue = array(
-            $this->http_response(302, '', 'https://user:secret@www.example.com/home'),
-            $this->http_response(200, '<html>home</html>'),
+        $locations = array(
+            'https://user:secret@www.example.com/home',
+            'https://user:secret@10.0.0.1/hidden',
         );
 
-        $result = Speed_Loader_Harness::measure('http://example.com/');
+        foreach ($locations as $location) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            Speed_Loader_Harness::$queue = array(
+                $this->http_response(302, '', $location),
+                $this->http_response(200, '<html>home</html>'),
+            );
 
-        $this->assertFalse($result['ok']);
-        $this->assertSame('', $result['html']);
-        $this->assertSame(302, $result['status_code']);
-        $this->assertSame(
-            'The site redirected to an address that contains a username or password.',
-            $result['error']
-        );
-        $this->assertMatchesRegularExpression('/\.$/', $result['error']);
-        $this->assertSame(array('http://example.com/'), Speed_Loader_Harness::$requested_urls);
-        $this->assertStringNotContainsString('secret', (string) json_encode(Speed_Loader_Harness::$requested_urls));
-        $this->assertStringNotContainsString('secret', (string) json_encode($result));
-        $this->assertStringNotContainsString('@', $result['url']);
+            $result = Speed_Loader_Harness::measure('http://example.com/');
+
+            $this->assertFalse($result['ok'], $location);
+            $this->assertSame('', $result['html'], $location);
+            $this->assertSame(302, $result['status_code'], $location);
+            $this->assertSame(
+                'The site redirected to an address that contains a username or password.',
+                $result['error'],
+                $location
+            );
+            $this->assertMatchesRegularExpression('/\.$/', $result['error'], $location);
+            $this->assertSame(array('http://example.com/'), Speed_Loader_Harness::$requested_urls, $location);
+            $this->assertStringNotContainsString('secret', (string) json_encode(Speed_Loader_Harness::$requested_urls), $location);
+            $this->assertStringNotContainsString('secret', (string) json_encode($result), $location);
+            $this->assertStringNotContainsString('@', $result['url'], $location);
+        }
     }
 
     public function test_third_redirect_is_fetched()
