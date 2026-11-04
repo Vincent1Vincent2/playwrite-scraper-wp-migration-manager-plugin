@@ -266,14 +266,15 @@ class Polylang_Languages
 
         $extras = array();
         foreach ($this->slugs_from_translations() as $slug) {
-            if (isset($items[$slug])) {
+            $item = $this->make_item($slug, '', '', strcasecmp($slug, $default) === 0, 0, '');
+            if ($item['slug'] === '' || isset($items[$item['slug']])) {
                 continue;
             }
-            $extras[$slug] = $this->make_item($slug, '', '', $slug === $default, 0, '');
+            $extras[$item['slug']] = $item;
         }
         ksort($extras, SORT_STRING);
-        foreach ($extras as $slug => $item) {
-            $items[$slug] = $item;
+        foreach ($extras as $item) {
+            $this->add_item($items, $item);
         }
 
         return array_values($items);
