@@ -1598,9 +1598,125 @@ class Harness_Test extends Tolka_Test_Case
     {
         require_once WMM_TOLKA_TEST_DIR . '/bootstrap.php';
         require WMM_TOLKA_TEST_DIR . '/bootstrap.php';
+        require WMM_TOLKA_TEST_DIR . '/bootstrap.php';
 
         $this->assertTrue(function_exists('wmm_tolka_skip_without_class'));
         $this->assertTrue(function_exists('wmm_tolka_load_classes'));
+        $this->assertTrue(defined('WMM_TOLKA_TEST_BOOTSTRAP'));
+    }
+
+    /**
+     * A second include in a fresh process stays quiet under E_ALL.
+     */
+    public function test_including_the_bootstrap_twice_does_not_warn_or_fail()
+    {
+        $bootstrap = var_export(WMM_TOLKA_TEST_DIR . '/bootstrap.php', true);
+        $resolved = var_export(realpath(WMM_TOLKA_TEST_DIR . '/bootstrap.php'), true);
+        $runner = $this->make_temp_dir() . '/runner.php';
+        $script = "<?php\n"
+            . "error_reporting(E_ALL);\n"
+            . "ini_set('display_errors', '1');\n"
+            . "set_error_handler(function (\$severity, \$message) {\n"
+            . "    fwrite(STDERR, 'WARN ' . \$message . \"\\n\");\n"
+            . "    return true;\n"
+            . "});\n"
+            . "require $bootstrap;\n"
+            . "require $resolved;\n"
+            . "include $bootstrap;\n"
+            . "echo function_exists('wmm_tolka_load_classes') ? \"OK\\n\" : \"MISSING\\n\";\n";
+        file_put_contents($runner, $script);
+
+        $output = array();
+        $status = 1;
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' 2>&1', $output, $status);
+        $text = implode("\n", $output);
+
+        $this->assertSame(0, $status, $text);
+        $this->assertStringContainsString('OK', $text);
+        $this->assertStringNotContainsString('WARN', $text);
+        $this->assertStringNotContainsString('Cannot redeclare', $text);
+    }
+
+    /**
+     * PHP files in tests/tolka that are not test-*.php are not test cases.
+     */
+    public function test_files_that_are_not_test_scripts_are_not_executed()
+    {
+        $binary = $this->phpunit_binary();
+
+        if ($binary === null) {
+            $this->markTestSkipped('PHPUnit could not be found for a subprocess, so this check was skipped.');
+        }
+
+        $directory = WMM_TOLKA_TEST_DIR;
+        $decoys = array(
+            $directory . '/not-a-test.php',
+            $directory . '/test.php',
+            $directory . '/TolkaExtraTest.php',
+            $directory . '/Test-Foo.php',
+            $directory . '/support/helper.php',
+        );
+        $support = $directory . '/support';
+
+        if (!is_dir($support)) {
+            mkdir($support, 0700, true);
+        }
+
+        $bomb = "<?php\necho \"EXECUTED_NOT_A_TEST\\n\";\nexit(97);\n";
+
+        try {
+            foreach ($decoys as $path) {
+                file_put_contents($path, $bomb);
+            }
+
+            $cache = sys_get_temp_dir() . '/wmm-tolka-list-' . getmypid();
+            $version_output = array();
+            exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary) . ' --version 2>&1', $version_output);
+            $cache_args = '';
+
+            if (preg_match('/PHPUnit (\d+)/', implode(' ', $version_output), $version_match) && (int) $version_match[1] >= 10) {
+                $cache_args = ' --cache-directory ' . escapeshellarg($cache);
+            }
+
+            $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary)
+                . ' -c ' . escapeshellarg(WMM_TOLKA_PLUGIN_DIR . '/phpunit.xml.dist')
+                . ' --list-tests --do-not-cache-result' . $cache_args;
+            $output = array();
+            $status = 1;
+            exec($command . ' 2>&1', $output, $status);
+            $text = implode("\n", $output);
+
+            $this->assertSame(0, $status, $text);
+            $this->assertStringNotContainsString('EXECUTED_NOT_A_TEST', $text);
+            $this->assertStringContainsString('Harness_Test', $text);
+            $this->assertStringNotContainsString('not-a-test.php', $text);
+            $this->assertStringNotContainsString('TolkaExtraTest', $text);
+            $this->assertStringNotContainsString('helper.php', $text);
+        } finally {
+            foreach ($decoys as $path) {
+                if (is_file($path)) {
+                    unlink($path);
+                }
+            }
+
+            if (is_dir($support)) {
+                @rmdir($support);
+            }
+        }
+    }
+
+    /**
+     * The PHPUnit entry point that launched this process, when it is a file.
+     *
+     * @return string|null
+     */
+    private function phpunit_binary()
+    {
+        if (isset($_SERVER['argv'][0]) && is_file($_SERVER['argv'][0])) {
+            return $_SERVER['argv'][0];
+        }
+
+        return null;
     }
 
     /**
