@@ -488,6 +488,27 @@ class Test_Polylang_Media extends TestCase
         );
     }
 
+    public function test_file_path_that_is_only_a_null_byte_is_exported_empty()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 9, 'lang' => 'sv'),
+        ), array(9), array('sv'), 'sv', array(
+            9 => array(
+                'file' => "\0",
+                'alt' => 'Å',
+                'title' => 'Ä',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('', $result['items'][0]['file']);
+        $this->assertSame('Å', $result['items'][0]['alt']['sv']);
+        $this->assertSame('Ä', $result['items'][0]['title']['sv']);
+        $errors = $this->call('errors_for_result', array(0, $result['items']));
+        $this->assertCount(1, $errors);
+        $this->assertCustomerSentence($errors[0]);
+    }
+
     public function test_library_exports_a_missing_file_beside_a_real_file_with_one_error()
     {
         $result = $this->itemsFrom(array(), array(
