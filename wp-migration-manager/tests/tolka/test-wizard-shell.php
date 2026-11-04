@@ -269,6 +269,9 @@ namespace WMM\Tolka {
             $this->assertContains('wp_ajax_wmm_tolka_measure', $hooks);
             $this->assertContains('wp_ajax_wmm_tolka_preview', $hooks);
             $this->assertContains('wp_ajax_wmm_tolka_run', $hooks);
+            $this->assertContains('wp_ajax_nopriv_wmm_tolka_measure', $hooks);
+            $this->assertContains('wp_ajax_nopriv_wmm_tolka_preview', $hooks);
+            $this->assertContains('wp_ajax_nopriv_wmm_tolka_run', $hooks);
 
             $GLOBALS['wmm_tolka_test_menus'] = array();
             \wmm_tolka_register_menu();
@@ -623,6 +626,8 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('aria-describedby="wmm-tolka-measure-note"', $html);
             $this->assertStringContainsString('aria-describedby="wmm-tolka-preview-note"', $html);
             $this->assertStringContainsString('id="wmm-tolka-fallback"', $html);
+            $this->assertStringContainsString('typeof request.then', $html);
+            $this->assertStringContainsString('The request could not be completed.', $html);
             $this->assertStringContainsString('Enter', $html);
             $this->assertStringContainsString('Enable JavaScript', $html);
             $this->assertStringNotContainsString('secret-html', $html);
