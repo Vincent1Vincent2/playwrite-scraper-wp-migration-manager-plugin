@@ -577,8 +577,14 @@ class Polylang_Media
             return null;
         }
 
+        $language_terms = $this->object_terms($ids, 'language');
+        $translation_terms = $this->object_terms($ids, 'post_translations');
+        if ($language_terms === null || $translation_terms === null) {
+            return null;
+        }
+
         $languages = array();
-        foreach ($this->object_terms($ids, 'language') as $term) {
+        foreach ($language_terms as $term) {
             $id = (int) $this->row_value($term, 'object_id');
             $lang = $this->language_slug($this->row_value($term, 'slug'));
             if ($id > 0 && $lang !== '' && !isset($languages[$id])) {
@@ -595,7 +601,7 @@ class Polylang_Media
         }
 
         $buckets = array();
-        foreach ($this->object_terms($ids, 'post_translations') as $term) {
+        foreach ($translation_terms as $term) {
             $id = (int) $this->row_value($term, 'object_id');
             $term_key = (int) $this->row_value($term, 'term_taxonomy_id');
             if ($term_key <= 0) {
@@ -628,29 +634,35 @@ class Polylang_Media
     /**
      * @param array $ids
      * @param string $taxonomy
-     * @return array
+     * @return array|null Null when the taxonomy exists but every read failed.
      */
     private function object_terms($ids, $taxonomy)
     {
         if (!function_exists('wp_get_object_terms') || !is_array($ids) || $ids === array()) {
             return array();
         }
+        if (function_exists('taxonomy_exists') && !taxonomy_exists($taxonomy)) {
+            return array();
+        }
 
         $terms = array();
         $chunks = array_chunk($ids, 200);
+        $errors = 0;
         foreach ($chunks as $chunk) {
             $found = wp_get_object_terms($chunk, $taxonomy, array(
                 'fields' => 'all_with_object_id',
             ));
-            if (function_exists('is_wp_error') && is_wp_error($found)) {
-                continue;
-            }
-            if (!is_array($found)) {
+            if ((function_exists('is_wp_error') && is_wp_error($found)) || !is_array($found)) {
+                $errors++;
                 continue;
             }
             foreach ($found as $term) {
                 $terms[] = $term;
             }
+        }
+
+        if ($chunks !== array() && $errors === count($chunks)) {
+            return null;
         }
 
         return $terms;

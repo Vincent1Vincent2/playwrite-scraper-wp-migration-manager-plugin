@@ -507,6 +507,16 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('0', $this->call('int_placeholders', array(0)));
     }
 
+    public function test_term_reads_without_wordpress_are_empty()
+    {
+        if (function_exists('wp_get_object_terms') || function_exists('taxonomy_exists')) {
+            $this->markTestSkipped('WordPress term API is loaded.');
+        }
+
+        $this->assertSame(array(), $this->call('object_terms', array(array(1, 2), 'language')));
+        $this->assertSame(array(), $this->call('object_terms', array(array(), 'post_translations')));
+    }
+
     public function test_record_lookup_without_wordpress_returns_empty_strings()
     {
         if (function_exists('get_post_meta') || function_exists('get_post') || isset($GLOBALS['wpdb'])) {
