@@ -897,6 +897,11 @@ class Polylang_Menus
                 $built = $this->navigation_link_from_attrs($name, $attrs, $position);
                 $position++;
                 $children = $this->items_from_parsed_blocks($inner, $position);
+                foreach ($children['items'] as $index => $child) {
+                    if ($child['parent'] === 0) {
+                        $children['items'][$index]['parent'] = $built['id'];
+                    }
+                }
                 $built['children'] = $children['items'];
                 $position = $children['position'];
                 $items[] = $built;
@@ -943,6 +948,11 @@ class Polylang_Menus
                     $parent = array_pop($stack);
                     if (! empty($parent)) {
                         $last = array_pop($parent);
+                        foreach ($children as $index => $child) {
+                            if (is_array($child) && $child['parent'] === 0) {
+                                $children[$index]['parent'] = $last['id'];
+                            }
+                        }
                         $last['children'] = $children;
                         $parent[] = $last;
                     }
@@ -1043,8 +1053,13 @@ class Polylang_Menus
             $object = 'custom';
         }
 
+        $target = '';
+        if (! empty($attrs['opensInNewTab']) && $attrs['opensInNewTab'] !== 'false') {
+            $target = '_blank';
+        }
+
         return array(
-            'id' => 0,
+            'id' => $this->to_int($position) > 0 ? $this->to_int($position) : 1,
             'parent' => 0,
             'title' => $title,
             'url' => $url,
@@ -1053,9 +1068,9 @@ class Polylang_Menus
             'type' => $object,
             'attr_title' => '',
             'description' => $this->entity_text(isset($attrs['description']) ? $attrs['description'] : ''),
-            'target' => '',
-            'classes' => array(),
-            'xfn' => '',
+            'target' => $target,
+            'classes' => $this->normalize_classes(isset($attrs['className']) ? $attrs['className'] : array()),
+            'xfn' => $this->text(isset($attrs['rel']) ? $attrs['rel'] : ''),
             'position' => $this->to_int($position) > 0 ? $this->to_int($position) : 1,
             'children' => array(),
             'switcher' => $switcher,
