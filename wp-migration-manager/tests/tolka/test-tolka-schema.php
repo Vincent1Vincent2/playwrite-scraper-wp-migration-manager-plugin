@@ -971,6 +971,66 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         }
     }
 
+    public function test_menu_trees_are_stored_without_tagging_menu_terms()
+    {
+        $item = array(
+            'location' => 'primary',
+            'label' => 'Primary',
+            'translations' => array(
+                'en' => array(
+                    'menu_id' => 20,
+                    'name' => 'Main',
+                    'slug' => 'main',
+                    'link_count' => 2,
+                    'items' => array(
+                        array(
+                            'id' => 50,
+                            'parent' => 0,
+                            'title' => 'Home',
+                            'url' => 'https://example.com/',
+                            'object' => 'page',
+                            'object_id' => 10,
+                            'type' => 'post_type',
+                            'classes' => array('home'),
+                            'children' => array(
+                                array(
+                                    'id' => 51,
+                                    'parent' => 50,
+                                    'title' => 'About',
+                                    'url' => 'https://example.com/about',
+                                    'object' => 'page',
+                                    'object_id' => 11,
+                                    'type' => 'post_type',
+                                    'classes' => array(),
+                                    'children' => array(),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        );
+
+        $package = Tolka_Schema::package(array(
+            'menus' => array(
+                'items' => array($item),
+                'errors' => array('A menu warning that must not be stored.'),
+            ),
+        ));
+
+        $this->assertSame(array($item), $package['menus']);
+        $this->assertStringNotContainsString('A menu warning', json_encode($package));
+
+        $result = Tolka_Writer::write($package);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(1, $result['counts']['menus']);
+        $this->assertSame($package, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+    }
+
     public function test_schema_package_is_stored_unchanged()
     {
         $package = $this->sample_package();
