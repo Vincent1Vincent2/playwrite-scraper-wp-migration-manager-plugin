@@ -799,7 +799,7 @@ function wmm_tolka_render_status()
         return;
     }
 
-    echo '<ul class="wmm-tolka-problems">';
+    $lines = array();
 
     foreach ($status['errors'] as $error) {
         if (!is_string($error)) {
@@ -810,7 +810,18 @@ function wmm_tolka_render_status()
         if ($text === '') {
             continue;
         }
-        echo '<li>' . esc_html($text) . '</li>';
+
+        $lines[] = $text;
+    }
+
+    if (empty($lines)) {
+        return;
+    }
+
+    echo '<ul class="wmm-tolka-problems">';
+
+    foreach ($lines as $line) {
+        echo '<li>' . esc_html($line) . '</li>';
     }
 
     echo '</ul>';
@@ -902,7 +913,8 @@ function wmm_tolka_render_button($id, $label, $unavailable, $primary = false, $d
 /**
  * Saved or empty migration result.
  *
- * @param array $report Formatted report.
+ * @param array  $report       Formatted report.
+ * @param string $unavailable  Shown when this install cannot run a migration.
  */
 function wmm_tolka_render_report_body($report, $unavailable = '')
 {
@@ -1159,6 +1171,8 @@ function wmm_tolka_fallback_copy()
         'noEstimate' => __('No speed estimate is available for this URL. Nothing was changed.', 'migration-manager'),
         'problems' => __('Details', 'migration-manager'),
         'measuredUrl' => __('Address checked', 'migration-manager'),
+        'yes' => __('Yes', 'migration-manager'),
+        'no' => __('No', 'migration-manager'),
     );
 }
 
@@ -1549,7 +1563,10 @@ function wmm_tolka_fallback_script()
         if (value === null || value === undefined) {
             return "";
         }
-        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        if (typeof value === "boolean") {
+            return value ? text("yes", "Yes") : text("no", "No");
+        }
+        if (typeof value === "string" || typeof value === "number") {
             return String(value);
         }
         return text("storedDetail", "Stored with the report.");

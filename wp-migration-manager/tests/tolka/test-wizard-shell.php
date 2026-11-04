@@ -206,7 +206,15 @@ namespace WMM\Tolka {
             $GLOBALS['wmm_tolka_test_can'] = true;
             $GLOBALS['wmm_tolka_test_nonce_valid'] = false;
             $_POST = array();
-            unset($GLOBALS['wmm_tolka_test_json'], $GLOBALS['wmm_tolka_stub_throw'], $GLOBALS['wmm_tolka_test_report']);
+            unset(
+                $GLOBALS['wmm_tolka_test_json'],
+                $GLOBALS['wmm_tolka_stub_throw'],
+                $GLOBALS['wmm_tolka_test_report'],
+                $GLOBALS['wmm_tolka_detector_throw'],
+                $GLOBALS['wmm_tolka_detector_active'],
+                $GLOBALS['wmm_tolka_detector_version'],
+                $GLOBALS['wmm_tolka_detector_errors']
+            );
         }
 
         public function test_main_plugin_requires_bootstrap_once()
@@ -711,6 +719,83 @@ namespace WMM\Tolka {
                 \wmm_tolka_ajax_run();
             });
             $this->assertSame('Migration finished', $GLOBALS['wmm_tolka_test_json']['data']['title']);
+        }
+
+        public function test_polylang_status_is_safe_and_nonfatal()
+        {
+            $this->requireStubs();
+
+            if (!class_exists(Polylang_Detector::class)) {
+                eval(<<<'PHP'
+namespace WMM\Tolka;
+class Polylang_Detector {
+    public static function status() {
+        if (!empty($GLOBALS['wmm_tolka_detector_throw'])) {
+            throw new \RuntimeException('detector-boom');
+        }
+        return array(
+            'active' => !empty($GLOBALS['wmm_tolka_detector_active']),
+            'version' => isset($GLOBALS['wmm_tolka_detector_version']) ? $GLOBALS['wmm_tolka_detector_version'] : '',
+            'errors' => isset($GLOBALS['wmm_tolka_detector_errors']) ? $GLOBALS['wmm_tolka_detector_errors'] : array(),
+        );
+    }
+}
+PHP
+                );
+            }
+
+            $GLOBALS['wmm_tolka_detector_throw'] = false;
+            $GLOBALS['wmm_tolka_detector_active'] = true;
+            $GLOBALS['wmm_tolka_detector_version'] = '3.6<script>';
+            $GLOBALS['wmm_tolka_detector_errors'] = array('<b>bad</b>', 'Stored rows were unreadable.', array('skip'));
+
+            $html = $this->render();
+            $this->assertStringContainsString('Polylang 3.6 is active on this site.', $html);
+            $this->assertStringContainsString('>bad<', $html);
+            $this->assertStringContainsString('Stored rows were unreadable.', $html);
+            $this->assertStringNotContainsString('3.6<script>', $html);
+            $this->assertStringNotContainsString('<b>bad</b>', $html);
+
+            $GLOBALS['wmm_tolka_detector_active'] = false;
+            $GLOBALS['wmm_tolka_detector_version'] = '';
+            $GLOBALS['wmm_tolka_detector_errors'] = array();
+            $html = $this->render();
+            $this->assertStringContainsString('Polylang is not active on this site.', $html);
+            $this->assertStringContainsString('will not delete Polylang data.', $html);
+
+            $GLOBALS['wmm_tolka_detector_throw'] = true;
+            $html = $this->render();
+            $this->assertStringContainsString('Polylang status could not be read.', $html);
+            $this->assertStringNotContainsString('detector-boom', $html);
+        }
+
+        public function test_installed_partials_replace_fallback_copy()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            $speed = $directory . 'speed-estimate.php';
+            $help = $directory . 'help.php';
+            file_put_contents($speed, '<p id="speed-partial">SPEED_PARTIAL</p>');
+            file_put_contents($help, '<p id="help-partial">HELP_PARTIAL</p>');
+            clearstatcache();
+
+            try {
+                $html = $this->render();
+                $this->assertStringContainsString('SPEED_PARTIAL', $html);
+                $this->assertStringContainsString('HELP_PARTIAL', $html);
+                $this->assertStringNotContainsString('No measurement yet.', $html);
+                $this->assertStringNotContainsString('See whether Polylang is active.', $html);
+            } finally {
+                unlink($speed);
+                unlink($help);
+                clearstatcache();
+            }
         }
 
         public function test_slice_exceptions_become_errors()
