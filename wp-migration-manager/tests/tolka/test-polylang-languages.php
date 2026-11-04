@@ -1029,6 +1029,40 @@ PHP
         );
     }
 
+    public function test_an_api_list_of_only_internal_rows_explains_the_empty_state()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'pll_en',
+            'name' => 'pll_en',
+            'locale' => 'en_US',
+            'term_id' => 40,
+            'flag_code' => 'us',
+            'is_default' => true,
+        ),
+        (object) array(
+            'slug' => 'pll_sv',
+            'name' => 'pll_sv',
+            'locale' => 'sv_SE',
+            'term_id' => 41,
+            'flag_code' => 'se',
+            'is_default' => false,
+        ),
+    );
+}
+PHP
+        );
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed. Add a language under Languages in Polylang, then preview again.',
+            $result['errors'][0]
+        );
+    }
+
     public function test_the_api_does_not_export_internal_pll_languages()
     {
         $result = $this->export_isolated(<<<'PHP'
