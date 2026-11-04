@@ -405,6 +405,11 @@ class Polylang_Posts
             foreach ($map as $mapped_id) {
                 $seen[(int) $mapped_id] = true;
             }
+            foreach ($this->collapsed_languages as $row) {
+                if (isset($row['dropped'])) {
+                    $seen[(int) $row['dropped']] = true;
+                }
+            }
             $maps[] = $map;
         }
 
