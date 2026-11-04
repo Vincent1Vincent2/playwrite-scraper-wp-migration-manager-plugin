@@ -243,7 +243,9 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
             if ('' === $wmm_tolka_speed_view['tolka']) {
                 $wmm_tolka_speed_view['tolka'] = $wmm_tolka_speed_unavailable;
             }
-            $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_unavailable;
+            if ('' === $wmm_tolka_speed_view['faster']) {
+                $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_unavailable;
+            }
             $wmm_tolka_speed_view['summary'] = __('The speed estimate completed, but one or more figures were missing. No percent is shown.', 'migration-manager');
         } elseif (!$wmm_tolka_speed_faster_ok) {
             $wmm_tolka_speed_view['faster'] = __('No percent is shown.', 'migration-manager');
