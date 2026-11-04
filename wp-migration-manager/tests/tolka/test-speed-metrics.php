@@ -351,6 +351,43 @@ HTML;
         $this->assertSame(2, $result['language_count']);
     }
 
+    public function test_menu_item_lang_item_current_is_one_switcher()
+    {
+        $plain = $this->analyze('<li class="menu-item lang-item current"></li>');
+        $this->assertTrue($plain['has_polylang_switcher']);
+        $this->assertSame(0, $plain['hreflang_count']);
+        $this->assertSame(2, $plain['language_count']);
+
+        $ordinary = $this->analyze('<li class="menu-item current-menu-item"></li>');
+        $this->assertFalse($ordinary['has_polylang_switcher']);
+        $this->assertSame(1, $ordinary['language_count']);
+
+        $split = $this->analyze('<li class="menu-item lang-" title="item current"></li>');
+        $this->assertFalse($split['has_polylang_switcher']);
+        $this->assertSame(1, $split['language_count']);
+
+        $title_only = $this->analyze('<li class="menu-item" title="lang-item"></li><link hreflang="en" href="/"><link hreflang="sv" href="/sv/"><link hreflang="x-default" href="/">');
+        $this->assertFalse($title_only['has_polylang_switcher']);
+        $this->assertSame(2, $title_only['hreflang_count']);
+        $this->assertSame(2, $title_only['language_count']);
+
+        $page = <<<'HTML'
+<link rel="alternate" hreflang="en" href="https://example.com/" />
+<link rel="alternate" hreflang="sv" href="https://example.com/sv/" />
+<link rel="alternate" hreflang="x-default" href="https://example.com/" />
+<p title="menu-item lang-item current"></p>
+<ul>
+<li class="menu-item lang-item lang-item-en current-lang menu-item-10"><a href="/" hreflang="en">English</a></li>
+<li class="menu-item lang-item lang-item-sv menu-item-11"><a href="/sv/" hreflang="sv">Svenska</a></li>
+</ul>
+HTML;
+        $result = $this->analyze($page);
+
+        $this->assertSame(2, $result['hreflang_count']);
+        $this->assertSame(2, $result['language_count']);
+        $this->assertTrue($result['has_polylang_switcher']);
+    }
+
     public function test_two_hreflangs_keep_language_count_two_with_body_lang_item()
     {
         $attribute_only = '<link rel="alternate" hreflang="en" href="/"><link rel="alternate" hreflang="sv" href="/sv/"><link rel="alternate" hreflang="x-default" href="/"><p title="lang-item" data-note="pll-switcher"></p>';
