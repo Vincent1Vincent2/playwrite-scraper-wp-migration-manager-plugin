@@ -33,6 +33,72 @@ class Test_Polylang_Languages extends PHPUnit\Framework\TestCase
         unset($GLOBALS['wpdb']);
     }
 
+    public function test_empty_states_can_be_translated()
+    {
+        $inactive = $this->export_isolated(<<<'PHP'
+function __($text, $domain = 'default')
+{
+    if ($domain !== 'migration-manager') {
+        throw new RuntimeException('unexpected text domain');
+    }
+    return 'Translated: ' . $text;
+}
+PHP
+        );
+        $this->assertSame(
+            'Translated: Polylang is not active on this site, so there are no languages to migrate. Activate Polylang if the languages are still installed, then preview again.',
+            $inactive['errors'][0]
+        );
+
+        $active = $this->export_isolated(<<<'PHP'
+function __($text, $domain = 'default')
+{
+    return 'Translated: ' . $text;
+}
+function pll_languages_list($args = array())
+{
+    return array();
+}
+PHP
+        );
+        $this->assertSame(
+            'Translated: Polylang is active, but no languages were found. Add a language under Languages in Polylang, then preview the migration again.',
+            $active['errors'][0]
+        );
+
+        $failed = $this->export_isolated(<<<'PHP'
+function __($text, $domain = 'default')
+{
+    return 'Translated: ' . $text;
+}
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return null;
+        }
+        return array();
+    }
+    public function get_var($query)
+    {
+        return '';
+    }
+};
+PHP
+        );
+        $this->assertSame(
+            'Translated: Polylang languages could not be read. Nothing was changed. Preview the migration again.',
+            $failed['errors'][0]
+        );
+    }
+
     public function test_inactive_site_returns_no_languages_and_an_explanation()
     {
         $result = Polylang_Languages::export();
