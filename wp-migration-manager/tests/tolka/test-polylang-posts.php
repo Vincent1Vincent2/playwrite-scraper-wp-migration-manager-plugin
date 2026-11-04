@@ -990,6 +990,76 @@ class Polylang_Posts_Test extends TestCase
         );
     }
 
+    public function test_scheduled_default_language_post_names_the_group_even_when_its_id_is_higher()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 50,
+                'description' => serialize(array('en' => 8, 'sv' => 50)),
+            ),
+            array(
+                'term_taxonomy_id' => 51,
+                'description' => serialize(array('de' => '10', 'fr' => '9')),
+            ),
+        );
+        $fake->languages = array(8 => 'en', 50 => 'sv', 9 => 'fr', 10 => 'de', 3 => 'sv');
+        $fake->posts_rows = array(
+            8 => $this->db_post(8, 'publish', 'English', 'english', 'post', '', 'Live'),
+            50 => $this->db_post(50, 'future', 'Fågel på Åland', 'fagel', 'post', '', '<p>ä ö å</p>'),
+            9 => $this->db_post(9, 'draft', 'Brouillon', 'brouillon', 'post', '', ''),
+            10 => $this->db_post(10, 'future', 'Geplant', 'geplant', 'post', '', 'Morgen'),
+            3 => $this->db_post(3, 'future', 'Ö', 'o', 'page', '', ''),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array('post:3', 'post:9', 'post:50'), $this->groups($second));
+        $this->assertCount(3, $second['items']);
+
+        $scheduled = null;
+        $fallback = null;
+        $alone = null;
+        foreach ($second['items'] as $item) {
+            $this->assertTrue(preg_match('/^post:\d+$/', $item['group']) === 1);
+            if ($item['group'] === 'post:50') {
+                $scheduled = $item;
+            }
+            if ($item['group'] === 'post:9') {
+                $fallback = $item;
+            }
+            if ($item['group'] === 'post:3') {
+                $alone = $item;
+            }
+        }
+        $this->assertTrue(is_array($scheduled));
+        $this->assertSame('future', $scheduled['translations']['sv']['status']);
+        $this->assertSame('Fågel på Åland', $scheduled['translations']['sv']['title']);
+        $this->assertSame('<p>ä ö å</p>', $scheduled['translations']['sv']['content']);
+        $this->assertSame(50, $scheduled['translations']['sv']['id']);
+        $this->assertSame('publish', $scheduled['translations']['en']['status']);
+
+        $this->assertTrue(is_array($fallback));
+        $this->assertSame(9, $fallback['translations']['fr']['id']);
+        $this->assertSame('draft', $fallback['translations']['fr']['status']);
+        $this->assertSame('', $fallback['translations']['fr']['content']);
+        $this->assertSame('future', $fallback['translations']['de']['status']);
+        $this->assertSame(
+            'Translation group post:9 does not include the default language (sv). The group is named after post 9.',
+            $second['errors'][0]
+        );
+
+        $this->assertTrue(is_array($alone));
+        $this->assertSame('future', $alone['translations']['sv']['status']);
+        $this->assertSame('Ö', $alone['translations']['sv']['title']);
+        $this->assertSame('', $alone['translations']['sv']['content']);
+        $this->assertSame('page', $alone['type']);
+    }
+
     public function test_multilingual_group_without_the_default_language_names_the_lowest_id()
     {
         $exporter = new Polylang_Posts_Fixture();
