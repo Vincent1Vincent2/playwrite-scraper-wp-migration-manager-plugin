@@ -17,8 +17,17 @@
  * For that process, each tests/tolka/test-*.php file is linked to a
  * temporary path named after its test class, then restored.
  *
+ * Including this file a second time returns immediately, so helpers are
+ * not declared again.
+ *
  * @package MigrationManager
  */
+
+if (defined('WMM_TOLKA_TEST_BOOTSTRAP')) {
+    return;
+}
+
+define('WMM_TOLKA_TEST_BOOTSTRAP', true);
 
 if (!defined('WMM_TOLKA_TEST_DIR')) {
     define('WMM_TOLKA_TEST_DIR', __DIR__);
@@ -646,8 +655,5 @@ if (!function_exists('wmm_tolka_load_classes')) {
     }
 }
 
-if (!defined('WMM_TOLKA_TEST_BOOTSTRAP')) {
-    define('WMM_TOLKA_TEST_BOOTSTRAP', true);
-    wmm_tolka_rewire_test_files();
-    wmm_tolka_load_classes();
-}
+wmm_tolka_rewire_test_files();
+wmm_tolka_load_classes();
