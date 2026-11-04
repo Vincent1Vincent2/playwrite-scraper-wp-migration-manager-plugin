@@ -372,7 +372,7 @@ if ($wmm_tolka_speed_view['show_note']) {
     </dl>
 
     <div class="wmm-tolka-provenance wmm-tolka-provenance-note<?php echo $wmm_tolka_speed_view['show_note'] ? ' notice notice-warning' : ''; ?>" data-wmm-tolka="provenance_note"<?php echo $wmm_tolka_speed_view['show_note'] ? '' : ' hidden'; ?>>
-        <p class="wmm-tolka-value" id="wmm-tolka-provenance-note" data-field="provenance_note" role="note"><?php echo esc_html($wmm_tolka_speed_view['note']); ?></p>
+        <p class="wmm-tolka-value" id="wmm-tolka-provenance-note" data-field="provenance_note" role="note"<?php echo $wmm_tolka_speed_view['show_note'] ? '' : ' hidden'; ?>><?php echo esc_html($wmm_tolka_speed_view['note']); ?></p>
     </div>
 
     <p class="wmm-tolka-speed-savings" id="wmm-tolka-speed-savings" data-field="savings" data-saved-ms="<?php echo esc_attr($wmm_tolka_speed_view['saved_ms']); ?>"<?php echo ('' === $wmm_tolka_speed_view['savings']) ? ' hidden' : ''; ?>>
