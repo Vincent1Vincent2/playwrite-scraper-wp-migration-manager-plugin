@@ -2754,7 +2754,9 @@ function wmm_tolka_render_page()
     }
 
     wmm_tolka_render_load_errors();
-    wmm_tolka_render_status();
+    if (!wmm_tolka_html_has_id($view_html, 'wmm-tolka-polylang-status')) {
+        wmm_tolka_render_status();
+    }
     wmm_tolka_render_gaps();
 
     if ($view_failed) {

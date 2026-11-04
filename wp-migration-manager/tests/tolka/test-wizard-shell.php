@@ -1441,6 +1441,34 @@ namespace WMM\Tolka {
             }
         }
 
+        public function test_screen_status_is_not_duplicated()
+        {
+            $this->requireStubs();
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            $view = $directory . 'wizard.php';
+            file_put_contents(
+                $view,
+                '<div id="wmm-tolka-wizard">SCREEN_MARKER</div><div id="wmm-tolka-polylang-status">SCREEN_STATUS</div>'
+            );
+            clearstatcache();
+
+            try {
+                $html = $this->render();
+                $this->assertSame(1, substr_count($html, 'id="wmm-tolka-polylang-status"'));
+                $this->assertStringContainsString('SCREEN_STATUS', $html);
+                $this->assertStringNotContainsString('Polylang cannot be checked on this install yet.', $html);
+                $this->assertStringContainsString('SCREEN_MARKER', $html);
+            } finally {
+                unlink($view);
+                clearstatcache();
+            }
+        }
+
         public function test_broken_wizard_view_falls_back()
         {
             $this->requireStubs();
