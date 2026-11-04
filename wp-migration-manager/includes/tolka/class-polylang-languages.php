@@ -865,31 +865,30 @@ class Polylang_Languages
             return is_array($decoded) ? $decoded : array();
         }
 
-        if (function_exists('maybe_unserialize')) {
-            $decoded = maybe_unserialize($value);
-            if (is_array($decoded)) {
-                return $decoded;
-            }
-            if (is_string($decoded) && $decoded !== $value) {
-                return $this->decode_stored_array($decoded, $depth + 1);
-            }
+        // Do not use maybe_unserialize(). It can create objects from a
+        // description. Only arrays and strings are accepted here.
+        if (strpos($value, 'a:') !== 0 && strpos($value, 's:') !== 0) {
             return array();
         }
 
-        if (strpos($value, 'a:') !== 0) {
-            return array();
+        $decoded = $this->unserialize_value($value);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+        if (is_string($decoded)) {
+            return $this->decode_stored_array($decoded, $depth + 1);
         }
 
-        return $this->unserialize_array($value);
+        return array();
     }
 
     /**
-     * Unserialize an array without creating objects.
+     * Unserialize without creating objects.
      *
-     * @param string $value Serialized array.
-     * @return array
+     * @param string $value Serialized value.
+     * @return mixed
      */
-    private function unserialize_array($value)
+    private function unserialize_value($value)
     {
         $decoded = false;
         set_error_handler(function () {
@@ -904,7 +903,7 @@ class Polylang_Languages
             restore_error_handler();
         }
 
-        return is_array($decoded) ? $decoded : array();
+        return $decoded;
     }
 
     /**

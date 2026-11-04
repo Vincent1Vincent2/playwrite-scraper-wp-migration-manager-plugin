@@ -206,6 +206,71 @@ class Test_Polylang_Languages extends PHPUnit\Framework\TestCase
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_double_encoded_description_is_read_without_creating_objects()
+    {
+        $description = serialize(serialize(array(
+            'locale' => 'en_US',
+            'flag_code' => 'us',
+        )));
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 0),
+        ), 'en');
+        $db->language_rows[0]->description = $description;
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
+    public function test_wordpress_unserialize_helper_is_not_used()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function maybe_unserialize($value)
+{
+    throw new RuntimeException('unsafe unserialize');
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return array((object) array(
+                'term_id' => 4,
+                'name' => 'English',
+                'slug' => 'en',
+                'term_group' => 0,
+                'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                'count' => 0,
+            ));
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return 'a:1:{s:12:"default_lang";s:2:"en";}';
+    }
+};
+PHP
+        );
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+    }
+
     public function test_a_bad_description_does_not_leave_the_error_handler_in_place()
     {
         $db = new Polylang_Languages_Test_Db();
