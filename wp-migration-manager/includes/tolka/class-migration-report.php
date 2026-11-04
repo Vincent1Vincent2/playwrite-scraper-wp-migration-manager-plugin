@@ -71,13 +71,14 @@ class Migration_Report
         if ($status === 'complete' || $status === 'unconfirmed' || ($status === 'problems' && $total > 0)) {
             $default_language = self::default_language_sentence($run);
         }
+        $missing_sentence = self::missing_sentence($missing['labels'], $missing['bases']);
         $summary = self::summary_for($status, $package, $description, $total, $missing['labels'], $missing['bases'], $errors, $next, $run_ok, $default_language);
 
         return array(
             'ok' => ($status === 'complete' || $status === 'empty'),
             'title' => $title,
             'summary' => $summary,
-            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch'], $description['shortfall']),
+            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch'], $description['shortfall'], $missing_sentence),
         );
     }
 
@@ -963,10 +964,11 @@ class Migration_Report
      * @param string[]              $missing_lines Per-step sentences.
      * @param string[]              $errors       Error sentences.
      * @param string                $mismatch     Saved-count warning, or empty.
-     * @param bool                  $shortfall    Stored fewer items than the package contained.
+     * @param bool                  $shortfall         Stored fewer items than the package contained.
+     * @param string               $missing_sentence  One sentence naming every missing class.
      * @return array<int, array{label: string, value: string}>
      */
-    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors, $mismatch, $shortfall)
+    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors, $mismatch, $shortfall, $missing_sentence)
     {
         $lines = array(
             self::line(self::text('Outcome'), $title),
@@ -997,6 +999,10 @@ class Migration_Report
 
         if ($next !== '') {
             $lines[] = self::line(self::text('Next'), $next);
+        }
+
+        if (count($missing_lines) > 1 && $missing_sentence !== '') {
+            $lines[] = self::line(self::text('Missing classes'), $missing_sentence);
         }
 
         foreach ($missing_lines as $sentence) {

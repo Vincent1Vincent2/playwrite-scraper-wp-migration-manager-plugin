@@ -143,6 +143,7 @@ class Test_Migration_Report extends TestCase
             'Required classes are missing, so those parts were skipped: Polylang_Languages (languages), Polylang_Posts (posts), Polylang_Terms (terms), and Tolka_Writer (saving).',
             $matches[0][0]
         );
+        $this->assertSame($matches[0][0], $this->line($report, 'Missing classes'));
     }
 
     public function test_failure_when_polylang_is_inactive()
