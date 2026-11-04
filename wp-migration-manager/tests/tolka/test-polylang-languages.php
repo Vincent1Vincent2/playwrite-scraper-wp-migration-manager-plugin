@@ -839,6 +839,25 @@ PHP
         $this->assertSame(9, $by_slug['no']['term_id']);
     }
 
+    public function test_an_internal_pll_name_is_not_shown_for_a_real_language()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'pll_en', 'en', 'en_US', 'us', 0, 2),
+            $this->language_term(8, 'pll_sv', 'sv', 'sv_SE', 'se', 1, 0),
+        ), 'sv');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertSame('en', $by_slug['en']['name']);
+        $this->assertSame('sv', $by_slug['sv']['name']);
+        $this->assertSame('en_US', $by_slug['en']['locale']);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+    }
+
     public function test_polylang_internal_pll_rows_are_not_languages()
     {
         $db = $this->database_with_languages(array(
