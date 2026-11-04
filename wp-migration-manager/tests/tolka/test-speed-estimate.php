@@ -582,14 +582,14 @@ class Test_Speed_Estimate extends TestCase
             array(
                 'ok' => false,
                 'url' => 'https://example.com/fr/',
-                'error' => 'Could not reach https://example.com/fr/.',
+                'error' => 'Could not reach https://Example.com/fr/.',
             ),
             array(),
             $benchmarks
         );
         $this->assertUnavailable(
             $repeated,
-            'A Tolka speed estimate is not available. The page could not be measured. Could not reach https://example.com/fr/.'
+            'A Tolka speed estimate is not available. The page could not be measured. Could not reach https://Example.com/fr/.'
         );
 
         $token = Speed_Estimate::project(
