@@ -698,6 +698,35 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('3 of 5', $this->line($report, 'Posts stored'));
     }
 
+    public function test_flat_writer_counts_with_a_failed_save_are_not_a_clean_finish()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'package' => array(
+                'media' => array(
+                    array('attachment_id' => 1, 'file' => 'a.jpg'),
+                    array('attachment_id' => 2, 'file' => 'b.jpg'),
+                ),
+            ),
+            'write' => array(
+                'ok' => false,
+                'media' => 1,
+                'errors' => array('One file could not be stored'),
+            ),
+        ));
+
+        $this->assert_not_a_clean_finish($report);
+        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertSame('2 media items', $this->line($report, 'Media'));
+        $this->assertSame('1 of 2', $this->line($report, 'Media stored'));
+        $this->assertStringContainsString(
+            'Saving did not finish. The package contained more than was stored. 1 of 2 media items was saved.',
+            $report['summary']
+        );
+        $this->assertStringContainsString('One file could not be stored.', $report['summary']);
+        $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
+    }
+
     public function test_exporter_envelope_counts_the_items_inside_the_package()
     {
         $report = Migration_Report::format(array(
