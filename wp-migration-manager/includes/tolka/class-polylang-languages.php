@@ -568,7 +568,9 @@ class Polylang_Languages
             return array();
         }
 
-        $rows = $wpdb->get_results($prepared);
+        $rows = $this->quiet_db($wpdb, function () use ($wpdb, $prepared) {
+            return $wpdb->get_results($prepared);
+        });
         if (!is_array($rows)) {
             if ($taxonomy === 'language') {
                 $this->storage_failed = true;
@@ -846,7 +848,38 @@ class Polylang_Languages
             return array();
         }
 
-        return $this->decode_stored_array($wpdb->get_var($prepared));
+        $value = $this->quiet_db($wpdb, function () use ($wpdb, $prepared) {
+            return $wpdb->get_var($prepared);
+        });
+
+        return $this->decode_stored_array($value);
+    }
+
+    /**
+     * Run a database read without printing a SQL error on the screen.
+     *
+     * The previous error-display setting is restored. A failed read returns null.
+     *
+     * @param object $wpdb Database object.
+     * @param callable $callback Read to run.
+     * @return mixed
+     */
+    private function quiet_db($wpdb, $callback)
+    {
+        $previous = null;
+        if (is_object($wpdb) && method_exists($wpdb, 'hide_errors')) {
+            $previous = $wpdb->hide_errors();
+        }
+
+        try {
+            return $callback();
+        } catch (\Throwable $throwable) {
+            return null;
+        } finally {
+            if ($previous && method_exists($wpdb, 'show_errors')) {
+                $wpdb->show_errors();
+            }
+        }
     }
 
     /**
