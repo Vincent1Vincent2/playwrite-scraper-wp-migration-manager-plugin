@@ -43,6 +43,8 @@ class Migration_Report
             $report = self::note_save_failure($report);
         }
 
+        $report['lines'] = self::string_lines(isset($report['lines']) ? $report['lines'] : array());
+
         return $report;
     }
 
@@ -1485,16 +1487,70 @@ class Migration_Report
     }
 
     /**
-     * @param string $label Line label.
-     * @param string $value Line value.
-     * @return array{label: string, value: string}
+     * A line needs a real label. A missing label is dropped.
+     *
+     * @param mixed $label Line label.
+     * @param mixed $value Line value.
+     * @return array{label: string, value: string}|null
      */
     private static function line($label, $value)
     {
+        if (!is_string($label)) {
+            if (!is_scalar($label) || $label === null || $label === false) {
+                return null;
+            }
+            $label = (string) $label;
+        }
+
+        $label = trim($label);
+        if ($label === '') {
+            return null;
+        }
+
+        if (!is_string($value)) {
+            if (is_scalar($value) || $value === null) {
+                $value = (string) $value;
+            } else {
+                $value = '';
+            }
+        }
+
         return array(
-            'label' => (string) $label,
-            'value' => (string) $value,
+            'label' => $label,
+            'value' => $value,
         );
+    }
+
+    /**
+     * Keep only lines whose label and value are strings.
+     *
+     * @param mixed $lines Candidate lines.
+     * @return array<int, array{label: string, value: string}>
+     */
+    private static function string_lines($lines)
+    {
+        if (!is_array($lines)) {
+            return array();
+        }
+
+        $kept = array();
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+
+            $normalized = self::line(
+                array_key_exists('label', $line) ? $line['label'] : null,
+                array_key_exists('value', $line) ? $line['value'] : ''
+            );
+            if ($normalized === null) {
+                continue;
+            }
+
+            $kept[] = $normalized;
+        }
+
+        return $kept;
     }
 
     /**
@@ -1690,7 +1746,7 @@ class Migration_Report
      */
     private static function sentence($text)
     {
-        $text = self::plain($text);
+        $text = str_replace("\0", '', (string) $text);
         $collapsed = preg_replace('/\s+/u', ' ', $text);
         if (!is_string($collapsed)) {
             $collapsed = preg_replace('/\s+/', ' ', $text);

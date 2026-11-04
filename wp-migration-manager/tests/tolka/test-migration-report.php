@@ -595,15 +595,95 @@ class Test_Migration_Report extends TestCase
         $this->assertStringContainsString('was not saved into a Tolka package.', $report['summary']);
     }
 
-    public function test_html_in_an_error_is_not_left_in_the_summary()
+    public function test_html_in_a_summary_is_kept_as_characters()
     {
         $report = Migration_Report::format(array(
             'ok' => false,
             'errors' => array('<strong>Polylang is not active</strong>'),
         ));
 
-        $this->assertStringNotContainsString('<', $report['summary']);
-        $this->assertStringContainsString('Polylang is not active.', $report['summary']);
+        $this->assertStringContainsString('<strong>Polylang is not active</strong>', $report['summary']);
+        $this->assertStringContainsString('<', $report['summary']);
+        $this->assertStringContainsString('>', $report['summary']);
+        $this->assertSame(
+            array('<strong>Polylang is not active</strong>.'),
+            $this->lines_named($report, 'Problem')
+        );
+
+        $with_null = Migration_Report::format(array(
+            'ok' => false,
+            'errors' => array("<em>Keep this</em>\0<script>alert(1)</script>"),
+        ));
+        $this->assertStringContainsString('<em>Keep this</em><script>alert(1)</script>', $with_null['summary']);
+        $this->assertStringNotContainsString("\0", $with_null['summary']);
+    }
+
+    public function test_every_line_has_a_string_label_and_value()
+    {
+        $reports = array(
+            $this->format_run(array('languages' => 1, 'posts' => 2)),
+            Migration_Report::format(array(
+                'ok' => false,
+                'write' => null,
+                'counts' => array('menus' => 2),
+            )),
+            Migration_Report::format(array()),
+        );
+
+        foreach ($reports as $report) {
+            $this->assertNotEmpty($report['lines']);
+            foreach ($report['lines'] as $line) {
+                $this->assertIsString($line['label']);
+                $this->assertIsString($line['value']);
+                $this->assertNotSame('', $line['label']);
+            }
+        }
+    }
+
+    public function test_a_line_with_a_missing_label_is_dropped()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+function __($text, $domain = null) {
+    if ($text === "Terms") {
+        return "";
+    }
+    return $text;
+}
+require ' . var_export($class, true) . ';
+$report = \\WMM\\Tolka\\Migration_Report::format(array(
+    "ok" => true,
+    "counts" => array("languages" => 1, "terms" => 4),
+    "write" => array("ok" => true),
+));
+echo json_encode($report);
+';
+        $tmp = tempnam(sys_get_temp_dir(), 'wmm-report');
+        file_put_contents($tmp, $script);
+        $output = array();
+        $exit = 0;
+        exec('php ' . escapeshellarg($tmp) . ' 2>&1', $output, $exit);
+        unlink($tmp);
+
+        $this->assertSame(0, $exit, implode("\n", $output));
+        $report = json_decode(implode("\n", $output), true);
+        $this->assertIsArray($report);
+        $labels = array();
+        foreach ($report['lines'] as $line) {
+            $this->assertIsString($line['label']);
+            $this->assertIsString($line['value']);
+            $this->assertNotSame('', $line['label']);
+            $labels[] = $line['label'];
+        }
+        $this->assertNotContains('Terms', $labels);
+        $this->assertContains('Languages', $labels);
+        $this->assertContains('Posts', $labels);
+        $this->assertContains('Strings', $labels);
+        $this->assertContains('Menus', $labels);
+        $this->assertContains('Media', $labels);
+        $this->assertSame('1 language', $this->line($report, 'Languages'));
+        $this->assertSame('The migration is complete.', $report['title']);
     }
 
     public function test_every_outcome_keeps_polylang_data_and_a_finished_summary()
