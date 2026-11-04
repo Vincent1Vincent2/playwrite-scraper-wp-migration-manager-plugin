@@ -139,6 +139,76 @@ class Speed_Metrics_Test extends TestCase
         $this->assertFalse($result['truncated']);
     }
 
+    public function test_empty_html_is_not_truncated_even_when_html_bytes_is_large()
+    {
+        $cases = array(
+            array(
+                'ok' => false,
+                'html' => '',
+                'html_bytes' => 5000000,
+                'error' => 'The body was discarded.',
+            ),
+            array(
+                'ok' => false,
+                'html' => '',
+                'html_bytes' => 2000000,
+            ),
+            array(
+                'ok' => false,
+                'html' => '',
+                'html_bytes' => '5000000',
+            ),
+            array(
+                'html_bytes' => 5000000,
+            ),
+            array(
+                'ok' => false,
+                'html' => null,
+                'html_bytes' => 5000000.0,
+            ),
+        );
+
+        foreach ($cases as $measurement) {
+            $result = $this->analyze_measurement($measurement);
+
+            $this->assertFalse($result['truncated']);
+            $this->assertSame(1, $result['language_count']);
+            $this->assertFalse($result['has_polylang_switcher']);
+            $this->assertSame(0, $result['hreflang_count']);
+            $this->assertSame(0, $result['script_count']);
+            $this->assertSame(0, $result['stylesheet_count']);
+            $this->assertSame(0, $result['image_count']);
+        }
+    }
+
+    public function test_body_of_exactly_2000000_bytes_is_still_truncated()
+    {
+        $html = str_repeat('a', 2000000);
+        $this->assertSame(2000000, strlen($html));
+
+        $result = $this->analyze($html, array(
+            'ok' => true,
+            'html_bytes' => 0,
+        ));
+
+        $this->assertTrue($result['truncated']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+
+        $with_assets = '<link rel="stylesheet" href="/print.css" media="print"><script src="/theme.js"></script><img src="/shown.png" srcset="/shown.png 1x, /shown@2.png 2x">';
+        $capped = $with_assets . str_repeat(' ', 2000000 - strlen($with_assets));
+        $this->assertSame(2000000, strlen($capped));
+        $capped_result = $this->analyze($capped, array(
+            'html_bytes' => 2000000,
+        ));
+
+        $this->assertTrue($capped_result['truncated']);
+        $this->assertSame(1, $capped_result['stylesheet_count']);
+        $this->assertSame(1, $capped_result['script_count']);
+        $this->assertSame(1, $capped_result['image_count']);
+        $this->assertSame(1, $capped_result['language_count']);
+    }
+
     public function test_failed_measurement_with_a_byte_count_but_no_html_is_not_truncated()
     {
         $result = $this->analyze_measurement(array(
