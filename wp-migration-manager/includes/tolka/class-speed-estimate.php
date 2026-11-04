@@ -519,8 +519,8 @@ class Speed_Estimate
             'faster_label' => $faster_label,
             'overhead_ms' => (int) $overhead,
             'basis' => self::BASIS,
-            'provenance' => self::text_field($benchmarks, 'provenance'),
-            'provenance_note' => self::text_field($benchmarks, 'provenance_note'),
+            'provenance' => self::copied_text($benchmarks, 'provenance'),
+            'provenance_note' => self::copied_text($benchmarks, 'provenance_note'),
             'coefficients' => self::json_safe_array($benchmarks),
             'error' => $error,
         );
@@ -562,13 +562,18 @@ class Speed_Estimate
     }
 
     /**
+     * Copy a text field from the benchmarks array that was passed in.
+     *
+     * The file on disk is not read again here, and a missing or non-string
+     * value stays blank instead of being replaced with a stock sentence.
+     *
      * @param array  $benchmarks
      * @param string $key
      * @return string
      */
-    private static function text_field(array $benchmarks, $key)
+    private static function copied_text(array $benchmarks, $key)
     {
-        if (!isset($benchmarks[$key]) || !is_string($benchmarks[$key])) {
+        if (!array_key_exists($key, $benchmarks) || !is_string($benchmarks[$key])) {
             return '';
         }
 

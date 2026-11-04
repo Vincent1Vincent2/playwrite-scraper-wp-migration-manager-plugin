@@ -676,6 +676,107 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame($benchmarks, $estimate['coefficients']);
     }
 
+    public function test_successful_estimate_copies_provenance_from_the_passed_benchmarks()
+    {
+        $from_file = Speed_Estimate::benchmarks();
+        $coefficient_keys = array(
+            'polylang_extra_ms_per_language',
+            'polylang_switcher_ms',
+            'polylang_extra_ms_per_script',
+            'tolka_ms_per_language',
+            'max_overhead_ratio',
+        );
+        $decoded = json_decode((string) file_get_contents(self::benchmarksPath()), true);
+        $this->assertIsArray($decoded);
+        foreach ($coefficient_keys as $key) {
+            $this->assertArrayHasKey($key, $from_file);
+            $this->assertSame($decoded[$key], $from_file[$key]);
+        }
+        $this->assertSame(35, $from_file['polylang_extra_ms_per_language']);
+        $this->assertSame(25, $from_file['polylang_switcher_ms']);
+        $this->assertSame(8, $from_file['polylang_extra_ms_per_script']);
+        $this->assertSame(6, $from_file['tolka_ms_per_language']);
+        $this->assertSame(0.7, $from_file['max_overhead_ratio']);
+
+        $using_file = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $from_file
+        );
+        $this->assertTrue($using_file['ok']);
+        $this->assertSame($from_file['provenance'], $using_file['provenance']);
+        $this->assertSame($from_file['provenance_note'], $using_file['provenance_note']);
+        $this->assertSame('placeholder', $using_file['provenance']);
+        $this->assertSame(self::PROVENANCE_NOTE, $using_file['provenance_note']);
+
+        $passed = $from_file;
+        $passed['provenance'] = 'field-note';
+        $passed['provenance_note'] = 'This note came from the benchmarks argument. ';
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $passed
+        );
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame(856, $estimate['tolka_ms']);
+        $this->assertSame(14.4, $estimate['faster_percent']);
+        $this->assertSame('14.4% faster', $estimate['faster_label']);
+        $this->assertSame('field-note', $estimate['provenance']);
+        $this->assertSame('This note came from the benchmarks argument. ', $estimate['provenance_note']);
+        $this->assertSame($passed['provenance'], $estimate['provenance']);
+        $this->assertSame($passed['provenance_note'], $estimate['provenance_note']);
+        $this->assertSame($passed['provenance'], $estimate['coefficients']['provenance']);
+        $this->assertSame($passed['provenance_note'], $estimate['coefficients']['provenance_note']);
+        $this->assertNotSame(self::PROVENANCE_NOTE, $estimate['provenance_note']);
+        $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
+        $this->assertSame(self::PROVENANCE_NOTE, Speed_Estimate::benchmarks()['provenance_note']);
+
+        foreach ($coefficient_keys as $key) {
+            $this->assertSame($passed[$key], $estimate['coefficients'][$key]);
+        }
+    }
+
+    public function test_successful_estimate_does_not_invent_provenance_when_it_was_not_passed()
+    {
+        $benchmarks = self::contractBenchmarks();
+        unset($benchmarks['provenance'], $benchmarks['provenance_note']);
+
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $benchmarks
+        );
+
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame(14.4, $estimate['faster_percent']);
+        $this->assertSame('', $estimate['provenance']);
+        $this->assertSame('', $estimate['provenance_note']);
+        $this->assertNotSame('placeholder', $estimate['provenance']);
+        $this->assertNotSame(self::PROVENANCE_NOTE, $estimate['provenance_note']);
+
+        $blank = self::contractBenchmarks();
+        $blank['provenance'] = '';
+        $blank['provenance_note'] = '';
+        $empty = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $blank
+        );
+        $this->assertTrue($empty['ok']);
+        $this->assertSame('', $empty['provenance']);
+        $this->assertSame('', $empty['provenance_note']);
+        $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
+        foreach (array(
+            'polylang_extra_ms_per_language',
+            'polylang_switcher_ms',
+            'polylang_extra_ms_per_script',
+            'tolka_ms_per_language',
+            'max_overhead_ratio',
+        ) as $key) {
+            $this->assertArrayHasKey($key, Speed_Estimate::benchmarks());
+        }
+    }
+
     public function test_zero_coefficients_do_not_invent_a_speedup()
     {
         $benchmarks = self::contractBenchmarks();
