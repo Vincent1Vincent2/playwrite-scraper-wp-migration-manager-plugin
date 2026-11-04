@@ -11,6 +11,8 @@
  * #wmm-tolka-current-load, #wmm-tolka-tolka-load, #wmm-tolka-faster,
  * #wmm-tolka-basis, and #wmm-tolka-provenance-note.
  * The provenance note is shown when provenance is placeholder.
+ * Basis text, the faster label, and the provenance note are escaped
+ * before they are printed.
  *
  * @package MigrationManager
  */
@@ -25,6 +27,16 @@ $wmm_tolka_speed_text = static function ($value) {
     }
 
     return '';
+};
+
+$wmm_tolka_speed_plain = static function ($value) use ($wmm_tolka_speed_text) {
+    $text = $wmm_tolka_speed_text($value);
+    $stripped = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text);
+    if (!is_string($stripped)) {
+        return str_replace("\0", '', $text);
+    }
+
+    return $stripped;
 };
 
 $wmm_tolka_speed_number = static function ($value) {
@@ -164,7 +176,7 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
     );
     $wmm_tolka_speed_view['show_note'] = ('placeholder' === $wmm_tolka_speed_view['provenance']);
     if ($wmm_tolka_speed_view['show_note']) {
-        $wmm_tolka_speed_view['note'] = $wmm_tolka_speed_text(
+        $wmm_tolka_speed_view['note'] = $wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['provenance_note']) ? $wmm_tolka_speed_payload['provenance_note'] : ''
         );
         if ('' === $wmm_tolka_speed_view['note']) {
@@ -184,22 +196,19 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
         $wmm_tolka_speed_view['tolka'] = $wmm_tolka_speed_format_ms($wmm_tolka_speed_tolka_number);
         $wmm_tolka_speed_view['current_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_current_number);
         $wmm_tolka_speed_view['tolka_ms'] = $wmm_tolka_speed_ms_attr($wmm_tolka_speed_tolka_number);
-        $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_text(
+        $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['faster_label']) ? $wmm_tolka_speed_payload['faster_label'] : ''
         );
 
         $wmm_tolka_speed_percent = null;
-        if (isset($wmm_tolka_speed_payload['faster_percent']) && is_numeric($wmm_tolka_speed_payload['faster_percent'])) {
+        if ('' !== $wmm_tolka_speed_view['faster'] && isset($wmm_tolka_speed_payload['faster_percent']) && is_numeric($wmm_tolka_speed_payload['faster_percent'])) {
             $wmm_tolka_speed_percent = (float) $wmm_tolka_speed_payload['faster_percent'];
             if (!is_finite($wmm_tolka_speed_percent)) {
                 $wmm_tolka_speed_percent = null;
             }
         }
-        if ('' === $wmm_tolka_speed_view['faster'] && null !== $wmm_tolka_speed_percent) {
-            $wmm_tolka_speed_view['faster'] = number_format($wmm_tolka_speed_percent, 1, '.', '') . '% faster';
-        }
 
-        $wmm_tolka_speed_view['basis'] = $wmm_tolka_speed_finish($wmm_tolka_speed_text(
+        $wmm_tolka_speed_view['basis'] = $wmm_tolka_speed_finish($wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['basis']) ? $wmm_tolka_speed_payload['basis'] : ''
         ));
         if ('' === $wmm_tolka_speed_view['basis']) {
@@ -209,7 +218,7 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
         $wmm_tolka_speed_loads_ok = ('' !== $wmm_tolka_speed_view['current'] && '' !== $wmm_tolka_speed_view['tolka']);
         $wmm_tolka_speed_faster_ok = ('' !== $wmm_tolka_speed_view['faster']);
 
-        if (!$wmm_tolka_speed_loads_ok || !$wmm_tolka_speed_faster_ok) {
+        if (!$wmm_tolka_speed_loads_ok) {
             if ('' === $wmm_tolka_speed_view['current']) {
                 $wmm_tolka_speed_view['current'] = $wmm_tolka_speed_unavailable;
             }
@@ -218,6 +227,9 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
             }
             $wmm_tolka_speed_view['faster'] = $wmm_tolka_speed_unavailable;
             $wmm_tolka_speed_view['summary'] = __('The speed estimate completed, but one or more figures were missing. No percent is shown.', 'migration-manager');
+        } elseif (!$wmm_tolka_speed_faster_ok) {
+            $wmm_tolka_speed_view['faster'] = __('No percent is shown.', 'migration-manager');
+            $wmm_tolka_speed_view['summary'] = __('The speed estimate completed, but the faster label was empty. No percent is shown.', 'migration-manager');
         } else {
             if (null !== $wmm_tolka_speed_percent) {
                 $wmm_tolka_speed_view['faster_percent'] = number_format($wmm_tolka_speed_percent, 1, '.', '');
@@ -392,6 +404,7 @@ if ($wmm_tolka_speed_view['show_note']) {
 <?php
 unset(
     $wmm_tolka_speed_text,
+    $wmm_tolka_speed_plain,
     $wmm_tolka_speed_number,
     $wmm_tolka_speed_format_ms,
     $wmm_tolka_speed_ms_attr,

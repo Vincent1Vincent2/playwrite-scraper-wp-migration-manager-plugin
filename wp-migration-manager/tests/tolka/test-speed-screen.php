@@ -284,6 +284,16 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
                 'faster_label' => 'Nearly twice as quick',
                 'faster_percent' => 84,
             ),
+            'numeric strings' => array(
+                'current_ms' => '1842',
+                'tolka_ms' => '900',
+                'current_text' => '1,842 ms',
+                'tolka_text' => '900 ms',
+                'current_attr' => '1842',
+                'tolka_attr' => '900',
+                'faster_label' => '51.1% faster',
+                'faster_percent' => '51.1',
+            ),
         );
 
         foreach ($cases as $name => $case) {
@@ -691,6 +701,71 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertTrue($this->document($html)->getElementById('wmm-tolka-speed-savings')->hasAttribute('hidden'));
     }
 
+    public function test_successful_placeholder_estimate_escapes_basis_label_and_note()
+    {
+        $label = '40% <img src=x onerror=alert(1)> faster';
+        $basis = 'Basis </p><script>alert(1)</script>';
+        $note = 'Placeholder <svg/onload=alert(1)> note';
+        $html = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 1842,
+            'tolka_ms' => 900,
+            'faster_percent' => 40,
+            'faster_label' => $label,
+            'basis' => $basis,
+            'provenance' => 'placeholder',
+            'provenance_note' => $note,
+            'error' => '',
+        ));
+        $document = $this->document($html);
+        $note_node = $document->getElementById('wmm-tolka-provenance-note');
+
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+        }
+
+        $this->assertFalse($note_node->hasAttribute('hidden'));
+        $this->assertFalse($note_node->parentNode->hasAttribute('hidden'));
+        $this->assertSame($note, $this->text($html, 'wmm-tolka-provenance-note'));
+        $this->assertSame($label, $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame($basis . '.', $this->text($html, 'wmm-tolka-basis'));
+        $this->assertStringContainsString($label, $this->text($html, 'wmm-tolka-speed-summary'));
+        $this->assertStringContainsString('1,842 ms', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertStringContainsString('900 ms', $this->text($html, 'wmm-tolka-tolka-load'));
+
+        foreach (array('<img', '<script', '</script', '<svg') as $raw) {
+            $this->assertStringNotContainsString($raw, $html, $raw);
+        }
+        $this->assertStringContainsString('&lt;img', $html);
+        $this->assertStringContainsString('&lt;/p&gt;', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringContainsString('&lt;svg', $html);
+
+        $broken = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 1000,
+            'tolka_ms' => 800,
+            'faster_percent' => 20,
+            'faster_label' => "<scr\0ipt>alert(1)</script>",
+            'basis' => "Load <scr\0ipt>alert(2)</script>",
+            'provenance' => 'placeholder',
+            'provenance_note' => "Note <scr\0ipt>alert(3)</script>",
+            'error' => '',
+        ));
+        $this->assertSame('<script>alert(1)</script>', $this->text($broken, 'wmm-tolka-faster'));
+        $this->assertSame('Load <script>alert(2)</script>.', $this->text($broken, 'wmm-tolka-basis'));
+        $this->assertSame('Note <script>alert(3)</script>', $this->text($broken, 'wmm-tolka-provenance-note'));
+        $this->assertFalse($this->document($broken)->getElementById('wmm-tolka-provenance-note')->hasAttribute('hidden'));
+        $this->assertStringNotContainsString('<script', $broken);
+        $this->assertStringNotContainsString("\0", $broken);
+    }
+
     public function test_measure_payload_and_missing_label_still_render()
     {
         $html = $this->render(true, array(
@@ -707,10 +782,100 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             ),
         ));
 
-        $this->assertSame('20.0% faster', $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame('No percent is shown.', $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame('', $this->document($html)->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
+        $this->assertStringNotContainsString('% faster', $html);
+        $this->assertStringNotContainsString('20.0', $html);
         $this->assertStringContainsString('1,000 ms (1 second)', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertStringContainsString('800 ms', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertFalse($this->document($html)->getElementById('wmm-tolka-basis')->hasAttribute('hidden'));
+        $this->assertSame(
+            'Measured page load plus coefficients from benchmarks.json.',
+            $this->text($html, 'wmm-tolka-basis')
+        );
         $this->assertStringNotContainsString('<b>', $html);
         $this->assertStringContainsString('&lt;b&gt;', $html);
+    }
+
+    public function test_successful_estimate_shows_the_basis_sentence_and_an_empty_label_prints_no_percent()
+    {
+        $contract_basis = 'Measured page load plus coefficients from benchmarks.json.';
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+        $basis_cases = array(
+            'given sentence' => array(
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'expected' => $contract_basis,
+            ),
+            'finished sentence' => array(
+                'basis' => 'Lab sample, March.',
+                'expected' => 'Lab sample, March.',
+            ),
+            'missing basis' => array(
+                'basis' => '',
+                'expected' => $contract_basis,
+            ),
+        );
+
+        foreach ($basis_cases as $name => $case) {
+            $html = $this->render(true, array(
+                'ok' => true,
+                'current_ms' => 1842,
+                'tolka_ms' => 900,
+                'faster_percent' => 51.1,
+                'faster_label' => '51.1% faster',
+                'basis' => $case['basis'],
+                'provenance' => 'lab',
+                'error' => '',
+            ));
+            $document = $this->document($html);
+            $basis = $document->getElementById('wmm-tolka-basis');
+
+            foreach ($ids as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' #' . $id);
+            }
+            $this->assertNotNull($basis, $name);
+            $this->assertFalse($basis->hasAttribute('hidden'), $name);
+            $this->assertSame($case['expected'], $this->text($html, 'wmm-tolka-basis'), $name);
+            $this->assertSame('51.1% faster', $this->text($html, 'wmm-tolka-faster'), $name);
+        }
+
+        $blank_labels = array(
+            'missing' => array('faster_percent' => 20),
+            'empty' => array('faster_percent' => 20, 'faster_label' => ''),
+            'whitespace' => array('faster_percent' => 33.3, 'faster_label' => '   '),
+        );
+        foreach ($blank_labels as $name => $extra) {
+            $estimate = array(
+                'ok' => true,
+                'current_ms' => 1000,
+                'tolka_ms' => 800,
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'lab',
+                'error' => '',
+            );
+            $html = $this->render(true, array_merge($estimate, $extra));
+            $document = $this->document($html);
+
+            foreach ($ids as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' #' . $id);
+            }
+            $this->assertFalse($document->getElementById('wmm-tolka-basis')->hasAttribute('hidden'), $name);
+            $this->assertSame($contract_basis, $this->text($html, 'wmm-tolka-basis'), $name);
+            $this->assertStringContainsString('1,000 ms', $this->text($html, 'wmm-tolka-current-load'), $name);
+            $this->assertStringContainsString('800 ms', $this->text($html, 'wmm-tolka-tolka-load'), $name);
+            $this->assertSame('No percent is shown.', $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertSame('', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'), $name);
+            $this->assertStringNotContainsString('% faster', $html, $name);
+            $this->assertStringNotContainsString('20.0', $html, $name);
+            $this->assertStringNotContainsString('33.3', $html, $name);
+            $this->assertStringContainsString('No percent is shown', $this->text($html, 'wmm-tolka-speed-summary'), $name);
+        }
     }
 
     public function test_missing_loads_do_not_leave_a_percent_on_screen()
