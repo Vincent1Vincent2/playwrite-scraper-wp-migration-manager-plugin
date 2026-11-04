@@ -1018,6 +1018,66 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(1, $second['items']);
     }
 
+    public function test_a_list_of_term_ids_is_not_a_translation_group(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = '<p>Meny åäö</p> &amp; <em>News</em>';
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(
+            serialize(array(12, 70)),
+            '[12,70]',
+            serialize(array('en' => 13, 'SV' => 14)),
+        );
+        $database->catalog = array(
+            $this->term(12, 'Höst', 'HÖST', 'category', 'sv', '4', $html),
+            $this->term(13, 'Autumn', 'AUTUMN', 'category', 'en', 0),
+            $this->term(14, 'Äpple', 'ÄPPLE', 'category', 'sv', 0, $html),
+            $this->term(70, 'Main', 'MAIN', 'nav_menu', 'de', 0, $html),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array('term:12', 'term:13'), $this->groupIds($second['items']));
+
+        $loose = $this->itemByGroup($second['items'], 'term:12');
+        $this->assertSame('category', $loose['taxonomy']);
+        $this->assertSame(array('sv'), array_keys($loose['translations']));
+        $this->assertArrayNotHasKey('0', $loose['translations']);
+        $this->assertSame('höst', $loose['translations']['sv']['slug']);
+        $this->assertSame('Höst', $loose['translations']['sv']['name']);
+        $this->assertSame($html, $loose['translations']['sv']['description']);
+        $this->assertSame(4, $loose['translations']['sv']['parent']);
+        $this->assertIsInt($loose['translations']['sv']['parent']);
+
+        $group = $this->itemByGroup($second['items'], 'term:13');
+        $this->assertSame(array('en', 'sv'), array_keys($group['translations']));
+        $this->assertSame('autumn', $group['translations']['en']['slug']);
+        $this->assertSame('äpple', $group['translations']['sv']['slug']);
+        $this->assertSame('Äpple', $group['translations']['sv']['name']);
+        $this->assertSame($html, $group['translations']['sv']['description']);
+        $this->assertSame(0, $group['translations']['sv']['parent']);
+        $this->assertIsInt($group['translations']['sv']['parent']);
+
+        $this->assertNotContains('term:70', $this->groupIds($second['items']));
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertContains(
+            '2 term translation groups had invalid stored descriptions. Those descriptions were ignored. Terms linked to those groups are still included.',
+            $second['errors']
+        );
+        $this->assertCount(2, $second['items']);
+    }
+
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
     {
         if (!$this->canUseDatabaseStub()) {
