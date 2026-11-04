@@ -58,6 +58,13 @@ class Polylang_Posts
     protected $collapsed_languages = array();
 
     /**
+     * Revision id => parent post id for this export.
+     *
+     * @var array<int, int>
+     */
+    protected $parent_cache = array();
+
+    /**
      * Export post translation groups.
      *
      * @return array{items: array<int, array>, errors: string[]}
@@ -68,6 +75,7 @@ class Polylang_Posts
         $this->type_cache = array();
         $this->locale_map = null;
         $this->collapsed_languages = array();
+        $this->parent_cache = array();
 
         try {
             if (!$this->polylang_present()) {
@@ -199,6 +207,10 @@ class Polylang_Posts
         $locales = $this->locale_to_slug();
         if (isset($locales[$slug])) {
             return $locales[$slug];
+        }
+        $underscore = str_replace('-', '_', $slug);
+        if ($underscore !== $slug && isset($locales[$underscore])) {
+            return $locales[$underscore];
         }
         return $slug;
     }
@@ -537,15 +549,44 @@ class Polylang_Posts
                     array($post_id, $kept_group)
                 );
             }
-            if (count($fresh) === 1 && $this->post_type_of((int) reset($fresh)) === 'attachment') {
+            $this->warm_post_types(array_values($fresh));
+            $readable = array();
+            $skipped = array();
+            $replaced_revisions = array();
+            foreach ($fresh as $lang => $post_id) {
+                $reason = $this->skip_reason(array(
+                    'type' => $this->post_type_of($post_id),
+                    'status' => '',
+                ));
+                if ($reason !== '') {
+                    $parent_id = $this->replacement_for_revision($post_id, $fresh, $readable);
+                    if ($parent_id > 0) {
+                        $readable[$lang] = $parent_id;
+                        $replaced_revisions[] = array(
+                            'revision' => $post_id,
+                            'parent' => $parent_id,
+                        );
+                        continue;
+                    }
+                    $skipped[] = array(
+                        'id' => $post_id,
+                        'reason' => $reason,
+                    );
+                    continue;
+                }
+                $readable[$lang] = $post_id;
+            }
+            if ($readable === array()) {
+                continue;
+            }
+            if (count($readable) === 1 && $this->post_type_of((int) reset($readable)) === 'attachment') {
                 continue;
             }
 
-            $records = $this->posts_by_ids(array_values($fresh));
+            $records = $this->posts_by_ids(array_values($readable));
             $loaded = array();
             $missing = array();
-            $skipped = array();
-            foreach ($fresh as $lang => $post_id) {
+            foreach ($readable as $lang => $post_id) {
                 if (!isset($records[$post_id])) {
                     $missing[] = $post_id;
                     continue;
@@ -585,6 +626,12 @@ class Polylang_Posts
                 $errors[] = $this->say_sprintf(
                     'Post %1$d is %2$s, so it was left out of translation group %3$s.',
                     array($skip['id'], $skip['reason'], $group)
+                );
+            }
+            foreach ($replaced_revisions as $replacement) {
+                $errors[] = $this->say_sprintf(
+                    'Post %1$d is a revision of post %2$d. The export uses post %2$d instead.',
+                    array($replacement['revision'], $replacement['parent'])
                 );
             }
             if ($default_lang !== '' && !isset($loaded[$default_lang]) && count($loaded) > 1) {
@@ -673,6 +720,111 @@ class Polylang_Posts
         }
         $this->type_cache[$post_id] = (string) $post->post_type;
         return $this->type_cache[$post_id];
+    }
+
+    /**
+     * Use the real draft when Polylang stored a revision id in the group.
+     *
+     * @param int $post_id
+     * @param array<string, int> $fresh
+     * @param array<string, int> $readable
+     * @return int
+     */
+    private function replacement_for_revision($post_id, array $fresh, array $readable)
+    {
+        if ($this->post_type_of($post_id) !== 'revision') {
+            return 0;
+        }
+        $parent_id = $this->parent_of($post_id);
+        if ($parent_id <= 0 || $parent_id === (int) $post_id) {
+            return 0;
+        }
+        if (in_array($parent_id, $fresh, true) || in_array($parent_id, $readable, true)) {
+            return 0;
+        }
+        $parent_type = $this->post_type_of($parent_id);
+        if ($parent_type === '' || $parent_type === 'attachment') {
+            return 0;
+        }
+        if ($this->skip_reason(array('type' => $parent_type, 'status' => '')) !== '') {
+            return 0;
+        }
+        $status = $this->post_status_of($parent_id);
+        if ($status === '' || $status === 'auto-draft') {
+            return 0;
+        }
+        return $parent_id;
+    }
+
+    /**
+     * @param int $post_id
+     * @return string
+     */
+    private function post_status_of($post_id)
+    {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return '';
+        }
+        if (array_key_exists($post_id, $this->record_cache) && is_array($this->record_cache[$post_id])) {
+            return (string) $this->record_cache[$post_id]['status'];
+        }
+        global $wpdb;
+        if ($this->db_ready($wpdb) && method_exists($wpdb, 'get_var')) {
+            $status = $wpdb->get_var($wpdb->prepare(
+                "SELECT post_status FROM {$wpdb->posts} WHERE ID = %d",
+                $post_id
+            ));
+            if (is_string($status) && $status !== '') {
+                return $status;
+            }
+        }
+        if (!function_exists('get_post')) {
+            return '';
+        }
+        $post = get_post($post_id);
+        if (!is_object($post) || !isset($post->post_status)) {
+            return '';
+        }
+        return (string) $post->post_status;
+    }
+
+    /**
+     * @param int $post_id
+     * @return int
+     */
+    private function parent_of($post_id)
+    {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return 0;
+        }
+        if (isset($this->parent_cache[$post_id])) {
+            return $this->parent_cache[$post_id];
+        }
+        global $wpdb;
+        if ($this->db_ready($wpdb)) {
+            $rows = $this->normalize_rows($wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT ID, post_parent FROM {$wpdb->posts} WHERE ID = %d",
+                    $post_id
+                ),
+                'ARRAY_A'
+            ));
+            if (is_array($rows) && isset($rows[0]['post_parent'])) {
+                $this->parent_cache[$post_id] = (int) $rows[0]['post_parent'];
+                return $this->parent_cache[$post_id];
+            }
+        }
+        if (function_exists('get_post')) {
+            $post = get_post($post_id);
+            if (is_object($post) && isset($post->post_parent)) {
+                $this->parent_cache[$post_id] = (int) $post->post_parent;
+                return $this->parent_cache[$post_id];
+            }
+        }
+        $this->parent_cache[$post_id] = 0;
+        return 0;
     }
 
     /**
@@ -1052,9 +1204,8 @@ class Polylang_Posts
                 continue;
             }
             $lang = trim($lang);
-            $locales = $this->locale_to_slug();
-            if ($lang !== '' && isset($locales[$lang])) {
-                $lang = $locales[$lang];
+            if ($lang !== '') {
+                $lang = $this->slug_for_language_key($lang);
             }
             $post_id = $this->normalize_post_id($post_id);
             if ($lang === '' || $post_id <= 0 || isset($used[$post_id])) {
