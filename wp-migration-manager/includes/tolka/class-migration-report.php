@@ -978,6 +978,12 @@ class Migration_Report
             $lines[] = self::line(self::text($meta['label']), self::line_value($meta, $count, !empty($unavailable[$key])));
         }
 
+        if ($shortfall) {
+            foreach (self::stored_count_lines($run, $counts) as $stored_line) {
+                $lines[] = $stored_line;
+            }
+        }
+
         $sample = (isset($run['sample']) && is_array($run['sample'])) ? $run['sample'] : array();
         foreach (self::example_lines($sample) as $example) {
             $lines[] = $example;
@@ -999,6 +1005,49 @@ class Migration_Report
 
         foreach ($errors as $sentence) {
             $lines[] = self::line(self::text('Problem'), $sentence);
+        }
+
+        return $lines;
+    }
+
+    /**
+     * One line per section the writer stored only in part.
+     *
+     * @param array              $run       Runner result.
+     * @param array<string, int> $collected Counts shown for the package.
+     * @return array<int, array{label: string, value: string}>
+     */
+    private static function stored_count_lines(array $run, array $collected)
+    {
+        if (!isset($run['write']) || !is_array($run['write'])) {
+            return array();
+        }
+
+        $write = $run['write'];
+        $source = (isset($write['counts']) && is_array($write['counts'])) ? $write['counts'] : $write;
+        $lines = array();
+
+        foreach (self::section_catalog() as $key => $meta) {
+            $saved = self::count_if_set($source, $key);
+            if ($saved === null) {
+                continue;
+            }
+
+            $package_count = self::package_section_count($run, $key);
+            if ($package_count !== null) {
+                $found = $package_count;
+            } else {
+                $found = isset($collected[$key]) ? (int) $collected[$key] : 0;
+            }
+
+            if ($saved >= $found) {
+                continue;
+            }
+
+            $lines[] = self::line(
+                sprintf(self::text('%s stored'), self::text($meta['label'])),
+                sprintf(self::text('%1$s of %2$s'), self::number($saved), self::number($found))
+            );
         }
 
         return $lines;

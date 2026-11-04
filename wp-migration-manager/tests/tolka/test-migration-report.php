@@ -695,6 +695,7 @@ class Test_Migration_Report extends TestCase
         $this->assertStringContainsString('The Tolka package on this site is incomplete.', $report['summary']);
         $this->assertSame('Saved, but it is incomplete', $this->line($report, 'Tolka package'));
         $this->assertSame('5 posts', $this->line($report, 'Posts'));
+        $this->assertSame('3 of 5', $this->line($report, 'Posts stored'));
     }
 
     public function test_exporter_envelope_counts_the_items_inside_the_package()
@@ -788,6 +789,7 @@ class Test_Migration_Report extends TestCase
         $this->assertStringContainsString('That is not a finished migration.', $partial['summary']);
         $this->assertStringContainsString('Saving stopped before the package was stored.', $partial['summary']);
         $this->assertSame('Not saved', $this->line($partial, 'Tolka package'));
+        $this->assertSame('4 of 6', $this->line($partial, 'Posts stored'));
     }
 
     public function test_matching_saved_counts_stay_a_clean_success()
