@@ -739,7 +739,7 @@ class Speed_Estimate
         }
 
         if (strlen($value) > 4000) {
-            $value = substr($value, 0, 4000);
+            $value = self::byte_prefix($value, 4000);
         }
 
         $detail = strip_tags($value);
@@ -763,6 +763,37 @@ class Speed_Estimate
         }
 
         return self::shorten($detail, 240);
+    }
+
+    /**
+     * First $bytes of a string, backed up so a multibyte character is not split.
+     *
+     * @param string $value
+     * @param int    $bytes
+     * @return string
+     */
+    private static function byte_prefix($value, $bytes)
+    {
+        if (strlen($value) <= $bytes) {
+            return $value;
+        }
+
+        $prefix = substr($value, 0, $bytes);
+        if (!is_string($prefix)) {
+            return '';
+        }
+        if (preg_match('//u', $prefix) === 1) {
+            return $prefix;
+        }
+
+        for ($trim = 1; $trim <= 3; $trim++) {
+            $candidate = substr($prefix, 0, -$trim);
+            if (is_string($candidate) && preg_match('//u', $candidate) === 1) {
+                return $candidate;
+            }
+        }
+
+        return '';
     }
 
     /**

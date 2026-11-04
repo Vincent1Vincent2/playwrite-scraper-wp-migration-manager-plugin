@@ -673,6 +673,35 @@ class Test_Speed_Estimate extends TestCase
         );
         $this->assertStringNotContainsString('TAIL_MARKER', $capped['error']);
         $this->assertStringEndsWith('…).', $capped['error']);
+
+        // 4000 is not a multiple of 3, so a naive byte cut splits a euro sign.
+        $euros = str_repeat('error ', 20) . str_repeat('€', 2000) . 'TAIL_MARKER';
+        $unicode = Speed_Estimate::project(
+            array('ok' => false, 'error' => $euros),
+            array(),
+            self::contractBenchmarks()
+        );
+        $this->assertSame(1, preg_match('//u', $unicode['error']));
+        $this->assertStringContainsString('error', $unicode['error']);
+        $this->assertStringNotContainsString('TAIL_MARKER', $unicode['error']);
+        $this->assertNotSame(
+            'A Tolka speed estimate is not available. The page could not be measured.',
+            $unicode['error']
+        );
+    }
+
+    public function test_public_url_with_a_percent_sign_is_not_treated_as_a_format()
+    {
+        $estimate = Speed_Estimate::project(
+            array('ok' => false, 'url' => 'https://example.com/%73tart', 'error' => '404'),
+            array(),
+            self::contractBenchmarks()
+        );
+
+        $this->assertSame(
+            'A Tolka speed estimate is not available. The page at https://example.com/%73tart could not be measured (404).',
+            $estimate['error']
+        );
     }
 
     public function test_missing_or_unusable_load_time_does_not_invent_a_percent()
