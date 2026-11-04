@@ -949,6 +949,26 @@
     conceal(slots.savings);
   }
 
+  function describeFaster(slots) {
+    if (!slots.faster) {
+      return;
+    }
+    var ids = [];
+    if (slots.scope && slots.scope.id && !slots.scope.hasAttribute("hidden")) {
+      ids.push(slots.scope.id);
+    }
+    var note = slots.provenance ? noteWrapper(slots.provenance) : null;
+    var noteId = slots.provenance && slots.provenance.id ? slots.provenance.id : "";
+    if (note && noteId && !note.hasAttribute("hidden")) {
+      ids.push(noteId);
+    }
+    if (ids.length) {
+      slots.faster.setAttribute("aria-describedby", ids.join(" "));
+      return;
+    }
+    slots.faster.removeAttribute("aria-describedby");
+  }
+
   function applyScope(slots, show) {
     if (!slots.scope) {
       return;
@@ -1003,6 +1023,7 @@
     applySavings(slots, estimate);
     applyScope(slots, true);
     applyProvenance(slots, note, estimate.provenance || "");
+    describeFaster(slots);
     hideSpeedError(slots);
     upsertTruncation(container, metrics);
     setPanelState(
@@ -1058,6 +1079,7 @@
     var provenance = estimate && estimate.provenance ? String(estimate.provenance) : "";
     var note = provenance === "placeholder" && estimate ? provenanceText(estimate) : "";
     applyProvenance(slots, note, provenance);
+    describeFaster(slots);
     setPanelState(slots.panel, "error", note ? provenance : "");
     if (slots.panel) {
       slots.panel.classList.remove("wmm-tolka-is-busy");
