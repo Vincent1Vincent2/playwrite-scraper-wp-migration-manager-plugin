@@ -51,6 +51,22 @@ class Speed_Metrics_Test extends TestCase
         $this->assertFalse($result['truncated']);
     }
 
+    public function test_empty_measurement_with_ok_false_and_empty_html()
+    {
+        $result = $this->analyze_measurement(array(
+            'ok' => false,
+            'html' => '',
+        ));
+
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(0, $result['script_count']);
+        $this->assertSame(0, $result['stylesheet_count']);
+        $this->assertSame(0, $result['image_count']);
+        $this->assertFalse($result['truncated']);
+    }
+
     public function test_measurement_that_is_not_ok()
     {
         $result = $this->analyze_measurement(array(
@@ -490,6 +506,46 @@ HTML;
         $result = $this->analyze($html);
 
         $this->assertSame(2, $result['stylesheet_count']);
+    }
+
+    public function test_stylesheet_link_with_media_print_still_counts()
+    {
+        $cases = array(
+            '<link rel="stylesheet" href="/print.css" media="print">',
+            '<link href=/print.css rel=stylesheet media=print>',
+            '<link media="print" href="/print.css" rel="stylesheet">',
+            '<link rel="stylesheet" href="/print.css" media="Print">',
+            "<link rel='stylesheet' href='/print.css' media='print'>",
+        );
+
+        foreach ($cases as $html) {
+            $result = $this->analyze($html);
+
+            $this->assertSame(1, $result['stylesheet_count'], $html);
+            $this->assertSame(1, $result['language_count'], $html);
+            $this->assertFalse($result['has_polylang_switcher'], $html);
+        }
+
+        $both = $this->analyze('<link rel="stylesheet" href="/screen.css"><link rel="stylesheet" href="/print.css" media="print">');
+        $this->assertSame(2, $both['stylesheet_count']);
+
+        $preload = $this->analyze('<link rel="preload" as="style" media="print" href="/print.css">');
+        $this->assertSame(0, $preload['stylesheet_count']);
+
+        $commented = $this->analyze('<!-- <link rel="stylesheet" href="/print.css" media="print"> --><link rel="stylesheet" href="/print.css" media="print">');
+        $this->assertSame(1, $commented['stylesheet_count']);
+
+        $noscript = $this->analyze('<noscript><link rel="stylesheet" href="/print.css" media="print"></noscript><link rel="stylesheet" href="/print.css" media="print">');
+        $this->assertSame(1, $noscript['stylesheet_count']);
+
+        $tag = '<link rel="stylesheet" href="/print.css" media="print">';
+        $capped = str_repeat(' ', 2000000 - strlen($tag)) . $tag;
+        $this->assertSame(2000000, strlen($capped));
+        $capped_result = $this->analyze($capped);
+        $this->assertTrue($capped_result['truncated']);
+        $this->assertSame(1, $capped_result['stylesheet_count']);
+        $this->assertSame(1, $capped_result['language_count']);
+        $this->assertFalse($capped_result['has_polylang_switcher']);
     }
 
     public function test_unquoted_root_relative_stylesheet_counts()
