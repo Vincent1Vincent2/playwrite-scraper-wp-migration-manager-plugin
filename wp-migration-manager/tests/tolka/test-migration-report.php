@@ -481,6 +481,15 @@ class Test_Migration_Report extends TestCase
             $this->lines_named($duplicates, 'Missing step')
         );
         $this->assertSame(1, substr_count($duplicates['summary'], 'Polylang_Menus'));
+
+        $noisy = Migration_Report::format(array(
+            'missing' => array(0, '', 'Polylang_Posts'),
+        ));
+        $this->assertSame(
+            array('Polylang_Posts (posts) is missing, so that part was skipped.'),
+            $this->lines_named($noisy, 'Missing step')
+        );
+        $this->assertStringNotContainsString('skipped: 0', $noisy['summary']);
     }
 
     public function test_string_sample_shows_the_translated_text()

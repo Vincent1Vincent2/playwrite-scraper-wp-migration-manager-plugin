@@ -233,7 +233,7 @@ class Migration_Report
         foreach ($classes as $class_name) {
             $label = self::step_label($class_name);
             $base = self::class_basename($class_name);
-            if ($label === '' || $base === '') {
+            if ($label === '' || $base === '' || !preg_match('/[A-Za-z]/', $base)) {
                 continue;
             }
 
