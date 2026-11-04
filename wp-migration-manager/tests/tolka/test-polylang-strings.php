@@ -672,6 +672,25 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             'String translations for a language that is no longer installed were skipped.',
             $second['errors']
         );
+
+        $codes = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('zh-Hans', '000', '10.5', 'en2'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'ZH-HANS' => array(array('Open daily', '开放')),
+                '10.5' => array(array('Open daily', 'Nope')),
+                'en2' => array(array('Open daily', 'Second')),
+            ),
+        ));
+        $this->assertSame(array('zh-hans', 'en2'), array_keys($codes['items'][0]['translations']));
+        $this->assertSame('开放', $codes['items'][0]['translations']['zh-hans']);
+        $this->assertSame('Second', $codes['items'][0]['translations']['en2']);
+        $this->assertArrayNotHasKey('000', $codes['items'][0]['translations']);
+        $this->assertArrayNotHasKey('10.5', $codes['items'][0]['translations']);
+        $this->assertNotContains('Nope', $codes['items'][0]['translations']);
     }
 
     /**
