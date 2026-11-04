@@ -47,7 +47,7 @@ class Test_Migration_Report extends TestCase
         $this->assertTrue($report['ok']);
         $this->assertSame('Migration complete', $report['title']);
         $this->assertSame(
-            'Your Polylang content is packaged for Tolka: 2 languages, 1 post, 10 strings, 1 menu, and 2 media items. No terms were found. The package is saved on this site. Your existing Polylang data was left in place.',
+            'Your Polylang content is packaged for Tolka: 2 languages, 1 post, 10 strings, 1 menu, and 2 media items. No terms were found. The package is saved on this site. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('2 languages', $this->line($report, 'Languages'));
@@ -55,7 +55,7 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('0 terms', $this->line($report, 'Terms'));
         $this->assertSame('2 media items', $this->line($report, 'Media'));
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
-        $this->assertSame('Left in place', $this->line($report, 'Polylang data'));
+        $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
         $this->assertArrayNotHasKey('Next', $this->line_map($report));
     }
 
@@ -71,7 +71,7 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertSame(
-            'Your Polylang content is packaged for Tolka: 1 language, 1 post, 1 term, 1 string, 1 menu, and 1 media item. The package is saved on this site. Your existing Polylang data was left in place.',
+            'Your Polylang content is packaged for Tolka: 1 language, 1 post, 1 term, 1 string, 1 menu, and 1 media item. The package is saved on this site. Polylang data was left in place.',
             $report['summary']
         );
     }
@@ -90,7 +90,7 @@ class Test_Migration_Report extends TestCase
         $this->assertTrue($report['ok']);
         $this->assertSame('Nothing to migrate', $report['title']);
         $this->assertSame(
-            'The migration finished, but there was nothing to package. No languages, posts, terms, strings, menus, or media were found. If this site should have translations, check that Polylang has languages, then run the migration again. An empty Tolka package was saved on this site. Your existing Polylang data was left in place.',
+            'Nothing was found on this site. No languages, posts, terms, strings, menus, or media were found. If this site should have translations, check that Polylang has languages, then run the migration again. An empty Tolka package was saved on this site. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('0 posts', $this->line($report, 'Posts'));
@@ -98,6 +98,50 @@ class Test_Migration_Report extends TestCase
         $this->assertSame(
             'If this site should have translations, check that Polylang has languages, then run the migration again.',
             $this->line($report, 'Next')
+        );
+        $this->assertStringContainsString('Nothing was found', $report['summary']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+    }
+
+    public function test_clean_run_says_polylang_data_was_left_in_place()
+    {
+        $report = $this->format_run(array(
+            'languages' => 2,
+            'posts' => 4,
+            'terms' => 1,
+        ));
+
+        $this->assertTrue($report['ok']);
+        $this->assertSame('Migration complete', $report['title']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
+    }
+
+    public function test_several_missing_classes_are_named_in_one_sentence()
+    {
+        $report = Migration_Report::format(array(
+            'missing' => array(
+                'WMM\\Tolka\\Polylang_Languages',
+                'WMM\\Tolka\\Polylang_Posts',
+                'WMM\\Tolka\\Polylang_Terms',
+                'WMM\\Tolka\\Tolka_Writer',
+            ),
+        ));
+
+        $this->assertSame(1, preg_match_all(
+            '/Required classes are missing, so those parts were skipped: ([^.]+)\./',
+            $report['summary'],
+            $matches
+        ));
+        $sentence = $matches[1][0];
+        $this->assertStringContainsString('Polylang_Languages (languages)', $sentence);
+        $this->assertStringContainsString('Polylang_Posts (posts)', $sentence);
+        $this->assertStringContainsString('Polylang_Terms (terms)', $sentence);
+        $this->assertStringContainsString('Tolka_Writer (saving)', $sentence);
+        $this->assertStringNotContainsString('.', $sentence);
+        $this->assertSame(
+            'Required classes are missing, so those parts were skipped: Polylang_Languages (languages), Polylang_Posts (posts), Polylang_Terms (terms), and Tolka_Writer (saving).',
+            $matches[0][0]
         );
     }
 
@@ -124,12 +168,12 @@ class Test_Migration_Report extends TestCase
         $this->assertFalse($report['ok']);
         $this->assertSame('Migration did not finish', $report['title']);
         $this->assertSame(
-            'The migration did not finish, so the Tolka package was not saved. Polylang is not active. Activate Polylang, then run the migration again from Migrate to Tolka. Your existing Polylang data was left in place.',
+            'The migration did not finish, so the Tolka package was not saved. Polylang is not active. Activate Polylang, then run the migration again from Migrate to Tolka. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
         $this->assertSame('Polylang is not active.', $this->line($report, 'Problem'));
-        $this->assertSame('Left in place', $this->line($report, 'Polylang data'));
+        $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
     }
 
     public function test_missing_steps_are_named_in_plain_language()
@@ -146,7 +190,7 @@ class Test_Migration_Report extends TestCase
 
         $this->assertFalse($report['ok']);
         $this->assertSame(
-            'The migration did not finish, so the Tolka package was not saved. Required classes are missing, so those parts were skipped: Polylang_Languages (languages) and Tolka_Writer (saving). Update the plugin, then run the migration again from Migrate to Tolka. Your existing Polylang data was left in place.',
+            'The migration did not finish, so the Tolka package was not saved. Required classes are missing, so those parts were skipped: Polylang_Languages (languages) and Tolka_Writer (saving). Update the plugin, then run the migration again from Migrate to Tolka. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('0 languages were not read.', $this->line($report, 'Languages'));
@@ -176,7 +220,7 @@ class Test_Migration_Report extends TestCase
 
         $this->assertFalse($report['ok']);
         $this->assertSame(
-            'The migration did not finish. This site has 2 languages and 4 posts, but that content was not saved into a Tolka package. No terms, strings, menus, or media items were found. Could not read menus. 1 more problem is listed below. Run the migration again from Migrate to Tolka. Your existing Polylang data was left in place.',
+            'The migration did not finish. This site has 2 languages and 4 posts, but that content was not saved into a Tolka package. No terms, strings, menus, or media items were found. Could not read menus. 1 more problem is listed below. Run the migration again from Migrate to Tolka. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame(
@@ -208,7 +252,7 @@ class Test_Migration_Report extends TestCase
         $this->assertFalse($report['ok']);
         $this->assertSame('Migration finished with problems', $report['title']);
         $this->assertSame(
-            'Your Polylang content is packaged for Tolka: 2 languages and 3 posts. No terms, strings, menus, or media items were found. The package is saved on this site. One menu had no items. Review the problems below, then run the migration again if you want to retry. Your existing Polylang data was left in place.',
+            'Your Polylang content is packaged for Tolka: 2 languages and 3 posts. No terms, strings, menus, or media items were found. The package is saved on this site. One menu had no items. Review the problems below, then run the migration again if you want to retry. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
@@ -282,7 +326,7 @@ class Test_Migration_Report extends TestCase
 
         $this->assertFalse($report['ok']);
         $this->assertSame('Migration did not finish', $report['title']);
-        $this->assertStringEndsWith('Your existing Polylang data was left in place.', $report['summary']);
+        $this->assertStringEndsWith('Polylang data was left in place.', $report['summary']);
         $this->assertSame('0 languages', $this->line($report, 'Languages'));
         $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
     }
@@ -390,9 +434,9 @@ class Test_Migration_Report extends TestCase
             $this->assertIsBool($report['ok']);
             $this->assertNotSame('', $report['title']);
             $this->assertNotSame('', $report['summary']);
-            $this->assertStringEndsWith('Your existing Polylang data was left in place.', $report['summary']);
+            $this->assertStringEndsWith('Polylang data was left in place.', $report['summary']);
             $this->assertStringNotContainsString('<', $report['title']);
-            $this->assertSame('Left in place', $this->line($report, 'Polylang data'));
+            $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
             $this->assertArrayHasKey('ok', $report);
             $this->assertArrayHasKey('title', $report);
             $this->assertArrayHasKey('summary', $report);
@@ -421,7 +465,7 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('0 media items', $this->line($report, 'Media'));
         $this->assertSame(array(), $this->lines_named($report, 'Missing step'));
         $this->assertStringNotContainsString('class is missing', $report['summary']);
-        $this->assertStringEndsWith('Your existing Polylang data was left in place.', $report['summary']);
+        $this->assertStringEndsWith('Polylang data was left in place.', $report['summary']);
 
         $partial = Migration_Report::format(array(
             'counts' => array('posts' => 5),

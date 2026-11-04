@@ -516,7 +516,7 @@ class Migration_Report
      */
     private static function summary_for($status, $package, array $description, $total, array $labels, array $bases, array $errors, $next, $run_ok, $default_language)
     {
-        $closing = self::text('Your existing Polylang data was left in place.');
+        $closing = self::text('Polylang data was left in place.');
         $missing_sentence = self::missing_sentence($labels, $bases);
         $problem_lead = self::problem_lead($errors);
 
@@ -532,7 +532,7 @@ class Migration_Report
 
         if ($status === 'empty') {
             $parts = array(
-                self::text('The migration finished, but there was nothing to package.'),
+                self::text('Nothing was found on this site.'),
                 self::text('No languages, posts, terms, strings, menus, or media were found.'),
                 $next,
             );
@@ -993,7 +993,7 @@ class Migration_Report
         if ($mismatch !== '') {
             $lines[] = self::line(self::text('Saved counts'), $mismatch);
         }
-        $lines[] = self::line(self::text('Polylang data'), self::text('Left in place'));
+        $lines[] = self::line(self::text('Polylang data'), self::text('Polylang data was left in place.'));
 
         if ($next !== '') {
             $lines[] = self::line(self::text('Next'), $next);
