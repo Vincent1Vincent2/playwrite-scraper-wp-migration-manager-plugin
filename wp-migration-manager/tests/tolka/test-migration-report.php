@@ -333,18 +333,45 @@ class Test_Migration_Report extends TestCase
         $this->assertStringNotContainsString('The migration is complete', $report['title']);
         $this->assertStringNotContainsString('The migration is complete', $report['summary']);
         $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
-        $this->assertStringContainsString('A flag file was missing.', $report['summary']);
+        $this->assertStringContainsString('Languages: A flag file was missing.', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
         $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
         $this->assertSame(
             array(
-                'A flag file was missing.',
-                'One post had no title.',
-                'A menu item was skipped.',
+                'Languages: A flag file was missing.',
+                'Posts: One post had no title.',
+                'Menus: A menu item was skipped.',
             ),
             $this->lines_named($report, 'Problem')
         );
+    }
+
+    public function test_run_section_errors_block_the_clean_title_and_keep_polylang_data()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('strings' => 2),
+            'strings' => array(
+                'items' => array(
+                    array('name' => 'footer', 'string' => 'Hello'),
+                ),
+                'errors' => array('One string had no translation'),
+            ),
+            'write' => array(
+                'ok' => true,
+                'counts' => array('strings' => 2),
+            ),
+        ));
+
+        $this->assertFalse($report['ok']);
+        $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assertStringNotContainsString('The migration is complete', $report['title']);
+        $this->assertStringNotContainsString('The migration is complete', $report['summary']);
+        $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
+        $this->assertStringContainsString('Strings: One string had no translation.', $report['summary']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertSame('Polylang data was left in place.', $this->line($report, 'Polylang data'));
     }
 
     public function test_summary_says_polylang_data_was_left_in_place_when_the_writer_did_not_delete_it()

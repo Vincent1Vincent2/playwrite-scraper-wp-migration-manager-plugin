@@ -249,13 +249,13 @@ class Migration_Report
 
         foreach (array_keys(self::section_catalog()) as $section) {
             if (isset($run[$section])) {
-                $raw = array_merge($raw, self::envelope_errors($run[$section]));
+                $raw = array_merge($raw, self::prefix_section(self::envelope_errors($run[$section]), $section));
             }
             if (isset($run['package']) && is_array($run['package']) && isset($run['package'][$section])) {
-                $raw = array_merge($raw, self::envelope_errors($run['package'][$section]));
+                $raw = array_merge($raw, self::prefix_section(self::envelope_errors($run['package'][$section]), $section));
             }
             if (is_array($write) && isset($write[$section])) {
-                $raw = array_merge($raw, self::envelope_errors($write[$section]));
+                $raw = array_merge($raw, self::prefix_section(self::envelope_errors($write[$section]), $section));
             }
         }
 
@@ -298,7 +298,7 @@ class Migration_Report
             if (!is_string($key) || !in_array($key, $sections, true)) {
                 continue;
             }
-            $raw = array_merge($raw, self::error_strings($value));
+            $raw = array_merge($raw, self::prefix_section(self::error_strings($value), $key));
         }
 
         return $raw;
@@ -317,6 +317,27 @@ class Migration_Report
         }
 
         return self::error_strings($section['errors']);
+    }
+
+    /**
+     * @param string[] $messages Error strings.
+     * @param string   $section  Section key.
+     * @return string[]
+     */
+    private static function prefix_section(array $messages, $section)
+    {
+        $catalog = self::section_catalog();
+        if (!isset($catalog[$section]) || empty($messages)) {
+            return $messages;
+        }
+
+        $label = self::text($catalog[$section]['label']);
+        $prefixed = array();
+        foreach ($messages as $message) {
+            $prefixed[] = $label . ': ' . $message;
+        }
+
+        return $prefixed;
     }
 
     /**
