@@ -43,6 +43,13 @@ class WMM_Tolka_Strings_Probe extends Polylang_Strings
     public $api_strings = null;
 
     /**
+     * Fixture for pll_languages_list() fields, keyed by field name.
+     *
+     * @var array|null
+     */
+    public $pll_fields = null;
+
+    /**
      * @param array $snapshot Already-read rows.
      * @return array
      */
@@ -90,18 +97,6 @@ class WMM_Tolka_Strings_Probe extends Polylang_Strings
     }
 
     /**
-     * @return string[]|null
-     */
-    protected function read_api_language_slugs()
-    {
-        if ($this->api_slugs !== null) {
-            return $this->api_slugs;
-        }
-
-        return parent::read_api_language_slugs();
-    }
-
-    /**
      * @return array
      */
     protected function read_api_strings()
@@ -111,6 +106,25 @@ class WMM_Tolka_Strings_Probe extends Polylang_Strings
         }
 
         return parent::read_api_strings();
+    }
+
+    /**
+     * @param string $field Language field.
+     * @return array|null
+     */
+    protected function pll_language_field($field)
+    {
+        if (is_array($this->pll_fields) && array_key_exists($field, $this->pll_fields)) {
+            return $this->pll_fields[$field];
+        }
+        if (is_array($this->api_slugs) && $field === 'slug') {
+            return $this->api_slugs;
+        }
+        if (is_array($this->api_slugs) && $field === 'term_id') {
+            return array();
+        }
+
+        return parent::pll_language_field($field);
     }
 }
 
@@ -357,6 +371,10 @@ class WMM_Tolka_Strings_Db
             throw new RuntimeException('missing taxonomy');
         }
         if (strpos($plain, "taxonomy = 'language'") !== false) {
+            if (strpos($plain, 'tt.term_group') !== false) {
+                $this->last_error = 'Unknown column tt.term_group';
+                return null;
+            }
             if ($this->throw_on_languages) {
                 throw new RuntimeException('language taxonomy threw');
             }
@@ -2147,7 +2165,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $result = $this->probe($db, array(), true)->export();
 
         $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
-        $this->assertContains(
+        $this->assertNotContains(
             'The language list could not be read. String translations that could still be matched are included.',
             $result['errors']
         );
@@ -2176,7 +2194,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $result = $this->probe($db, array(), true)->export();
 
         $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
-        $this->assertContains(
+        $this->assertNotContains(
             'The language list could not be read. String translations that could still be matched are included.',
             $result['errors']
         );
@@ -2256,7 +2274,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $result = $this->probe($db, array(), true)->export();
 
         $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
-        $this->assertContains(
+        $this->assertNotContains(
             'The language list could not be read. String translations that could still be matched are included.',
             $result['errors']
         );
@@ -2264,6 +2282,82 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             'String translations for a language that is no longer installed were skipped.',
             $result['errors']
         );
+    }
+
+    /**
+     * Polylang 3.9.1 stores one pair of original and translation in term meta.
+     *
+     * @return void
+     */
+    public function test_a_normal_catalogue_with_one_string_has_no_error()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Bonjour'))),
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Hello', $result['items'][0]['string']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertExportShape($result);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_an_empty_catalogue_on_an_active_site_has_no_error()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(array(), $result['errors']);
+
+        $db->fail_languages = true;
+        $failed = $this->probe($db, array(), true)->export();
+        $this->assertSame(array(), $failed['items']);
+        $this->assertSame(array(), $failed['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_polylang_language_list_supplies_slugs_and_term_ids()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_languages = true;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Färjor till öar', 'Öppet'))),
+            ),
+        );
+        $probe = $this->probe($db, array(), true);
+        $probe->pll_fields = array(
+            'slug' => array('FR'),
+            'term_id' => array(11),
+        );
+        $result = $probe->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Färjor till öar', $result['items'][0]['string']);
+        $this->assertSame(array('fr'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('Öppet', $result['items'][0]['translations']['fr']);
+        $this->assertSame(array(), $result['errors']);
     }
 
     /**
