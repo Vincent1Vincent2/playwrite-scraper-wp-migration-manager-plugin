@@ -1654,6 +1654,132 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_null_bytes_inside_html_do_not_drop_the_tags()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:21',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 21,
+                            'title' => "See\0 <a href=\"https://example.com/a\0b\">Link</a>",
+                            'content' => "<div data-x=\"a\0b\">Hi\0</div>",
+                        ),
+                    ),
+                ),
+            ),
+            'terms' => array(
+                array(
+                    'group' => 'term:6',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 6,
+                            'name' => "News\0 <em>desk</em>",
+                            'slug' => "news\0-desk",
+                            'description' => "<p>About\0</p>",
+                        ),
+                    ),
+                ),
+            ),
+            'menus' => array(
+                array(
+                    'location' => 'primary',
+                    'translations' => array(
+                        'en' => array(
+                            'menu_id' => 30,
+                            'name' => "Main\0",
+                            'items' => array(
+                                array(
+                                    'title' => "Home\0 <span>page</span>",
+                                    'url' => "https://example.com/\0home",
+                                    'object' => 'page',
+                                    'object_id' => 21,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $post = $stored['posts'][0]['translations']['en'];
+        $term = $stored['terms'][0]['translations']['en'];
+        $item = $stored['menus'][0]['translations']['en']['items'][0];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('See <a href="https://example.com/ab">Link</a>', $post['title']);
+        $this->assertSame('<div data-x="ab">Hi</div>', $post['content']);
+        $this->assertSame('News <em>desk</em>', $term['name']);
+        $this->assertSame('news-desk', $term['slug']);
+        $this->assertSame('<p>About</p>', $term['description']);
+        $this->assertSame('Main', $stored['menus'][0]['translations']['en']['name']);
+        $this->assertSame('Home <span>page</span>', $item['title']);
+        $this->assertSame('https://example.com/home', $item['url']);
+        $this->assertSame(false, strpos(serialize($stored), "\0"));
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
+    public function test_html_cleanup_leaves_polylang_rows_in_place()
+    {
+        $polylang = array(
+            'default_lang' => 'sv',
+            'force_lang' => 0,
+            'version' => '3.6.2',
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['polylang_option'] = $polylang;
+        $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'] = $polylang;
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][14] = array(
+            '_pll_lang' => 'sv',
+            '_wmm_tolka_lang' => 'sv',
+            '_wmm_tolka_group' => 'post:14',
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:14',
+                    'translations' => array(
+                        'en' => array(
+                            'id' => 14,
+                            'title' => "A\0 <em>title</em>",
+                            'content' => "<p>One\0</p><!-- keep -->",
+                        ),
+                    ),
+                ),
+            ),
+            'strings' => array(
+                array(
+                    'name' => 'label',
+                    'string' => "Hello\0\0 <strong>there</strong>",
+                    'context' => "wid\0get",
+                    'translations' => array(
+                        'sv' => "Hej\0 <strong>där</strong>",
+                    ),
+                ),
+            ),
+        ));
+
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $post = $stored['posts'][0]['translations']['en'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('A <em>title</em>', $post['title']);
+        $this->assertSame('<p>One</p><!-- keep -->', $post['content']);
+        $this->assertSame('Hello <strong>there</strong>', $stored['strings'][0]['string']);
+        $this->assertSame('widget', $stored['strings'][0]['context']);
+        $this->assertSame('Hej <strong>där</strong>', $stored['strings'][0]['translations']['sv']);
+        $this->assertSame($polylang, $GLOBALS['wmm_tolka_schema_driver']['polylang_option']);
+        $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][14]['_pll_lang']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][14]['_wmm_tolka_lang']);
+        $this->assertSame('post:14', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][14]['_wmm_tolka_group']);
+        $this->assertSame(false, strpos(serialize($stored), "\0"));
+    }
+
     public function test_saved_package_keeps_html_and_drops_null_bytes()
     {
         $polylang = $GLOBALS['wmm_tolka_schema_driver']['polylang_option'];
@@ -1814,6 +1940,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             )
         );
         $this->assertSame(0, preg_match('/\bupdate_option\s*\(/', $schema));
+        $this->assertStringNotContainsString('strip_tags', $schema);
         $this->assertSame(0, preg_match('/[\'"]polylang[\'"]/', strtolower($writer . $schema)));
         $this->assertStringNotContainsString('pll_', strtolower($writer . $schema));
     }
