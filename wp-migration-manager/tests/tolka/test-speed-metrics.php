@@ -496,6 +496,52 @@ HTML;
         $this->assertSame(1, $capped_result['language_count']);
     }
 
+    public function test_switcher_marker_only_inside_noscript_does_not_count()
+    {
+        $markers = array(
+            'polylang',
+            'pll-switcher',
+            'lang-item',
+            'pll-parent-menu-item',
+        );
+
+        foreach ($markers as $marker) {
+            $html = '<noscript><div class="' . strtoupper($marker) . '"></div></noscript>';
+            $result = $this->analyze($html);
+
+            $this->assertFalse($result['has_polylang_switcher'], $marker);
+            $this->assertSame(0, $result['hreflang_count'], $marker);
+            $this->assertSame(1, $result['language_count'], $marker);
+        }
+
+        $script_url = $this->analyze('<noscript><script src="/wp-content/plugins/polylang/js/frontend.js"></script></noscript>');
+        $this->assertFalse($script_url['has_polylang_switcher']);
+        $this->assertSame(1, $script_url['language_count']);
+        $this->assertSame(0, $script_url['script_count']);
+
+        $in_body = $this->analyze('<noscript><ul class="lang-item"></ul></noscript><nav class="lang-item"></nav>');
+        $this->assertTrue($in_body['has_polylang_switcher']);
+        $this->assertSame(2, $in_body['language_count']);
+        $this->assertSame(0, $in_body['hreflang_count']);
+
+        $before = $this->analyze('<nav class="pll-switcher"></nav><noscript><div class="lang-item"></div></noscript>');
+        $this->assertTrue($before['has_polylang_switcher']);
+        $this->assertSame(2, $before['language_count']);
+
+        $upper = $this->analyze('<NOSCRIPT><div class="LANG-ITEM"></div></NOSCRIPT><div class="lang-item"></div>');
+        $this->assertTrue($upper['has_polylang_switcher']);
+        $this->assertSame(2, $upper['language_count']);
+
+        $body_only = $this->analyze('<nav class="pll-switcher"></nav>');
+        $this->assertTrue($body_only['has_polylang_switcher']);
+        $this->assertSame(2, $body_only['language_count']);
+
+        $live_script = $this->analyze('<noscript><span class="pll-parent-menu-item"></span></noscript><script src="/wp-content/plugins/polylang/js/frontend.js"></script>');
+        $this->assertTrue($live_script['has_polylang_switcher']);
+        $this->assertSame(2, $live_script['language_count']);
+        $this->assertSame(1, $live_script['script_count']);
+    }
+
     public function test_script_inside_noscript_template_or_iframe_does_not_count()
     {
         $cases = array(

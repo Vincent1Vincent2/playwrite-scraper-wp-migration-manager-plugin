@@ -41,9 +41,9 @@ class Speed_Metrics
      * script, style, template, textarea, title, iframe, and noscript elements.
      * An unclosed one of those hides the rest of the body, which is what a
      * cut-off page looks like. Switcher markers are read from that same HTML
-     * with comments removed, so a marker that only appears inside a comment
-     * does not count. Markers in the live markup, including a script URL,
-     * still count.
+     * with comments and noscript contents removed. A marker that appears only
+     * inside a comment or noscript does not count. The same marker in the
+     * body, including a script URL outside noscript, still counts.
      *
      * @param array $measurement Result from Speed_Loader::measure.
      * @return array{
@@ -226,15 +226,23 @@ class Speed_Metrics
                     $close = self::find_close($lower_html, $tag['next'], $name);
 
                     if ($close === null) {
-                        $chunks[] = self::strip_comment_spans(substr($lower_html, $tag['next']));
+                        // An unclosed noscript owns the rest of the page, and
+                        // that fallback is not the switcher visitors see.
+                        if ($name !== 'noscript') {
+                            $chunks[] = self::strip_comment_spans(substr($lower_html, $tag['next']));
+                        }
+
                         break;
                     }
 
-                    $chunks[] = self::strip_comment_spans(substr(
-                        $lower_html,
-                        $tag['next'],
-                        $close['body_end'] - $tag['next']
-                    ));
+                    if ($name !== 'noscript') {
+                        $chunks[] = self::strip_comment_spans(substr(
+                            $lower_html,
+                            $tag['next'],
+                            $close['body_end'] - $tag['next']
+                        ));
+                    }
+
                     $chunks[] = substr(
                         $lower_html,
                         $close['body_end'],
@@ -711,7 +719,7 @@ class Speed_Metrics
      *
      * Markers, matched case-insensitively, are polylang, pll-switcher,
      * lang-item, and pll-parent-menu-item. The caller removes HTML comments
-     * before this search.
+     * and noscript contents before this search.
      *
      * @param string $lower_html Lowercased HTML.
      * @return bool
