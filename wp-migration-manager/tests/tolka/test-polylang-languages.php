@@ -300,7 +300,7 @@ class Test_Polylang_Languages extends PHPUnit\Framework\TestCase
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
             $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 6),
             $this->language_term(9, 'Norsk', 'no', 'nb_NO', 'no', 1, 0),
-        ), 'no');
+        ), 'NO');
 
         $result = Polylang_Languages::export();
         $by_slug = $this->index_by_slug($result['items']);
@@ -597,6 +597,54 @@ PHP
         $this->assertSame('sv_SE', $by_slug['sv']['locale']);
         $this->assertSame(8, $by_slug['sv']['term_id']);
         $this->assertSame('se', $by_slug['sv']['flag']);
+    }
+
+    public function test_default_language_matches_ignoring_case_and_array_records()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        array(
+            'slug' => 'en',
+            'name' => 'English',
+            'locale' => 'en_US',
+            'term_id' => '4',
+            'flag_code' => 'US',
+            'flag' => '<img alt="" />',
+            'is_default' => 1,
+        ),
+        array(
+            'slug' => 'sv',
+            'name' => 'Svenska',
+            'locale' => 'sv_SE',
+            'flag_code' => 'se',
+            'is_default' => 0,
+            'term_props' => array(
+                'language' => array('term_id' => 8),
+            ),
+        ),
+    );
+}
+
+function pll_default_language($field = 'slug')
+{
+    return 'SV';
+}
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('en', 'sv'), array_keys($by_slug));
+        $this->assertSame('us', $by_slug['en']['flag']);
+        $this->assertSame(4, $by_slug['en']['term_id']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertSame(8, $by_slug['sv']['term_id']);
+        $this->assertSame('se', $by_slug['sv']['flag']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
     }
 
     public function test_slug_only_api_is_filled_from_stored_languages()

@@ -676,8 +676,15 @@ class Polylang_Languages
         }
 
         if ($default !== '') {
+            $canonical = '';
+            foreach ($items as $item) {
+                if (strcasecmp($item['slug'], $default) === 0) {
+                    $canonical = $item['slug'];
+                    break;
+                }
+            }
             foreach ($items as $index => $item) {
-                $items[$index]['is_default'] = ($item['slug'] === $default);
+                $items[$index]['is_default'] = ($canonical !== '' && $item['slug'] === $canonical);
             }
             return array_values($items);
         }
