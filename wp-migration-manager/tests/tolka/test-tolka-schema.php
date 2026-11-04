@@ -669,6 +669,62 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertFunctionsStayInsideTolka();
     }
 
+    public function test_option_exception_does_not_change_existing_tolka_meta()
+    {
+        $previous = array('format' => 'tolka-migration', 'version' => 1, 'posts' => array());
+        $GLOBALS['wmm_tolka_schema_driver']['throw_option'] = true;
+        $GLOBALS['wmm_tolka_schema_driver']['stored_package'] = $previous;
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10] = array(
+            '_wmm_tolka_lang' => 'sv',
+            '_wmm_tolka_group' => 'post:10',
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:11',
+                    'translations' => array('en' => 11),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('existing Tolka language tags were left unchanged', $result['errors'][0]);
+        $this->assertSame($previous, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]['_wmm_tolka_lang']);
+        $this->assertArrayNotHasKey(11, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+    }
+
+    public function test_meta_exception_keeps_the_saved_package_and_earlier_tags()
+    {
+        $GLOBALS['wmm_tolka_schema_driver']['throw_meta'] = true;
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10] = array(
+            '_wmm_tolka_lang' => 'sv',
+            '_wmm_tolka_group' => 'post:10',
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:11',
+                    'translations' => array('en' => 11),
+                ),
+            ),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(
+            array(
+                'Tolka saved the migration package, but it could not finish tagging posts and terms. Tags from an earlier run were left in place. Nothing was deleted, and your Polylang content is still in place.',
+            ),
+            $result['errors']
+        );
+        $this->assertSame('post:11', $GLOBALS['wmm_tolka_schema_driver']['stored_package']['posts'][0]['group']);
+        $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]['_wmm_tolka_lang']);
+        $this->assertArrayNotHasKey(11, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+    }
+
     public function test_missing_option_storage_is_a_clear_error()
     {
         $GLOBALS['wmm_tolka_schema_driver']['has_update_option'] = false;

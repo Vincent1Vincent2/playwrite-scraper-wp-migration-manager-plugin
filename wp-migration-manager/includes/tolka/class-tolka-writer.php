@@ -58,7 +58,7 @@ class Tolka_Writer
         try {
             return self::write_package($package);
         } catch (\Throwable $throwable) {
-            if (function_exists('error_log')) {
+            if (function_exists('error_log') && !self::testing()) {
                 error_log('Tolka migration writer: ' . $throwable->getMessage());
             }
 
@@ -121,8 +121,16 @@ class Tolka_Writer
             return self::result($collected['counts'], $errors, $hidden, false);
         }
 
-        self::write_meta('post', $collected['posts'], $errors, $hidden);
-        self::write_meta('term', $collected['terms'], $errors, $hidden);
+        try {
+            self::write_meta('post', $collected['posts'], $errors, $hidden);
+            self::write_meta('term', $collected['terms'], $errors, $hidden);
+        } catch (\Throwable $throwable) {
+            if (function_exists('error_log') && !self::testing()) {
+                error_log('Tolka migration writer: ' . $throwable->getMessage());
+            }
+            $errors[] = self::failure('Tolka saved the migration package, but it could not finish tagging posts and terms. Tags from an earlier run were left in place.');
+            return self::result($collected['counts'], $errors, $hidden, true);
+        }
 
         return self::result($collected['counts'], $errors, $hidden, true);
     }
@@ -540,7 +548,15 @@ class Tolka_Writer
      */
     private static function store_package(array $package, array &$errors, &$hidden)
     {
-        $updated = self::call_update_option($package);
+        try {
+            $updated = self::call_update_option($package);
+        } catch (\Throwable $throwable) {
+            if (function_exists('error_log') && !self::testing()) {
+                error_log('Tolka migration writer: ' . $throwable->getMessage());
+            }
+            self::add_error($errors, $hidden, self::store_failed_message($package));
+            return false;
+        }
 
         if ($updated === null) {
             self::add_error(
@@ -1101,6 +1117,10 @@ class Tolka_Writer
                 return null;
             }
 
+            if (!empty($driver['throw_option'])) {
+                throw new \RuntimeException('option storage failed');
+            }
+
             $driver['calls'][] = array(
                 'fn' => 'update_option',
                 'option' => self::OPTION,
@@ -1180,6 +1200,10 @@ class Tolka_Writer
             $flag = $kind === 'term' ? 'has_update_term_meta' : 'has_update_post_meta';
             if (empty($driver[$flag])) {
                 return null;
+            }
+
+            if (!empty($driver['throw_meta'])) {
+                throw new \RuntimeException('meta storage failed');
             }
 
             $driver['calls'][] = array(
