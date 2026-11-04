@@ -1779,6 +1779,96 @@ class Harness_Test extends Tolka_Test_Case
     }
 
     /**
+     * A checkout without includes/tolka finishes in skips, not a fatal error.
+     */
+    public function test_suite_finishes_with_skips_when_tolka_directory_is_missing()
+    {
+        if (getenv('WMM_TOLKA_NESTED_SUITE') === '1') {
+            $this->assertFalse(is_dir(WMM_TOLKA_PLUGIN_DIR . '/includes/tolka'));
+            $this->assertSame(array(), wmm_tolka_load_classes());
+            return;
+        }
+
+        $binary = $this->phpunit_binary();
+
+        if ($binary === null) {
+            $this->markTestSkipped('PHPUnit could not be found for a subprocess, so this check was skipped.');
+        }
+
+        $directory = WMM_TOLKA_PLUGIN_DIR . '/includes/tolka';
+        $backup = WMM_TOLKA_PLUGIN_DIR . '/includes/tolka-aside-' . getmypid();
+        $existed = is_dir($directory);
+
+        if ($existed && !rename($directory, $backup)) {
+            $this->fail('The test could not move includes/tolka aside.');
+        }
+
+        try {
+            if (!class_exists('WMM\\Tolka\\Speed_Estimate', false)) {
+                wmm_tolka_load_classes();
+
+                try {
+                    wmm_tolka_skip_without_class('Speed_Estimate');
+                    $this->fail('A missing Tolka directory should skip the test.');
+                } catch (Throwable $error) {
+                    $this->assertTrue($this->is_skip_exception($error), get_class($error));
+                    $this->assertStringContainsString('includes/tolka directory is missing', $error->getMessage());
+                    $this->assertStringContainsString('skipped', strtolower($error->getMessage()));
+                    $this->assert_finished_sentence($error->getMessage(), 'missing directory');
+                }
+            }
+
+            $boot_output = array();
+            $boot_status = 1;
+            exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(WMM_TOLKA_TEST_DIR . '/bootstrap.php') . ' 2>&1', $boot_output, $boot_status);
+            $boot_text = implode("\n", $boot_output);
+            $this->assertSame(0, $boot_status, $boot_text);
+            $this->assertStringNotContainsString('Fatal error', $boot_text);
+            $this->assertSame('', trim($boot_text));
+
+            $cache = sys_get_temp_dir() . '/wmm-tolka-missing-dir-' . getmypid();
+            $version_output = array();
+            exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary) . ' --version 2>&1', $version_output);
+            $cache_args = '';
+
+            if (preg_match('/PHPUnit (\d+)/', implode(' ', $version_output), $version_match) && (int) $version_match[1] >= 10) {
+                $cache_args = ' --cache-directory ' . escapeshellarg($cache);
+            }
+
+            $command = 'WMM_TOLKA_NESTED_SUITE=1 ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($binary)
+                . ' -c ' . escapeshellarg(WMM_TOLKA_PLUGIN_DIR . '/phpunit.xml.dist')
+                . ' --do-not-cache-result' . $cache_args;
+            $output = array();
+            $status = 1;
+            exec($command . ' 2>&1', $output, $status);
+            $text = implode("\n", $output);
+
+            $this->assertSame(0, $status, $text);
+            $this->assertStringNotContainsString('Fatal error', $text);
+            $this->assertStringNotContainsString('Uncaught', $text);
+            $this->assertStringNotContainsString('failed to open stream', strtolower($text));
+            $this->assertMatchesRegularExpression('/skipped/i', $text);
+            $this->assertFalse(is_dir($directory));
+        } finally {
+            if ($existed && is_dir($backup)) {
+                if (is_dir($directory)) {
+                    $left = array_diff(scandir($directory), array('.', '..'));
+
+                    if (count($left) === 0) {
+                        rmdir($directory);
+                    }
+                }
+
+                if (!is_dir($directory)) {
+                    rename($backup, $directory);
+                }
+            }
+
+            wmm_tolka_load_classes();
+        }
+    }
+
+    /**
      * A blank path means the real include directory.
      */
     public function test_blank_directory_uses_the_plugin_class_directory()
