@@ -1069,14 +1069,17 @@
     }
     put("wmm-tolka-current-load", values.current, function (node) {
       setMs(node, values.currentMs);
+      reveal(node);
     });
     put("wmm-tolka-tolka-load", values.tolka, function (node) {
       setMs(node, values.tolkaMs);
+      reveal(node);
     });
     put("wmm-tolka-faster", values.faster || "", function (node) {
       if (values.percent != null && values.percent !== "" && isFinite(Number(values.percent))) {
         node.setAttribute("data-faster-percent", Number(values.percent).toFixed(1));
       }
+      reveal(node);
     });
     put("wmm-tolka-basis", values.basis ? finishSentence(values.basis) : "", function (node) {
       if (values.basis) {
