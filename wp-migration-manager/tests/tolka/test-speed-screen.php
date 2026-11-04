@@ -213,6 +213,32 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         foreach ($ids as $id) {
             $this->assertNotNull($neither_document->getElementById($id), 'neither #' . $id);
         }
+
+        $note_only_estimate = $this->ready_estimate();
+        $note_only_estimate['provenance'] = 'placeholder';
+        $note_only_estimate['provenance_note'] = $note;
+        $note_only = $this->render(true, array(
+            'metrics' => array('truncated' => false),
+            'estimate' => $note_only_estimate,
+        ));
+        $this->assertSame($note, $this->text($note_only, 'wmm-tolka-provenance-note'));
+        $this->assertFalse($this->document($note_only)->getElementById('wmm-tolka-provenance-note')->hasAttribute('hidden'));
+        $this->assertNull($this->document($note_only)->getElementById('wmm-tolka-speed-truncated'));
+        $this->assertStringNotContainsString($truncated_sentence, $note_only);
+        $this->assertStringNotContainsString('<script', $note_only);
+
+        $cut_only_estimate = $this->ready_estimate();
+        $cut_only_estimate['provenance'] = 'lab';
+        $cut_only_estimate['provenance_note'] = $note;
+        $cut_only = $this->render(true, array(
+            'metrics' => array('truncated' => true),
+            'estimate' => $cut_only_estimate,
+        ));
+        $this->assertSame('', $this->text($cut_only, 'wmm-tolka-provenance-note'));
+        $this->assertTrue($this->document($cut_only)->getElementById('wmm-tolka-provenance-note')->hasAttribute('hidden'));
+        $this->assertSame($truncated_sentence, $this->text($cut_only, 'wmm-tolka-speed-truncated'));
+        $this->assertStringNotContainsString('<script', $cut_only);
+        $this->assertStringNotContainsString('Placeholder <script>', $cut_only);
     }
 
     public function test_truncated_page_sentence_is_escaped_and_omitted_when_not_truncated()
