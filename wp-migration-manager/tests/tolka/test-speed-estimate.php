@@ -1292,6 +1292,9 @@ class Test_Speed_Estimate extends TestCase
                 $estimate['faster_label']
             );
             $this->assertStringNotContainsString(',', $estimate['faster_label']);
+            $encoded = json_encode($estimate);
+            $this->assertIsString($encoded);
+            $this->assertStringContainsString($case[3], $encoded);
         }
 
         $failed = Speed_Estimate::project(
