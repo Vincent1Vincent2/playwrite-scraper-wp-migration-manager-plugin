@@ -37,6 +37,13 @@ class Polylang_Posts
     protected $record_cache = array();
 
     /**
+     * Post types looked up without loading post content.
+     *
+     * @var array<int, string>
+     */
+    protected $type_cache = array();
+
+    /**
      * Export post translation groups.
      *
      * @return array{items: array<int, array>, errors: string[]}
@@ -44,6 +51,7 @@ class Polylang_Posts
     public function export()
     {
         $this->record_cache = array();
+        $this->type_cache = array();
 
         try {
             if (!$this->polylang_present()) {
@@ -83,11 +91,37 @@ class Polylang_Posts
                 $clean[] = $error;
             }
         }
+        $clean = $this->limit_errors($clean);
 
         return array(
             'items' => array_values($items),
             'errors' => array_values($clean),
         );
+    }
+
+    /**
+     * Keep the preview readable when a large catalog has many broken rows.
+     *
+     * @param string[] $errors
+     * @return string[]
+     */
+    private function limit_errors(array $errors)
+    {
+        $limit = 20;
+        if (count($errors) <= $limit) {
+            return $errors;
+        }
+        $hidden = count($errors) - $limit;
+        $errors = array_slice($errors, 0, $limit);
+        if ($hidden === 1) {
+            $errors[] = $this->say('1 more issue was found and is not listed here.');
+        } else {
+            $errors[] = $this->say_sprintf(
+                '%d more issues were found and are not listed here.',
+                array($hidden)
+            );
+        }
+        return $errors;
     }
 
     /**
@@ -193,7 +227,8 @@ class Polylang_Posts
                         continue;
                     }
                     if (!empty($from_api)) {
-                        $maps[] = $from_api;
+                        // Keep a stored draft when the API answer is only a subset.
+                        $maps[] = $this->union_maps($decoded, $from_api);
                         continue;
                     }
                 }
@@ -367,7 +402,22 @@ class Polylang_Posts
             return array();
         }
 
-        $records = $this->posts_by_ids(array_keys($pending));
+        $this->warm_post_types(array_keys($pending));
+        $skip_types = array_merge($this->ignored_post_types(), array('attachment'));
+        $content_ids = array();
+        foreach ($pending as $post_id => $lang) {
+            $type = $this->post_type_of((int) $post_id);
+            if ($type !== '' && in_array($type, $skip_types, true)) {
+                unset($pending[$post_id]);
+                continue;
+            }
+            $content_ids[] = (int) $post_id;
+        }
+        if (empty($pending)) {
+            return array();
+        }
+
+        $records = $this->posts_by_ids($content_ids);
         $maps = array();
         $missing = array();
         foreach ($pending as $post_id => $lang) {
@@ -414,6 +464,13 @@ class Polylang_Posts
         }
 
         $default_lang = is_string($default_lang) ? trim($default_lang) : '';
+        $single_ids = array();
+        foreach ($prepared as $map) {
+            if (count($map) === 1) {
+                $single_ids[] = (int) reset($map);
+            }
+        }
+        $this->warm_post_types($single_ids);
         usort($prepared, function ($left, $right) use ($default_lang) {
             $left_id = $this->default_post_id($left, $default_lang);
             $right_id = $this->default_post_id($right, $default_lang);
@@ -444,6 +501,9 @@ class Polylang_Posts
                     'Post %1$d belongs to more than one translation group. It was kept in %2$s and left out of the later group.',
                     array($post_id, $kept_group)
                 );
+            }
+            if (count($fresh) === 1 && $this->post_type_of((int) reset($fresh)) === 'attachment') {
+                continue;
             }
 
             $records = $this->posts_by_ids(array_values($fresh));
@@ -498,6 +558,14 @@ class Polylang_Posts
                     array($group, $default_lang, $default_id)
                 );
             }
+            // One file with a language is media, not a post translation.
+            // A group of attachment translations stays, so the files remain linked.
+            if (count($loaded) === 1) {
+                $only = reset($loaded);
+                if (is_array($only) && isset($only['type']) && $only['type'] === 'attachment') {
+                    continue;
+                }
+            }
 
             $translations = array();
             foreach ($loaded as $lang => $record) {
@@ -529,6 +597,91 @@ class Polylang_Posts
         });
 
         return $items;
+    }
+
+    /**
+     * Post type only, so a lone media file can be skipped without reading its file contents.
+     *
+     * @param int $post_id
+     * @return string
+     */
+    private function post_type_of($post_id)
+    {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return '';
+        }
+        if (isset($this->type_cache[$post_id])) {
+            return $this->type_cache[$post_id];
+        }
+        if (array_key_exists($post_id, $this->record_cache) && is_array($this->record_cache[$post_id])) {
+            return (string) $this->record_cache[$post_id]['type'];
+        }
+        if (function_exists('get_post')) {
+            $post = get_post($post_id);
+            if (!is_object($post) || !isset($post->post_type)) {
+                return '';
+            }
+            return (string) $post->post_type;
+        }
+        global $wpdb;
+        if (!$this->db_ready($wpdb) || !method_exists($wpdb, 'get_var')) {
+            return '';
+        }
+        $type = $wpdb->get_var($wpdb->prepare(
+            "SELECT post_type FROM {$wpdb->posts} WHERE ID = %d",
+            $post_id
+        ));
+        $type = is_string($type) ? $type : '';
+        if ($type !== '') {
+            $this->type_cache[$post_id] = $type;
+        }
+        return $type;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     */
+    private function warm_post_types(array $ids)
+    {
+        $missing = array();
+        foreach ($ids as $post_id) {
+            $post_id = (int) $post_id;
+            if ($post_id > 0 && !isset($this->type_cache[$post_id])) {
+                $missing[$post_id] = true;
+            }
+        }
+        if (empty($missing)) {
+            return;
+        }
+        if (function_exists('get_post')) {
+            foreach (array_keys($missing) as $post_id) {
+                $post = get_post($post_id);
+                if (is_object($post) && isset($post->post_type)) {
+                    $this->type_cache[$post_id] = (string) $post->post_type;
+                }
+            }
+            return;
+        }
+        global $wpdb;
+        if (!$this->db_ready($wpdb)) {
+            return;
+        }
+        foreach (array_chunk(array_keys($missing), $this->page_size()) as $chunk) {
+            $placeholders = implode(', ', array_fill(0, count($chunk), '%d'));
+            $sql = "SELECT ID, post_type FROM {$wpdb->posts} WHERE ID IN ($placeholders)";
+            $prepared = $wpdb->prepare($sql, ...array_map('intval', $chunk));
+            $rows = $this->normalize_rows($wpdb->get_results($prepared, 'ARRAY_A'));
+            if (!is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                $post_id = isset($row['ID']) ? (int) $row['ID'] : 0;
+                if ($post_id > 0 && isset($row['post_type'])) {
+                    $this->type_cache[$post_id] = (string) $row['post_type'];
+                }
+            }
+        }
     }
 
     /**
@@ -670,7 +823,7 @@ class Polylang_Posts
             }
             if (isset($seen[$post_id]) && $seen[$post_id] !== $lang) {
                 $errors[] = $this->say_sprintf(
-                    'Post %1$d was listed as both %2$s and %3$s in the same translation group. It was exported as %2$s.',
+                    'Post %1$d was listed as both %2$s and %3$s in the same translation group. Only one entry was kept.',
                     array($post_id, $seen[$post_id], $lang)
                 );
                 continue;
@@ -761,6 +914,22 @@ class Polylang_Posts
             }
         }
         return $languages;
+    }
+
+    /**
+     * API languages win. Languages the API did not mention stay, so a draft is not dropped.
+     *
+     * @param array<string, int> $stored
+     * @param array<string, int> $from_api
+     * @return array<string, int>
+     */
+    private function union_maps(array $stored, array $from_api)
+    {
+        $union = $stored;
+        foreach ($from_api as $lang => $post_id) {
+            $union[$lang] = (int) $post_id;
+        }
+        return $union;
     }
 
     /**
@@ -1058,11 +1227,12 @@ class Polylang_Posts
         if (!$this->db_ready($wpdb)) {
             return array();
         }
-        $sql = $wpdb->prepare(
-            "SELECT tr.object_id AS object_id, t.slug AS slug FROM {$wpdb->term_relationships} tr INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id WHERE tt.taxonomy = %s",
-            self::TAX_LANGUAGE
-        );
-        return $this->normalize_rows($wpdb->get_results($sql, 'ARRAY_A'));
+        $ignored = array_merge($this->ignored_post_types(), array('attachment'));
+        $placeholders = implode(', ', array_fill(0, count($ignored), '%s'));
+        $sql = "SELECT tr.object_id AS object_id, t.slug AS slug FROM {$wpdb->term_relationships} tr INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id LEFT JOIN {$wpdb->posts} p ON p.ID = tr.object_id WHERE tt.taxonomy = %s AND (p.ID IS NULL OR (p.post_status <> %s AND p.post_type NOT IN ($placeholders)))";
+        $params = array_merge(array(self::TAX_LANGUAGE, 'auto-draft'), $ignored);
+        $prepared = $wpdb->prepare($sql, ...$params);
+        return $this->normalize_rows($wpdb->get_results($prepared, 'ARRAY_A'));
     }
 
     /**

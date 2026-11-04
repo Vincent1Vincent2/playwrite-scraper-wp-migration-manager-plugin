@@ -298,6 +298,10 @@ class Tolka_Posts_Fake_Db
         if ($this->fail) {
             return null;
         }
+        if (strpos($sql, 'SELECT post_type') !== false && preg_match('/ID = (\d+)/', $sql, $match)) {
+            $id = (int) $match[1];
+            return isset($this->posts_rows[$id]['post_type']) ? $this->posts_rows[$id]['post_type'] : null;
+        }
         if (strpos($sql, 'option_name') !== false) {
             return $this->option_value;
         }
@@ -315,6 +319,9 @@ class Tolka_Posts_Fake_Db
         $this->queries[] = $sql;
         if ($this->fail || $this->fail_results) {
             return null;
+        }
+        if (strpos($sql, 'SELECT ID, post_type FROM') !== false) {
+            return $this->type_rows($sql);
         }
         if (strpos($sql, 'post_excerpt') !== false) {
             return $this->filter_posts($sql);
@@ -345,6 +352,24 @@ class Tolka_Posts_Fake_Db
             return isset($this->posts_rows[$id]) ? $this->posts_rows[$id] : null;
         }
         return null;
+    }
+
+    private function type_rows($sql)
+    {
+        $ids = array_keys($this->posts_rows);
+        if (preg_match('/\bID IN \(([^)]+)\)/i', $sql, $match)) {
+            $ids = array_map('intval', explode(',', $match[1]));
+        }
+        $rows = array();
+        foreach ($ids as $id) {
+            if (isset($this->posts_rows[$id])) {
+                $rows[] = array(
+                    'ID' => (int) $id,
+                    'post_type' => $this->posts_rows[$id]['post_type'],
+                );
+            }
+        }
+        return $rows;
     }
 
     private function page_ids($sql)
@@ -390,7 +415,7 @@ class Tolka_Posts_Fake_Db
     private function filter_posts($sql)
     {
         $ids = array_keys($this->posts_rows);
-        if (preg_match('/IN \(([^)]+)\)/', $sql, $match)) {
+        if (preg_match('/\bID IN \(([^)]+)\)/i', $sql, $match)) {
             $ids = array_map('intval', explode(',', $match[1]));
         }
         $rows = array();
@@ -405,7 +430,7 @@ class Tolka_Posts_Fake_Db
     private function language_rows($sql)
     {
         $only = null;
-        if (preg_match('/IN \(([^)]+)\)/', $sql, $match)) {
+        if (preg_match('/object_id IN \(([^)]+)\)/', $sql, $match)) {
             $only = array_map('intval', explode(',', $match[1]));
         }
         $rows = array();
@@ -731,7 +756,7 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame(array('en', 'de'), array_keys($result['items'][0]['translations']));
         $this->assertSame(12, $result['items'][0]['translations']['en']['id']);
         $this->assertSame(
-            array('Post 12 was listed as both en and de-extra in the same translation group. It was exported as en.'),
+            array('Post 12 was listed as both en and de-extra in the same translation group. Only one entry was kept.'),
             $result['errors']
         );
     }
@@ -780,6 +805,26 @@ class Polylang_Posts_Test extends TestCase
         );
     }
 
+    public function test_a_long_error_list_keeps_the_first_twenty_and_a_count()
+    {
+        $exporter = new Polylang_Posts_Fixture();
+        $maps = array();
+        $posts = array();
+        for ($i = 1; $i <= 22; $i++) {
+            $maps[] = array('en' => $i, 'de' => 1000 + $i);
+            $posts[$i] = $this->record($i, 'post', 'Keep ' . $i, 'keep-' . $i, 'draft');
+        }
+        $exporter->maps = $maps;
+        $exporter->posts = $posts;
+
+        $result = $exporter->export();
+        $this->assertCount(22, $result['items']);
+        $this->assertCount(21, $result['errors']);
+        $this->assertSame('Post 1001 is part of translation group post:1, but that post no longer exists. It was left out of the export.', $result['errors'][0]);
+        $this->assertSame('2 more issues were found and are not listed here.', $result['errors'][20]);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+    }
+
     public function test_repeated_export_is_identical()
     {
         $exporter = new Polylang_Posts_Fixture();
@@ -823,6 +868,30 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame(array('en', 'de', 'fr'), array_keys($result['items'][0]['translations']));
         $this->assertSame('draft', $result['items'][0]['translations']['fr']['status']);
         $this->assertSame(array(), $result['errors']);
+    }
+
+    public function test_incomplete_api_map_still_keeps_the_stored_draft()
+    {
+        $exporter = new Polylang_Posts_Api_Fixture();
+        $exporter->rows = array(
+            array(
+                'term_taxonomy_id' => 1,
+                'description' => array('en' => 1, 'de' => 2),
+            ),
+        );
+        $exporter->api_maps = array(
+            1 => array('en' => 1),
+        );
+        $exporter->posts = array(
+            1 => $this->record(1, 'post', 'Hello', 'hello', 'publish'),
+            2 => $this->record(2, 'post', 'Hallo', 'hallo', 'draft', '', 'Entwurf'),
+        );
+
+        $result = $exporter->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:1', $result['items'][0]['group']);
+        $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
+        $this->assertSame('Entwurf', $result['items'][0]['translations']['de']['content']);
     }
 
     public function test_empty_api_map_keeps_the_stored_description()
@@ -1033,6 +1102,79 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
         $this->assertSame('Ett utkast', $result['items'][0]['translations']['sv']['content']);
         $this->assertSame(array(), $result['errors']);
+        $filtered = false;
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'AS slug') !== false && strpos($sql, 'nav_menu_item') !== false && strpos($sql, 'p.ID IS NULL') !== false) {
+                $filtered = true;
+            }
+        }
+        $this->assertTrue($filtered);
+    }
+
+    public function test_attachment_and_whitespace_draft_are_exported_as_stored()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 9,
+                'description' => serialize(array('en' => 15, 'de' => 17)),
+            ),
+        );
+        $fake->languages = array(15 => 'en', 16 => 'de', 17 => 'de', 99 => 'en');
+        $fake->posts_rows = array(
+            15 => $this->db_post(15, 'inherit', 'Photo', 'photo', 'attachment', 'Pier', ''),
+            16 => $this->db_post(16, 'draft', '  Untitled  ', '', 'post', 'Only the excerpt', ''),
+            17 => $this->db_post(17, 'inherit', 'Foto', 'foto', 'attachment', 'Steg', ''),
+            99 => $this->db_post(99, 'inherit', 'Alone', 'alone', 'attachment'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('post:15', 'post:16'), $this->groups($result));
+        $this->assertSame('attachment', $result['items'][0]['type']);
+        $this->assertSame('inherit', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('Photo', $result['items'][0]['translations']['en']['title']);
+        $this->assertSame('Pier', $result['items'][0]['translations']['en']['excerpt']);
+        $this->assertSame('Foto', $result['items'][0]['translations']['de']['title']);
+        $this->assertSame('  Untitled  ', $result['items'][1]['translations']['de']['title']);
+        $this->assertSame('', $result['items'][1]['translations']['de']['slug']);
+        $this->assertSame('draft', $result['items'][1]['translations']['de']['status']);
+        $this->assertSame('Only the excerpt', $result['items'][1]['translations']['de']['excerpt']);
+        $this->assertSame('', $result['items'][1]['translations']['de']['content']);
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'post_content') !== false) {
+                $this->assertStringNotContainsString('99', $sql);
+            }
+        }
+    }
+
+    public function test_draft_product_is_exported()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->languages = array(21 => 'en', 22 => 'de');
+        $fake->posts_rows = array(
+            21 => $this->db_post(21, 'draft', 'Sko', 'sko', 'product', '', 'Blå sko'),
+            22 => $this->db_post(22, 'draft', 'Schuh', 'schuh', 'product', '', 'Blauer Schuh'),
+        );
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 11,
+                'description' => serialize(array('en' => 21, 'de' => 22)),
+            ),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:21', $result['items'][0]['group']);
+        $this->assertSame('product', $result['items'][0]['type']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
+        $this->assertSame('Blå sko', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame('Schuh', $result['items'][0]['translations']['de']['title']);
     }
 
     public function test_double_serialized_description_still_exports_the_draft()
