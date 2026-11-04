@@ -210,11 +210,18 @@ class Polylang_Media
             }
         }
 
-        return $this->database_has_polylang();
+        $stored = $this->database_has_polylang();
+        if ($stored === null) {
+            throw new \RuntimeException('Polylang media lookup failed.');
+        }
+
+        return $stored;
     }
 
     /**
-     * @return bool
+     * True when Polylang rows exist, false when they do not, null when the lookup failed.
+     *
+     * @return bool|null
      */
     private function database_has_polylang()
     {
@@ -238,7 +245,13 @@ class Polylang_Media
             return false;
         }
 
+        $before = isset($wpdb->last_error) ? (string) $wpdb->last_error : '';
         $found = $wpdb->get_var($sql);
+        $after = isset($wpdb->last_error) ? (string) $wpdb->last_error : '';
+        if ($after !== '' && $after !== $before) {
+            return null;
+        }
+
         return $found !== null && $found !== '';
     }
 

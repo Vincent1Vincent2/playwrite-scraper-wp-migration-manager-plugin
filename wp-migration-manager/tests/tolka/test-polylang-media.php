@@ -56,6 +56,42 @@ class Test_Polylang_Media extends TestCase
         $this->assertNotFalse(json_encode($result));
     }
 
+    public function test_database_error_is_not_reported_as_polylang_being_inactive()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('pll_languages_list')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                unset($args);
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                unset($query);
+                $this->last_error = 'database read failed';
+                return null;
+            }
+        };
+        try {
+            $result = (new Polylang_Media())->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertCustomerSentence($result['errors'][0]);
+        $this->assertStringNotContainsString('not active', strtolower($result['errors'][0]));
+        $this->assertStringContainsString('Nothing was changed', $result['errors'][0]);
+    }
+
     public function test_untranslated_attachment_keeps_a_remote_file_url()
     {
         $url = 'https://cdn.example/photos/floor-plan.pdf?v=2';
