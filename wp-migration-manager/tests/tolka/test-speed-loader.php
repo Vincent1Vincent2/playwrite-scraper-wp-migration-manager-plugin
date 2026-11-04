@@ -271,6 +271,8 @@ class Test_Speed_Loader extends TestCase
             'bare loopback' => array('127.0.0.1', $private),
             'protocol relative loopback' => array('//127.0.0.1/admin', $private),
             'bare ten' => array('10.1.2.3/wp', $private),
+            'nbsp around loopback' => array("\u{00A0}http://127.0.0.1/\u{00A0}", $private),
+            'zero width inside loopback' => array("https://127.0.0.\u{200B}1/", $private),
             'localhost pasted newline' => array("http://localhost/\n", $private),
             'loopback pasted spaces' => array('  http://127.0.0.1/  ', $private),
             'integer zero with port' => array('http://0:80/', $private),
@@ -652,6 +654,10 @@ class Test_Speed_Loader extends TestCase
             'www.example.com' => 'https://www.example.com',
             '//www.example.com/path?x=1#section' => 'https://www.example.com/path?x=1',
             'user:secret@example.com/admin' => 'https://example.com/admin',
+            'example.com:8443/path' => 'https://example.com:8443/path',
+            'example.com?utm=1' => 'https://example.com?utm=1',
+            'example.com#pricing' => 'https://example.com',
+            "\u{FEFF}example.com/home" => 'https://example.com/home',
         );
 
         foreach ($cases as $typed => $fetched) {

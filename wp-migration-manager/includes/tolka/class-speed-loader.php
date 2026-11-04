@@ -270,7 +270,7 @@ class Speed_Loader
      */
     private static function parse_public_url($url)
     {
-        $trimmed = trim($url);
+        $trimmed = self::normalize_typed_url($url);
         $none = array(
             'url' => '',
             'error' => '',
@@ -937,6 +937,30 @@ class Speed_Loader
     }
 
     /**
+     * Trim a pasted address and drop invisible characters.
+     *
+     * A non-breaking space or zero-width character from a web page should
+     * not hide a private address or break an otherwise valid URL.
+     *
+     * @param string $url Raw address.
+     * @return string
+     */
+    private static function normalize_typed_url($url)
+    {
+        $url = str_replace("\xEF\xBB\xBF", '', (string) $url);
+        $stripped = @preg_replace('/[\x{200B}-\x{200D}\x{FEFF}\x{2060}]/u', '', $url);
+        if (is_string($stripped)) {
+            $url = $stripped;
+        }
+        $spaced = @preg_replace('/\p{Z}/u', ' ', $url);
+        if (is_string($spaced)) {
+            $url = $spaced;
+        }
+
+        return trim($url);
+    }
+
+    /**
      * Treat a pasted host, such as example.com, as https.
      *
      * A scheme that is already present is left alone, including ftp and
@@ -947,12 +971,18 @@ class Speed_Loader
      */
     private static function with_https_scheme($url)
     {
-        if ($url === '' || preg_match('#^[a-z][a-z0-9+.-]*://#i', $url)) {
+        if ($url === '') {
             return $url;
         }
-        // javascript: and data: are schemes. user:pass@host is not.
-        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $url) && !preg_match('#^[^/@]+:[^/@]*@#', $url)) {
-            return $url;
+        // A dotted name before the colon is host:port, not a scheme.
+        // user:pass@host is credentials, not a scheme. javascript: is a scheme.
+        if (preg_match('#^([a-z][a-z0-9+.-]*):(.*)$#i', $url, $matches)) {
+            $scheme_name = $matches[1];
+            $hierarchical = strpos($matches[2], '//') === 0;
+            $userinfo = preg_match('#^[^/@]+:[^/@]*@#', $url) === 1;
+            if (!$userinfo && ($hierarchical || strpos($scheme_name, '.') === false)) {
+                return $url;
+            }
         }
         if (strpos($url, '//') === 0) {
             return 'https:' . $url;
@@ -1126,37 +1156,35 @@ class Speed_Loader
             return self::text('That page was not found, so the load time could not be measured.');
         }
         if ($code >= 300 && $code <= 399) {
-            return sprintf(
-                self::status_template('The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.'),
-                $code
-            );
+            $template = 'The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.';
+            if (function_exists('__')) {
+                $template = __(
+                    'The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.',
+                    'migration-manager'
+                );
+            }
+            return sprintf($template, $code);
         }
         if ($code >= 500 && $code <= 599) {
-            return sprintf(
-                self::status_template('The site reported an error (HTTP %d), so the load time could not be measured.'),
-                $code
+            $template = 'The site reported an error (HTTP %d), so the load time could not be measured.';
+            if (function_exists('__')) {
+                $template = __(
+                    'The site reported an error (HTTP %d), so the load time could not be measured.',
+                    'migration-manager'
+                );
+            }
+            return sprintf($template, $code);
+        }
+
+        $template = 'The site returned HTTP %d, so the load time could not be measured.';
+        if (function_exists('__')) {
+            $template = __(
+                'The site returned HTTP %d, so the load time could not be measured.',
+                'migration-manager'
             );
         }
 
-        return sprintf(
-            self::status_template('The site returned HTTP %d, so the load time could not be measured.'),
-            $code
-        );
-    }
-
-    /**
-     * Translate an sprintf template when WordPress is loaded.
-     *
-     * @param string $template Template with a %d placeholder.
-     * @return string
-     */
-    private static function status_template($template)
-    {
-        if (function_exists('__')) {
-            return __($template, 'migration-manager');
-        }
-
-        return $template;
+        return sprintf($template, $code);
     }
 
     /**
