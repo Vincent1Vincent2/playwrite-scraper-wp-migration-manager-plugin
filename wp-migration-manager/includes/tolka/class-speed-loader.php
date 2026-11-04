@@ -418,6 +418,19 @@ class Speed_Loader
         $result['total_ms'] = self::non_negative_ms(
             array_key_exists('total_ms', $result) ? $result['total_ms'] : 0
         );
+        $result['status_code'] = self::non_negative_ms(
+            array_key_exists('status_code', $result) ? $result['status_code'] : 0
+        );
+        $result['html_bytes'] = self::non_negative_ms(
+            array_key_exists('html_bytes', $result) ? $result['html_bytes'] : 0
+        );
+        $result['ttfb_ms'] = null;
+        if (!isset($result['html']) || !is_string($result['html'])) {
+            $result['html'] = '';
+        }
+        if (strlen($result['html']) > self::MAX_HTML_BYTES) {
+            $result['html'] = substr($result['html'], 0, self::MAX_HTML_BYTES);
+        }
 
         return $result;
     }

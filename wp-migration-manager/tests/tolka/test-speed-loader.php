@@ -893,6 +893,12 @@ class Speed_Loader_Test extends TestCase
         $rejected = Speed_Loader::measure('http://127.0.0.1/');
         $this->assertIsInt($rejected['total_ms']);
         $this->assertSame(0, $rejected['total_ms']);
+        $this->assertIsInt($rejected['status_code']);
+        $this->assertGreaterThanOrEqual(0, $rejected['status_code']);
+        $this->assertIsInt($rejected['html_bytes']);
+        $this->assertGreaterThanOrEqual(0, $rejected['html_bytes']);
+        $this->assertNull($rejected['ttfb_ms']);
+        $this->assertLessThanOrEqual(2000000, strlen($rejected['html']));
 
         $clocks = array(
             array(5000000000, 0),
