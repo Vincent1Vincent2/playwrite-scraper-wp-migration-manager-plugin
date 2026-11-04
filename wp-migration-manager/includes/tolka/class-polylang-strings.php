@@ -624,8 +624,13 @@ class Polylang_Strings
             }
         }
         $lookup_failed = false;
+        $blank_slug_ids = array();
         if ($unknown) {
             foreach ($this->read_term_slugs($unknown) as $term_id => $slug) {
+                if ($slug === '') {
+                    $blank_slug_ids[(int) $term_id] = true;
+                    continue;
+                }
                 $slug_by_term[(int) $term_id] = $slug;
             }
             $lookup_failed = $this->slug_lookup_failed;
@@ -637,6 +642,9 @@ class Polylang_Strings
         foreach ($buckets as $term_id => $raw_buckets) {
             $slug = isset($slug_by_term[(int) $term_id]) ? $slug_by_term[(int) $term_id] : '';
             if ($slug === '') {
+                if (isset($blank_slug_ids[(int) $term_id])) {
+                    continue;
+                }
                 if (!$lookup_failed) {
                     $orphans++;
                 }
@@ -846,10 +854,11 @@ class Polylang_Strings
             if (!is_array($row)) {
                 continue;
             }
-            $slug = isset($row['slug']) ? $this->clean_slug($row['slug']) : '';
-            if ($slug !== '' && isset($row['term_id'])) {
-                $slugs[(int) $row['term_id']] = $slug;
+            if (!isset($row['term_id'])) {
+                continue;
             }
+            $slug = isset($row['slug']) ? $this->clean_slug($row['slug']) : '';
+            $slugs[(int) $row['term_id']] = $slug;
         }
 
         return $slugs;
@@ -1584,14 +1593,24 @@ class Polylang_Strings
      */
     protected function clean_slug($slug)
     {
-        if (is_int($slug)) {
-            return (string) $slug;
+        if (is_int($slug) || is_float($slug)) {
+            $slug = (string) $slug;
         }
         if (!is_string($slug)) {
             return '';
         }
+        $slug = $this->utf8($slug);
+        if (function_exists('mb_strtolower')) {
+            $slug = mb_strtolower($slug, 'UTF-8');
+        } else {
+            $slug = strtolower($slug);
+        }
+        $slug = trim($slug);
+        if (!$this->has_text($slug)) {
+            return '';
+        }
 
-        return $this->utf8($slug);
+        return $slug;
     }
 
     /**

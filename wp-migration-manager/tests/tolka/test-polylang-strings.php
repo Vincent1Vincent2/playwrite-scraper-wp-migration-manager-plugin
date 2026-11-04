@@ -533,6 +533,84 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     /**
      * @return void
      */
+    public function test_translation_slugs_are_lowercase_and_blank_slugs_are_omitted()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('SV', '  ', "\n", 'EN', 'sv'),
+            'registered' => array(
+                array(
+                    'name' => 'Välkommen',
+                    'string' => 'Färjor till öar',
+                    'context' => 'Ångbåt',
+                ),
+            ),
+            'mo' => array(
+                'SV' => array(array('Färjor till öar', 'Öppet')),
+                '  ' => array(array('Färjor till öar', 'Should not appear')),
+                "\t" => array(array('Färjor till öar', 'Also hidden')),
+            ),
+        ));
+
+        $this->assertSame(array('sv', 'en'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('Öppet', $result['items'][0]['translations']['sv']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['translations']);
+        $this->assertArrayNotHasKey('  ', $result['items'][0]['translations']);
+        $this->assertArrayNotHasKey('', $result['items'][0]['translations']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertExportShape($result);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'SV'),
+            array('term_id' => 11, 'slug' => '   '),
+            array('term_id' => 12, 'slug' => 'EN'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 10,
+                'meta_value' => serialize(array(array('Färjor till öar', 'Öppet'))),
+            ),
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Färjor till öar', 'Dolt'))),
+            ),
+        );
+        $db->term_slug_rows = array(
+            array('term_id' => 11, 'slug' => '   '),
+        );
+        $exported = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Färjor till öar', $exported['items'][0]['string']);
+        $this->assertSame(array('sv', 'en'), array_keys($exported['items'][0]['translations']));
+        $this->assertSame('Öppet', $exported['items'][0]['translations']['sv']);
+        $this->assertSame('', $exported['items'][0]['translations']['en']);
+        $this->assertNotContains(
+            'String translations for a language that is no longer installed were skipped.',
+            $exported['errors']
+        );
+
+        $padded = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array(' EN ', 'fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'FR' => array(array('Open daily', 'Ouvert')),
+                'Å' => array(array('Open daily', 'Öppen')),
+            ),
+        ));
+        $this->assertSame(array('en', 'fr', 'å'), array_keys($padded['items'][0]['translations']));
+        $this->assertSame('', $padded['items'][0]['translations']['en']);
+        $this->assertSame('Ouvert', $padded['items'][0]['translations']['fr']);
+        $this->assertSame('Öppen', $padded['items'][0]['translations']['å']);
+    }
+
+    /**
+     * @return void
+     */
     public function test_more_than_thirty_errors_keeps_the_first_thirty_and_a_count()
     {
         $errors = array();
