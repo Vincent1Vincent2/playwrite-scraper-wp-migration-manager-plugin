@@ -38,16 +38,31 @@ class Migration_Report
     {
         $report = self::compose($run);
         $report['errors'] = array();
+        $report = self::present($report);
 
         if (self::remember($report) === false) {
             $report = self::note_save_failure($report);
+            $report = self::present($report);
         }
 
+        return $report;
+    }
+
+    /**
+     * The report a site owner reads, before it is stored.
+     *
+     * Section lines are in contract order and the title matches the run.
+     * Saving this copy means a second format of the same run is unchanged.
+     *
+     * @param array $report Formatted report.
+     * @return array
+     */
+    private static function present(array $report)
+    {
         $report['lines'] = self::string_lines(isset($report['lines']) ? $report['lines'] : array());
         $report['lines'] = self::arrange_section_lines($report['lines']);
-        $report = self::pin_titles($report);
 
-        return $report;
+        return self::pin_titles($report);
     }
 
     /**
@@ -65,8 +80,11 @@ class Migration_Report
         $partial = self::partial_title();
         $clean = self::text('The migration is complete.');
         $outcome = self::outcome_value($report);
+        $summary = (isset($report['summary']) && is_string($report['summary'])) ? $report['summary'] : '';
 
-        if (is_string($outcome) && $outcome === $partial && empty($report['ok'])) {
+        if (empty($report['ok']) && ($summary !== '' && strpos($summary, $partial) === 0)) {
+            $report['title'] = $partial;
+        } elseif (is_string($outcome) && $outcome === $partial && empty($report['ok'])) {
             $report['title'] = $partial;
         }
 
@@ -295,11 +313,55 @@ class Migration_Report
             return true;
         }
 
-        if (function_exists('maybe_serialize')) {
-            return maybe_serialize($stored) === maybe_serialize($report);
+        if (function_exists('maybe_serialize') && maybe_serialize($stored) === maybe_serialize($report)) {
+            return true;
         }
 
-        return serialize($stored) === serialize($report);
+        if (serialize($stored) === serialize($report)) {
+            return true;
+        }
+
+        return self::report_signature($stored) !== '' && self::report_signature($stored) === self::report_signature($report);
+    }
+
+    /**
+     * Same title, summary, lines, and errors, even if the option keys are ordered differently.
+     *
+     * @param mixed $report Stored value or formatted report.
+     * @return string
+     */
+    private static function report_signature($report)
+    {
+        if (!is_array($report)) {
+            return '';
+        }
+
+        $lines = array();
+        if (isset($report['lines']) && is_array($report['lines'])) {
+            foreach ($report['lines'] as $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+                $label = (isset($line['label']) && is_string($line['label'])) ? $line['label'] : '';
+                $value = (isset($line['value']) && is_string($line['value'])) ? $line['value'] : '';
+                $lines[] = $label . "\n" . $value;
+            }
+        }
+
+        $errors = array();
+        if (isset($report['errors']) && is_array($report['errors'])) {
+            foreach ($report['errors'] as $error) {
+                if (is_string($error)) {
+                    $errors[] = $error;
+                }
+            }
+        }
+
+        $ok = !empty($report['ok']) ? '1' : '0';
+        $title = (isset($report['title']) && is_string($report['title'])) ? $report['title'] : '';
+        $summary = (isset($report['summary']) && is_string($report['summary'])) ? $report['summary'] : '';
+
+        return $ok . "\n" . $title . "\n" . $summary . "\n" . implode("\n", $lines) . "\n" . implode("\n", $errors);
     }
 
     /**

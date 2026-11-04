@@ -1683,14 +1683,18 @@ $clean_run = array(
 );
 $partial = \\WMM\\Tolka\\Migration_Report::format($partial_run);
 $partial_again = \\WMM\\Tolka\\Migration_Report::format($partial_run);
+$stored_partial_again = $GLOBALS["wmm_opt"];
 $clean = \\WMM\\Tolka\\Migration_Report::format($clean_run);
 $clean_again = \\WMM\\Tolka\\Migration_Report::format($clean_run);
+$stored_clean_again = $GLOBALS["wmm_opt"];
 echo json_encode(array(
     "unchanged_false" => !empty($GLOBALS["wmm_unchanged_false"]),
     "partial" => $partial,
     "partial_again" => $partial_again,
+    "stored_partial_again" => $stored_partial_again,
     "clean" => $clean,
     "clean_again" => $clean_again,
+    "stored_clean_again" => $stored_clean_again,
 ));
 ';
         $decoded = $this->run_report_script($script);
@@ -1737,6 +1741,117 @@ echo json_encode(array(
                 $this->assertStringNotContainsString('could not be saved', $line['label']);
                 $this->assertStringNotContainsString('could not be saved', $line['value']);
             }
+        }
+
+        $this->assertSame($decoded['partial_again'], $decoded['stored_partial_again']);
+        $this->assertSame($decoded['clean_again'], $decoded['stored_clean_again']);
+        $this->assertSame('The migration finished with problems.', $decoded['stored_partial_again']['title']);
+        $this->assertSame('The migration is complete.', $decoded['stored_clean_again']['title']);
+        $this->assertSame(array(), $decoded['stored_clean_again']['errors']);
+        $this->assert_section_order($decoded['stored_partial_again']);
+        $this->assert_section_order($decoded['stored_clean_again']);
+        $this->assert_sections_are_contiguous($decoded['stored_partial_again']);
+        $this->assert_sections_are_contiguous($decoded['stored_clean_again']);
+    }
+
+    public function test_reordered_option_keys_do_not_add_a_save_error_on_the_second_format()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+$GLOBALS["wmm_opt"] = null;
+function wmm_same_report($left, $right) {
+    if (!is_array($left) || !is_array($right)) {
+        return false;
+    }
+    foreach (array("ok", "title", "summary", "lines", "errors") as $key) {
+        $a = array_key_exists($key, $left) ? $left[$key] : null;
+        $b = array_key_exists($key, $right) ? $right[$key] : null;
+        if ($a != $b) {
+            return false;
+        }
+    }
+    return true;
+}
+function update_option($option, $value, $autoload = null) {
+    if (is_array($GLOBALS["wmm_opt"]) && wmm_same_report($GLOBALS["wmm_opt"], $value)) {
+        $GLOBALS["wmm_unchanged_false"] = true;
+        $reordered = array();
+        foreach (array("errors", "lines", "summary", "title", "ok") as $key) {
+            if (array_key_exists($key, $GLOBALS["wmm_opt"])) {
+                $reordered[$key] = $GLOBALS["wmm_opt"][$key];
+            }
+        }
+        $GLOBALS["wmm_opt"] = $reordered;
+        return false;
+    }
+    $GLOBALS["wmm_opt"] = $value;
+    return true;
+}
+function get_option($option, $default = false) {
+    return $GLOBALS["wmm_opt"] === null ? $default : $GLOBALS["wmm_opt"];
+}
+require ' . var_export($class, true) . ';
+$partial_run = array(
+    "ok" => true,
+    "counts" => array("media" => 1, "languages" => 2, "posts" => 3),
+    "write" => array(
+        "ok" => true,
+        "errors" => array("A term slug was changed"),
+    ),
+);
+$clean_run = array(
+    "ok" => true,
+    "counts" => array("menus" => 2, "strings" => 5, "languages" => 1),
+    "write" => array("ok" => true),
+);
+$partial = \\WMM\\Tolka\\Migration_Report::format($partial_run);
+$partial_again = \\WMM\\Tolka\\Migration_Report::format($partial_run);
+$clean = \\WMM\\Tolka\\Migration_Report::format($clean_run);
+$clean_again = \\WMM\\Tolka\\Migration_Report::format($clean_run);
+echo json_encode(array(
+    "unchanged_false" => !empty($GLOBALS["wmm_unchanged_false"]),
+    "partial" => $partial,
+    "partial_again" => $partial_again,
+    "clean" => $clean,
+    "clean_again" => $clean_again,
+));
+';
+        $decoded = $this->run_report_script($script);
+        $this->assertTrue($decoded['unchanged_false']);
+
+        foreach (array('partial', 'partial_again') as $key) {
+            $report = $decoded[$key];
+            $this->assertSame('The migration finished with problems.', $report['title']);
+            $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
+            $this->assertStringNotContainsString('could not be saved', $report['title']);
+            $this->assertStringNotContainsString('could not be saved', $report['summary']);
+            $this->assertSame(array(), $report['errors']);
+            $this->assert_section_order($report);
+            $this->assert_sections_are_contiguous($report);
+            $this->assertSame('2', $this->line($report, 'Languages'));
+            $this->assertSame('3', $this->line($report, 'Posts'));
+            $this->assertSame('0', $this->line($report, 'Terms'));
+            $this->assertSame('0', $this->line($report, 'Strings'));
+            $this->assertSame('0', $this->line($report, 'Menus'));
+            $this->assertSame('1', $this->line($report, 'Media'));
+        }
+
+        foreach (array('clean', 'clean_again') as $key) {
+            $report = $decoded[$key];
+            $this->assertSame('The migration is complete.', $report['title']);
+            $this->assertNotSame('The migration finished with problems.', $report['title']);
+            $this->assertStringNotContainsString('could not be saved', $report['title']);
+            $this->assertStringNotContainsString('could not be saved', $report['summary']);
+            $this->assertSame(array(), $report['errors']);
+            $this->assert_section_order($report);
+            $this->assert_sections_are_contiguous($report);
+            $this->assertSame('1', $this->line($report, 'Languages'));
+            $this->assertSame('0', $this->line($report, 'Posts'));
+            $this->assertSame('0', $this->line($report, 'Terms'));
+            $this->assertSame('5', $this->line($report, 'Strings'));
+            $this->assertSame('2', $this->line($report, 'Menus'));
+            $this->assertSame('0', $this->line($report, 'Media'));
         }
     }
 
