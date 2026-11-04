@@ -453,8 +453,16 @@ namespace {
                 'WMM\\Tolka\\Polylang_Menus',
                 'WMM\\Tolka\\Polylang_Media',
             ), $preview['missing']);
-            $this->assertSame(0, $preview['counts']['languages']);
-            $this->assertSame(array(), $preview['sample']['posts']);
+            $sections = array('languages', 'posts', 'terms', 'strings', 'menus', 'media');
+            $this->assertSame($sections, array_keys($preview['counts']));
+            $this->assertSame($sections, array_keys($preview['sample']));
+            $this->assertSame($sections, array_keys($preview['sections']));
+            foreach ($sections as $section) {
+                $this->assertSame(0, $preview['counts'][$section]);
+                $this->assertSame(array(), $preview['sample'][$section]);
+                $this->assertSame('missing', $preview['sections'][$section]['status']);
+                $this->assertArrayHasKey($section, $preview['counts']);
+            }
             $this->assertSame('missing', $preview['sections']['media']['status']);
             $this->assertSame(
                 'Media items were skipped because Polylang_Media is not available.',
@@ -472,9 +480,16 @@ namespace {
                 array('languages', 'posts', 'terms', 'strings', 'menus', 'media', 'missing'),
                 array_keys($collected)
             );
-            $this->assertSame(array(), $collected['languages']['items']);
+            foreach ($sections as $section) {
+                $this->assertArrayHasKey($section, $collected);
+                $this->assertSame(array(), $collected[$section]['items']);
+                $this->assertNotEmpty($collected[$section]['errors']);
+            }
 
             $run = \WMM\Tolka\Migration_Runner::run();
+            $this->assertSame($sections, array_keys($run['counts']));
+            $this->assertSame($sections, array_keys($run['sample']));
+            $this->assertSame($sections, array_keys($run['sections']));
             $this->assertFalse($run['ok']);
             $this->assertNull($run['write']);
             $this->assertContains('WMM\\Tolka\\Tolka_Schema', $run['missing']);
@@ -1632,6 +1647,107 @@ namespace {
             $this->assertSame(0, \WMM\Tolka\RunnerTest\StaticChild::$constructed);
             $this->assertSame('Inherited', \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['title']);
             $this->assertSame('Static parent', \WMM\Tolka\RunnerTest\Writer::$package['terms'][0]['title']);
+        }
+
+        public function test_missing_classes_keep_all_six_section_keys()
+        {
+            $sections = array('languages', 'posts', 'terms', 'strings', 'menus', 'media');
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array(
+                'slug' => 'en',
+                'name' => 'English',
+                'title' => 'Hello',
+            ));
+            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\NotLoaded';
+            Migration_Runner_Test_Double::$map['media'] = 'WMM\\Tolka\\RunnerTest\\AlsoMissing';
+            Migration_Runner_Test_Double::$schema = 'WMM\\Tolka\\RunnerTest\\NoSchema';
+            Migration_Runner_Test_Double::$writer = 'WMM\\Tolka\\RunnerTest\\NoWriter';
+
+            $collected = Migration_Runner_Test_Double::collect();
+            $this->assertSame(array_merge($sections, array('missing')), array_keys($collected));
+            foreach ($sections as $section) {
+                $this->assertArrayHasKey($section, $collected);
+                $this->assertArrayHasKey('items', $collected[$section]);
+                $this->assertIsArray($collected[$section]['items']);
+            }
+            $this->assertSame(array(), $collected['posts']['items']);
+            $this->assertSame(array(), $collected['media']['items']);
+            $this->assertCount(1, $collected['languages']['items']);
+            $this->assertCount(1, $collected['terms']['items']);
+            $this->assertSame(
+                array(
+                    'WMM\\Tolka\\RunnerTest\\NotLoaded',
+                    'WMM\\Tolka\\RunnerTest\\AlsoMissing',
+                ),
+                $collected['missing']
+            );
+            $this->assertNotContains('', $collected['missing']);
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame($sections, array_keys($preview['counts']));
+            $this->assertSame($sections, array_keys($preview['sample']));
+            $this->assertSame($sections, array_keys($preview['sections']));
+            $this->assertSame(0, $preview['counts']['posts']);
+            $this->assertSame(array(), $preview['sample']['posts']);
+            $this->assertSame(array(), $preview['sample']['media']);
+            $this->assertSame(1, $preview['counts']['languages']);
+            $this->assertSame('missing', $preview['sections']['posts']['status']);
+            $this->assertSame('missing', $preview['sections']['media']['status']);
+            $this->assertSame('ready', $preview['sections']['languages']['status']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertFalse($run['ok']);
+            $this->assertNull($run['write']);
+            $this->assertSame($sections, array_keys($run['counts']));
+            $this->assertSame($sections, array_keys($run['sample']));
+            $this->assertSame($sections, array_keys($run['sections']));
+            $this->assertNull(\WMM\Tolka\RunnerTest\Schema::$parts);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertContains('WMM\\Tolka\\RunnerTest\\NotLoaded', $run['missing']);
+            $this->assertContains('WMM\\Tolka\\RunnerTest\\AlsoMissing', $run['missing']);
+            $this->assertContains('WMM\\Tolka\\RunnerTest\\NoSchema', $run['missing']);
+            $this->assertSame(0, $run['counts']['posts']);
+            $this->assertSame(0, $run['counts']['media']);
+            $this->assertSame(1, $run['counts']['languages']);
+            $this->assertSame(array(), $run['sample']['posts']);
+            $this->assertNotSame(array(), $run['sample']['languages']);
+
+            Migration_Runner_Test_Double::$schema = 'WMM\\Tolka\\RunnerTest\\Schema';
+            Migration_Runner_Test_Double::$writer = 'WMM\\Tolka\\RunnerTest\\Writer';
+            \WMM\Tolka\RunnerTest\Schema::reset();
+            \WMM\Tolka\RunnerTest\Writer::reset();
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $saved = Migration_Runner_Test_Double::run();
+            $this->assertFalse($saved['ok']);
+            $this->assertSame($sections, array_keys(\WMM\Tolka\RunnerTest\Schema::$parts));
+            $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
+            $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['media']['items']);
+            $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['languages']['items']);
+            $this->assertArrayNotHasKey('missing', \WMM\Tolka\RunnerTest\Schema::$parts);
+
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('title' => 'Only posts'));
+            Migration_Runner_Test_Double::$map = array(
+                'posts' => 'WMM\\Tolka\\RunnerTest\\Exporter',
+            );
+            $partial = Migration_Runner_Test_Double::collect();
+            $this->assertSame(array_merge($sections, array('missing')), array_keys($partial));
+            $this->assertCount(1, $partial['posts']['items']);
+            foreach (array('languages', 'terms', 'strings', 'menus', 'media') as $section) {
+                $this->assertSame(array(), $partial[$section]['items']);
+                $this->assertNotEmpty($partial[$section]['errors']);
+            }
+            $this->assertSame(array(), $partial['missing']);
+
+            $partial_preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame($sections, array_keys($partial_preview['counts']));
+            $this->assertSame($sections, array_keys($partial_preview['sample']));
+            $this->assertSame($sections, array_keys($partial_preview['sections']));
+            $this->assertSame(1, $partial_preview['counts']['posts']);
+            $this->assertSame(0, $partial_preview['counts']['menus']);
         }
 
         public function test_throwing_constructor_names_the_section_and_continues()

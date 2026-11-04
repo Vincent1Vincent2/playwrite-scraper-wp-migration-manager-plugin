@@ -31,8 +31,9 @@ class Migration_Runner
     /**
      * Six exporter envelopes, plus `missing` class names.
      *
-     * A class that is not loaded is skipped. Its section is an empty item
-     * list with a finished error sentence, and the class name is listed.
+     * The six section keys are always present. A class that is not loaded
+     * keeps an empty item list, a finished error sentence, and an entry in
+     * `missing`. The section key is not removed.
      *
      * @return array
      */
@@ -57,7 +58,9 @@ class Migration_Runner
      * Also returns a finished `message`, `detail` (the first error, or an
      * empty string), a `state` of missing, incomplete, error, empty, or ready,
      * and per section: status, message, labels, error_count, and how many
-     * items were left out of the sample. Does not write.
+     * items were left out of the sample. `counts`, `sample`, and `sections`
+     * always contain languages, posts, terms, strings, menus, and media.
+     * Does not write.
      *
      * @return array
      */
