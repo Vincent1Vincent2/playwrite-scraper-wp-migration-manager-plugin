@@ -589,8 +589,8 @@ class Polylang_Languages
         }
 
         $by_name = strcmp(
-            $this->string_value($this->read_field($left, 'name')),
-            $this->string_value($this->read_field($right, 'name'))
+            $this->plain_name($this->read_field($left, 'name')),
+            $this->plain_name($this->read_field($right, 'name'))
         );
         if ($by_name !== 0) {
             return $by_name;
@@ -859,7 +859,7 @@ class Polylang_Languages
     private function make_item($slug, $name, $locale, $is_default, $term_id, $flag)
     {
         $slug = $this->string_value($slug);
-        $name = html_entity_decode($this->string_value($name), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $name = $this->plain_name($name);
         if ($name === '') {
             $name = $slug;
         }
@@ -1003,6 +1003,19 @@ class Polylang_Languages
         }
 
         return null;
+    }
+
+    /**
+     * Language name with entities decoded.
+     *
+     * Sorting uses the same text the preview shows.
+     *
+     * @param mixed $name Raw name.
+     * @return string
+     */
+    private function plain_name($name)
+    {
+        return html_entity_decode($this->string_value($name), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
     /**

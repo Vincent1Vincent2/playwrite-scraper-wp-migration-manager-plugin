@@ -203,6 +203,21 @@ PHP
         $this->assertSame(11, $result['items'][2]['term_id']);
     }
 
+    public function test_names_are_sorted_after_html_entities_are_decoded()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(2, '&Eacute;cole', 'eco', 'fr_FR', 'fr', 0, 0),
+            $this->language_term(3, 'Zoo', 'zoo', 'en_US', 'us', 0, 1),
+        ), '');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame('Zoo', $result['items'][0]['name']);
+        $this->assertSame('École', $result['items'][1]['name']);
+        $this->assertSame('zoo', $result['items'][0]['slug']);
+        $this->assertSame('eco', $result['items'][1]['slug']);
+    }
+
     public function test_html_entities_in_a_language_name_are_decoded()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
