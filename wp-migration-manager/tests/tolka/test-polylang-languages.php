@@ -618,6 +618,40 @@ PHP
         $this->assertSame($static, $instance);
     }
 
+    public function test_a_broken_api_row_does_not_drop_the_other_languages()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        null,
+        false,
+        '',
+        (object) array(
+            'slug' => 'en',
+            'name' => 'English',
+            'locale' => 'en_US',
+            'term_id' => 4,
+            'flag_code' => 'us',
+            'is_default' => true,
+        ),
+    );
+}
+
+function pll_default_language($field = 'slug')
+{
+    return 'en';
+}
+PHP
+        );
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_active_polylang_with_no_languages_explains_what_to_do()
     {
         $result = $this->export_isolated(<<<'PHP'

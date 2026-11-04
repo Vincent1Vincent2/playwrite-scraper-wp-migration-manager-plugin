@@ -1123,12 +1123,13 @@ class Polylang_Languages
      */
     private function list_is_records($raw)
     {
-        if ($raw === array()) {
-            return false;
+        foreach ($raw as $row) {
+            if (is_object($row) || is_array($row)) {
+                return true;
+            }
         }
 
-        $first = reset($raw);
-        return is_object($first) || is_array($first);
+        return false;
     }
 
     /**
