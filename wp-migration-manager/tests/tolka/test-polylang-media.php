@@ -1217,16 +1217,16 @@ class Test_Polylang_Media extends TestCase
                 }
                 if (strpos($query, 'post_title') !== false) {
                     return array(
-                        array('ID' => 10, 'post_title' => "<em>He\0ro</em>"),
-                        array('ID' => 11, 'post_title' => "Visuel\0 <span>FR</span>"),
+                        array('ID' => 10, 'post_title' => "<em>He\0rö</em>"),
+                        array('ID' => 11, 'post_title' => "Skärgård\0 <span>FR</span>"),
                     );
                 }
                 if (strpos($query, 'meta_value') !== false) {
                     return array(
-                        array('post_id' => 10, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/hero.jpg'),
-                        array('post_id' => 10, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => "Harbor <strong>view</strong>\0"),
-                        array('post_id' => 11, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/hero.jpg'),
-                        array('post_id' => 11, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => "<img alt=\"quai\"> Port\0"),
+                        array('post_id' => 10, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/skärgård.jpg'),
+                        array('post_id' => 10, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => "Färja på ån\0"),
+                        array('post_id' => 11, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/skärgård.jpg'),
+                        array('post_id' => 11, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => "<img alt=\"brygga\"> Ö\0"),
                     );
                 }
                 if (strpos($query, 'language_slug') !== false) {
@@ -1256,19 +1256,93 @@ class Test_Polylang_Media extends TestCase
         }
 
         $this->assertSame($second, $third);
-        $this->assertSame('<em>Hero</em>', $third['items'][0]['title']['en']);
+        $this->assertSame('<em>Herö</em>', $third['items'][0]['title']['en']);
         $this->assertSame('changed by the caller', $first['items'][0]['title']['en']);
         $this->assertSame(array(), $second['errors']);
         $this->assertCount(1, $second['items']);
         $this->assertSame(10, $second['items'][0]['attachment_id']);
-        $this->assertSame('2024/05/hero.jpg', $second['items'][0]['file']);
-        $this->assertSame('<em>Hero</em>', $second['items'][0]['title']['en']);
-        $this->assertSame('Visuel <span>FR</span>', $second['items'][0]['title']['fr']);
-        $this->assertSame('Harbor <strong>view</strong>', $second['items'][0]['alt']['en']);
-        $this->assertSame('<img alt="quai"> Port', $second['items'][0]['alt']['fr']);
+        $this->assertSame('2024/05/skärgård.jpg', $second['items'][0]['file']);
+        $this->assertSame('<em>Herö</em>', $second['items'][0]['title']['en']);
+        $this->assertSame('Skärgård <span>FR</span>', $second['items'][0]['title']['fr']);
+        $this->assertSame('Färja på ån', $second['items'][0]['alt']['en']);
+        $this->assertSame('<img alt="brygga"> Ö', $second['items'][0]['alt']['fr']);
         $this->assertStringNotContainsString("\0", $second['items'][0]['title']['en']);
         $this->assertStringNotContainsString("\0", $second['items'][0]['alt']['en']);
         $this->assertStringNotContainsString("\0", $second['items'][0]['title']['fr']);
+    }
+
+    public function test_swedish_letters_are_kept_in_alt_text_titles_and_file_names()
+    {
+        $file = '2024/05/Skärgård.jpg';
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'sv'),
+            array('id' => 11, 'lang' => 'en'),
+        ), array(10, 11), array('en', 'sv'), 'sv', array(
+            10 => array(
+                'file' => $file,
+                'alt' => 'En färja på ån <em>idag</em>',
+                'title' => 'Över ön',
+            ),
+            11 => array(
+                'file' => $file,
+                'alt' => 'A ferry on the river',
+                'title' => 'Across the island',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame($file, $result['items'][0]['file']);
+        $this->assertSame('En färja på ån <em>idag</em>', $result['items'][0]['alt']['sv']);
+        $this->assertSame('Över ön', $result['items'][0]['title']['sv']);
+        $this->assertSame('A ferry on the river', $result['items'][0]['alt']['en']);
+    }
+
+    public function test_swedish_file_name_matches_its_server_path()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'sv'),
+            array('id' => 11, 'lang' => 'en'),
+        ), array(10, 11), array('en', 'sv'), 'sv', array(
+            10 => array(
+                'file' => '/var/www/html/wp-content/uploads/2024/05/bröd.jpg',
+                'alt' => 'Bröd',
+                'title' => 'Bröd',
+            ),
+            11 => array(
+                'file' => '2024/05/bröd.jpg',
+                'alt' => 'Bread',
+                'title' => 'Bread',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('2024/05/bröd.jpg', $result['items'][0]['file']);
+        $this->assertSame('Bröd', $result['items'][0]['title']['sv']);
+        $this->assertSame('Bread', $result['items'][0]['title']['en']);
+    }
+
+    public function test_latin1_swedish_letters_are_kept_in_text_and_file_names()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 8, 'lang' => 'sv'),
+        ), array(8), array('sv'), 'sv', array(
+            8 => array(
+                'file' => "2024/05/br\xF6d.jpg",
+                'alt' => "\xC4pple och \xE4pple",
+                'title' => "\xC5n i \xE5n \xD6ver \xF6n",
+            ),
+        ));
+
+        $this->assertSame('2024/05/bröd.jpg', $result['items'][0]['file']);
+        $this->assertSame('Äpple och äpple', $result['items'][0]['alt']['sv']);
+        $this->assertSame('Ån i ån Över ön', $result['items'][0]['title']['sv']);
+        $encoded = json_encode($result['items'][0]);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString("\xF6", $encoded);
+        $decoded = json_decode($encoded, true);
+        $this->assertSame('2024/05/bröd.jpg', $decoded['file']);
+        $this->assertSame('Ån i ån Över ön', $decoded['title']['sv']);
     }
 
     public function test_titles_keep_unicode_and_drop_invalid_bytes()

@@ -1122,9 +1122,20 @@ class Polylang_Media
     {
         $base = basename(str_replace('\\', '/', $file));
         if ($base === '' || $base === '.' || $base === '..') {
-            return strtolower($file);
+            return $this->ascii_lower($file);
         }
-        return strtolower($base);
+        return $this->ascii_lower($base);
+    }
+
+    /**
+     * Lowercase A-Z only, so å, ä, and ö stay intact.
+     *
+     * @param string $value
+     * @return string
+     */
+    private function ascii_lower($value)
+    {
+        return strtr($value, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
     }
 
     /**
@@ -2322,8 +2333,9 @@ class Polylang_Media
     /**
      * Keep text that can be stored in the Tolka package.
      *
-     * Markup in alt text and titles is left in place. Null bytes and invalid
-     * UTF-8 are removed so the package can be encoded.
+     * Markup and letters such as å, ä, and ö stay in place. A Swedish letter
+     * stored as a single Latin-1 byte is turned into UTF-8. Null bytes and
+     * other invalid UTF-8 are removed.
      *
      * @param string $value
      * @return string
@@ -2334,25 +2346,129 @@ class Polylang_Media
         if ($value === '') {
             return '';
         }
+        if ($this->is_utf8($value)) {
+            return $value;
+        }
+        $value = $this->promote_swedish_letters($value);
+        if ($this->is_utf8($value)) {
+            return $value;
+        }
+        return str_replace("\0", '', $this->drop_invalid_utf8($value));
+    }
+
+    /**
+     * @param string $value
+     * @return bool
+     */
+    private function is_utf8($value)
+    {
+        return is_string($value) && $value !== '' && preg_match('//u', $value) === 1;
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private function drop_invalid_utf8($value)
+    {
         if (function_exists('wp_check_invalid_utf8')) {
             $clean = wp_check_invalid_utf8($value, true);
             if (is_string($clean)) {
-                return str_replace("\0", '', $clean);
+                return $clean;
             }
         }
         if (function_exists('iconv')) {
             $clean = iconv('UTF-8', 'UTF-8//IGNORE', $value);
             if (is_string($clean)) {
-                return str_replace("\0", '', $clean);
+                return $clean;
             }
         }
         if (function_exists('mb_convert_encoding')) {
             $clean = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
             if (is_string($clean)) {
-                return str_replace("\0", '', $clean);
+                return $clean;
             }
         }
         return $value;
+    }
+
+    /**
+     * Turn lone Latin-1 å, ä, and ö bytes into UTF-8.
+     *
+     * Bytes that already belong to a UTF-8 character are left alone.
+     *
+     * @param string $value
+     * @return string
+     */
+    private function promote_swedish_letters($value)
+    {
+        $swedish = array(
+            0xC4 => "\xC3\x84",
+            0xC5 => "\xC3\x85",
+            0xD6 => "\xC3\x96",
+            0xE4 => "\xC3\xA4",
+            0xE5 => "\xC3\xA5",
+            0xF6 => "\xC3\xB6",
+        );
+        $out = '';
+        $length = strlen($value);
+        for ($i = 0; $i < $length; $i++) {
+            $byte = ord($value[$i]);
+            $width = $this->utf8_sequence_width($byte);
+            if ($width > 1 && ($i + $width) <= $length) {
+                $sequence = substr($value, $i, $width);
+                if ($this->is_utf8_sequence($sequence)) {
+                    $out .= $sequence;
+                    $i += $width - 1;
+                    continue;
+                }
+            }
+            if (isset($swedish[$byte])) {
+                $out .= $swedish[$byte];
+                continue;
+            }
+            $out .= $value[$i];
+        }
+        return $out;
+    }
+
+    /**
+     * @param int $byte
+     * @return int
+     */
+    private function utf8_sequence_width($byte)
+    {
+        if ($byte < 0x80) {
+            return 1;
+        }
+        if (($byte & 0xE0) === 0xC0) {
+            return 2;
+        }
+        if (($byte & 0xF0) === 0xE0) {
+            return 3;
+        }
+        if (($byte & 0xF8) === 0xF0) {
+            return 4;
+        }
+        return 0;
+    }
+
+    /**
+     * @param string $sequence
+     * @return bool
+     */
+    private function is_utf8_sequence($sequence)
+    {
+        $length = strlen($sequence);
+        if ($length < 2) {
+            return false;
+        }
+        for ($i = 1; $i < $length; $i++) {
+            if ((ord($sequence[$i]) & 0xC0) !== 0x80) {
+                return false;
+            }
+        }
+        return $this->is_utf8($sequence);
     }
 
     /**
