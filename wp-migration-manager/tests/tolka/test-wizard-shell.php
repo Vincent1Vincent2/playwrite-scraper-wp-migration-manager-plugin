@@ -982,6 +982,66 @@ namespace WMM\Tolka {
             }
         }
 
+        public function test_empty_host_measure_urls_are_rejected()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+
+            $rejected = array(
+                'https:///',
+                'https://',
+                'http:///',
+                'http:///path',
+                'https://#frag',
+                'https://?q=1',
+                'https://.',
+                '  https:///UNIQUE-EMPTY-HOST  ',
+                'http:///' . str_repeat('p', 80),
+            );
+
+            foreach ($rejected as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+
+                ob_start();
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $output = ob_get_clean();
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+                $encoded = json_encode($payload);
+                $message = $payload['data']['message'];
+
+                $this->assertSame('', $output, $url);
+                $this->assertFalse($payload['success'], $url);
+                $this->assertSame('That address has no host, so it was not measured.', $message, $url);
+                $this->assertStringNotContainsString(trim($url), $encoded);
+                $this->assertStringNotContainsString('UNIQUE-EMPTY-HOST', $encoded);
+                $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $encoded);
+                $this->assertDoesNotMatchRegularExpression('/stack trace|#\d+\s|Exception|Fatal error/i', $encoded);
+                $this->assertSame(0, $GLOBALS['wmm_tolka_measure_calls'], $url);
+                $this->assertNoSpeedPercent($payload);
+            }
+
+            $GLOBALS['wmm_tolka_measure_calls'] = 0;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => 'https://public.example.test/',
+            );
+            $this->capture(function () {
+                \wmm_tolka_ajax_measure();
+            });
+            $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success']);
+            $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls']);
+        }
+
         public function test_measure_url_with_userinfo_does_not_call_speed_loader()
         {
             $this->requireStubs();

@@ -738,6 +738,46 @@ function wmm_tolka_url_has_userinfo($url)
 }
 
 /**
+ * Whether an http(s) URL has no host, including forms parse_url cannot read.
+ *
+ * @param string $url URL to inspect.
+ * @return bool
+ */
+function wmm_tolka_url_has_empty_host($url)
+{
+    if (!is_string($url) || $url === '') {
+        return false;
+    }
+
+    $parts = parse_url($url);
+
+    if (is_array($parts)) {
+        $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : '';
+
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            return false;
+        }
+
+        return wmm_tolka_url_host($url) === '';
+    }
+
+    if (!preg_match('~^https?://([^/?#]*)~i', $url, $matches)) {
+        return false;
+    }
+
+    $authority = $matches[1];
+    $at = strrpos($authority, '@');
+
+    if ($at !== false) {
+        $authority = substr($authority, $at + 1);
+    }
+
+    $authority = trim($authority, " \t\n\r\0\x0B[].");
+
+    return $authority === '';
+}
+
+/**
  * Public URL posted to the measure action. Arrays, blanks, and credentialed URLs are ignored.
  *
  * @return string
@@ -750,13 +790,13 @@ function wmm_tolka_posted_url()
 
     $url = trim(wp_unslash($_POST['url']));
 
-    if ($url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_is_local($url)) {
+    if ($url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_has_empty_host($url) || wmm_tolka_url_is_local($url)) {
         return '';
     }
 
     $url = esc_url_raw($url);
 
-    if (!is_string($url) || $url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_is_local($url)) {
+    if (!is_string($url) || $url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_has_empty_host($url) || wmm_tolka_url_is_local($url)) {
         return '';
     }
 
@@ -798,6 +838,11 @@ function wmm_tolka_ajax_measure()
 
     if ($raw_url !== '' && wmm_tolka_url_is_blocked_scheme($raw_url)) {
         wmm_tolka_json_error(__('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'));
+        return;
+    }
+
+    if ($raw_url !== '' && wmm_tolka_url_has_empty_host($raw_url)) {
+        wmm_tolka_json_error(__('That address has no host, so it was not measured.', 'migration-manager'));
         return;
     }
 
