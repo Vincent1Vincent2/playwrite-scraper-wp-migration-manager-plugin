@@ -67,7 +67,10 @@ class Speed_Loader
      * empty, and error is a sentence the admin screen can show. ttfb_ms is
      * always null. total_ms is the wall-clock time of the HTTP request, in
      * milliseconds, and is 0 when the address is rejected before a request.
-     * html_bytes is the full response size; html keeps the first 2,000,000 bytes.
+     * html_bytes is the full response size; html keeps at most the first
+     * 2,000,000 bytes. A status outside 200–299 keeps that status and the
+     * elapsed time, with html empty. A redirect is followed only after the
+     * next address is checked, and a private next hop is never requested.
      *
      * @param string $url Public http or https URL.
      * @return array{ok: bool, url: string, status_code: int, total_ms: int, ttfb_ms: null, html_bytes: int, html: string, error: string}
@@ -85,46 +88,75 @@ class Speed_Loader
         }
 
         $started = self::now_ns();
+        $current = $checked['url'];
+        $redirects = 0;
+        $response = null;
 
-        try {
-            $response = static::remote_get($checked['url']);
-        } catch (\Throwable $e) {
+        while (true) {
+            try {
+                $response = static::remote_get($current);
+            } catch (\Throwable $e) {
+                $result['total_ms'] = self::elapsed_ms($started);
+                $result['url'] = $current;
+                $result['status_code'] = 0;
+                return self::fail($result, self::text('The site could not be reached. Check the address and try again.'));
+            }
+
             $result['total_ms'] = self::elapsed_ms($started);
-            return self::fail($result, self::text('The site could not be reached. Check the address and try again.'));
-        }
+            $result['url'] = $current;
 
-        $result['total_ms'] = self::elapsed_ms($started);
+            $transport_error = self::transport_error($response);
+            if ($transport_error !== '') {
+                $result['status_code'] = 0;
+                return self::fail($result, $transport_error);
+            }
 
-        $transport_error = self::transport_error($response);
-        if ($transport_error !== '') {
-            return self::fail($result, $transport_error);
-        }
+            $code = self::response_code($response);
+            $result['status_code'] = $code;
 
-        $code = self::response_code($response);
-        $result['status_code'] = $code;
+            if ($code < 300 || $code > 399) {
+                break;
+            }
 
-        $final = self::response_url($response);
-        if ($final !== '') {
-            $final_scheme = self::url_scheme($final);
-            if ($final_scheme !== '' && $final_scheme !== 'http' && $final_scheme !== 'https') {
+            if ($redirects >= self::MAX_REDIRECTS) {
                 return self::fail(
                     $result,
-                    self::text('The site redirected to an address that is not a public http or https page.'),
+                    self::text('The site redirected too many times.'),
                     $code
                 );
             }
-            if ($final_scheme === 'http' || $final_scheme === 'https') {
-                $landed = self::parse_public_url($final);
-                if ($landed['error'] !== '') {
-                    $message = self::text('The site redirected to an address that is not a public http or https page.');
-                    if ($landed['reason'] === 'private' || $landed['reason'] === 'private-dns') {
-                        $message = self::text('The site redirected to a private or local address. Enter the public address visitors use.');
-                    }
-                    return self::fail($result, $message, $code);
+
+            $location = self::response_header($response, 'location');
+            if ($location === '' || preg_match('/[\r\n\x00]/', $location)) {
+                break;
+            }
+
+            $next = self::resolve_redirect($current, $location);
+            $next_checked = self::parse_public_url($next);
+            if ($next_checked['error'] !== '') {
+                $message = self::text('The site redirected to an address that is not a public http or https page.');
+                if ($next_checked['reason'] === 'private' || $next_checked['reason'] === 'private-dns') {
+                    $message = self::text('The site redirected to a private or local address. Enter the public address visitors use.');
                 }
-                if ($landed['url'] !== '') {
-                    $result['url'] = $landed['url'];
+                return self::fail($result, $message, $code);
+            }
+
+            $current = $next_checked['url'];
+            $redirects++;
+        }
+
+        $reported = self::response_url($response);
+        if (is_string($reported) && $reported !== '' && $reported !== $current) {
+            $reported_checked = self::parse_public_url($reported);
+            if ($reported_checked['error'] !== '') {
+                $message = self::text('The site redirected to an address that is not a public http or https page.');
+                if ($reported_checked['reason'] === 'private' || $reported_checked['reason'] === 'private-dns') {
+                    $message = self::text('The site redirected to a private or local address. Enter the public address visitors use.');
                 }
+                return self::fail($result, $message, $code);
+            }
+            if ($reported_checked['url'] !== '') {
+                $result['url'] = $reported_checked['url'];
             }
         }
 
@@ -151,11 +183,13 @@ class Speed_Loader
     }
 
     /**
-     * Arguments passed to wp_remote_get.
+     * Arguments passed to each wp_remote_get.
      *
-     * Timeout, redirect limit, and user agent are fixed by the speed contract.
-     * limit_response_size keeps a huge page from exceeding the HTML cap when
-     * this WordPress version honors it.
+     * redirection is 0 so WordPress does not fetch the next hop. measure()
+     * follows at most MAX_REDIRECTS (3) hops and refuses a private hop first.
+     * Timeout and user agent match the speed contract. limit_response_size
+     * keeps a huge page from exceeding the HTML cap when this WordPress
+     * version honors it.
      *
      * @return array{timeout: int, redirection: int, user-agent: string, limit_response_size: int}
      */
@@ -163,7 +197,7 @@ class Speed_Loader
     {
         return array(
             'timeout' => self::TIMEOUT_SECONDS,
-            'redirection' => self::MAX_REDIRECTS,
+            'redirection' => 0,
             'user-agent' => self::USER_AGENT,
             'limit_response_size' => self::MAX_HTML_BYTES,
         );
@@ -1421,6 +1455,176 @@ class Speed_Loader
         }
 
         return strtolower((string) $parts['scheme']);
+    }
+
+    /**
+     * One response header, matched without case sensitivity.
+     *
+     * @param mixed  $response Response.
+     * @param string $name     Header name.
+     * @return string
+     */
+    private static function response_header($response, $name)
+    {
+        if (!is_array($response) || !isset($response['headers'])) {
+            return '';
+        }
+
+        return self::header_value($response['headers'], $name);
+    }
+
+    /**
+     * @param mixed  $headers Header bag.
+     * @param string $name    Header name.
+     * @return string
+     */
+    private static function header_value($headers, $name)
+    {
+        $name = strtolower($name);
+        if (is_array($headers)) {
+            foreach ($headers as $key => $value) {
+                if (strtolower((string) $key) === $name) {
+                    return self::first_header_string($value);
+                }
+            }
+            return '';
+        }
+
+        if (is_object($headers) && $headers instanceof \ArrayAccess) {
+            if (isset($headers[$name])) {
+                $value = self::first_header_string($headers[$name]);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        if (is_object($headers) && method_exists($headers, 'offsetGet')) {
+            $value = $headers->offsetGet($name);
+            $text = self::first_header_string($value);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param mixed $value Header value or list of values.
+     * @return string
+     */
+    private static function first_header_string($value)
+    {
+        if (is_string($value)) {
+            return trim($value);
+        }
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                if (is_string($item) && trim($item) !== '') {
+                    return trim($item);
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Turn a Location value into an absolute URL against the current hop.
+     *
+     * @param string $current  URL that returned the redirect.
+     * @param string $location Location header.
+     * @return string
+     */
+    private static function resolve_redirect($current, $location)
+    {
+        $location = trim($location);
+        if ($location === '') {
+            return '';
+        }
+        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $location)) {
+            return $location;
+        }
+
+        $base = parse_url($current);
+        if (!is_array($base) || empty($base['scheme']) || !isset($base['host']) || (string) $base['host'] === '') {
+            return $location;
+        }
+
+        $scheme = strtolower((string) $base['scheme']);
+        $host = (string) $base['host'];
+        $port = isset($base['port']) ? ':' . (int) $base['port'] : '';
+        $origin = $scheme . '://' . $host . $port;
+
+        if (strpos($location, '//') === 0) {
+            return $scheme . ':' . $location;
+        }
+
+        $path = isset($base['path']) ? (string) $base['path'] : '/';
+        if ($location[0] === '?') {
+            $bare = $path === '' ? '/' : $path;
+            return $origin . $bare . $location;
+        }
+        if ($location[0] === '/') {
+            $path = $location;
+        } else {
+            $slash = strrpos($path, '/');
+            $dir = ($slash === false) ? '/' : substr($path, 0, $slash + 1);
+            $path = $dir . $location;
+        }
+
+        $fragment = '';
+        $hash = strpos($path, '#');
+        if ($hash !== false) {
+            $fragment = substr($path, $hash);
+            $path = substr($path, 0, $hash);
+        }
+        $query = '';
+        $query_pos = strpos($path, '?');
+        if ($query_pos !== false) {
+            $query = substr($path, $query_pos);
+            $path = substr($path, 0, $query_pos);
+        }
+
+        return $origin . self::collapse_path($path) . $query . $fragment;
+    }
+
+    /**
+     * Remove . and .. segments from a URL path.
+     *
+     * @param string $path Path, usually absolute.
+     * @return string
+     */
+    private static function collapse_path($path)
+    {
+        $absolute = ($path !== '' && $path[0] === '/');
+        $trailing = (substr($path, -1) === '/');
+        $parts = explode('/', $path);
+        $kept = array();
+        foreach ($parts as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+            if ($part === '..') {
+                array_pop($kept);
+                continue;
+            }
+            $kept[] = $part;
+        }
+
+        $collapsed = implode('/', $kept);
+        if ($absolute) {
+            $collapsed = '/' . $collapsed;
+        }
+        if ($trailing && substr($collapsed, -1) !== '/') {
+            $collapsed .= '/';
+        }
+        if ($collapsed === '') {
+            return '/';
+        }
+
+        return $collapsed;
     }
 
     /**
