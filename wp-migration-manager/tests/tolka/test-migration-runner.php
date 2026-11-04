@@ -1969,5 +1969,68 @@ namespace {
                 $preview['message']
             );
         }
+
+        public function test_preview_counts_are_integers_and_samples_stay_capped()
+        {
+            $this->reset_doubles();
+            $posts = array();
+            for ($i = 0; $i < 47; $i++) {
+                $posts[] = array('title' => 'Post ' . $i, 'group' => 'post:' . $i);
+            }
+            $strings = array();
+            for ($i = 0; $i < 20; $i++) {
+                $strings[] = array('name' => 'String ' . $i);
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array(array('name' => 'English', 'slug' => 'en', 'is_default' => true)),
+                    'errors' => array(),
+                ),
+                1 => array('items' => $posts, 'errors' => array()),
+                2 => array('items' => array(), 'errors' => array()),
+                3 => array('items' => $strings, 'errors' => array()),
+                4 => array(
+                    'items' => array(array('name' => 'Primary', 'location' => 'primary')),
+                    'errors' => array(),
+                ),
+                5 => array('items' => array(), 'errors' => array()),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $expected = array(
+                'languages' => 1,
+                'posts' => 47,
+                'terms' => 0,
+                'strings' => 20,
+                'menus' => 1,
+                'media' => 0,
+            );
+            foreach ($expected as $section => $count) {
+                $this->assertIsInt($preview['counts'][$section]);
+                $this->assertSame($count, $preview['counts'][$section]);
+                $this->assertIsInt($preview['sections'][$section]['count']);
+                $this->assertSame($count, $preview['sections'][$section]['count']);
+                $this->assertLessThanOrEqual(20, count($preview['sample'][$section]));
+                $this->assertLessThanOrEqual(20, count($preview['sections'][$section]['labels']));
+                $this->assertSame($count, count($preview[$section]['items']));
+            }
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertSame('Post 0', $preview['sample']['posts'][0]['title']);
+            $this->assertSame('Post 19', $preview['sample']['posts'][19]['title']);
+            $this->assertSame(47, $preview['counts']['posts']);
+            $this->assertNotSame(20, $preview['counts']['posts']);
+            $this->assertCount(20, $preview['sample']['strings']);
+            $this->assertSame(20, $preview['counts']['strings']);
+            $this->assertCount(0, $preview['sample']['terms']);
+            $this->assertSame(0, $preview['counts']['terms']);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertIsInt($run['counts']['posts']);
+            $this->assertSame(47, $run['counts']['posts']);
+            $this->assertCount(20, $run['sample']['posts']);
+            $this->assertCount(47, \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
+            $this->assertSame('post:46', \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items'][46]['group']);
+        }
     }
 }
