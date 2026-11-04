@@ -89,10 +89,12 @@ class Speed_Estimate
      * to show the admin. basis is always the benchmarks.json sentence.
      * benchmarks() returns the five coefficient keys stored in the file.
      * A total_ms of 0 still estimates from a 1 ms floor and returns a percent.
-     * A language_count of 0 is one language. With the shipped coefficients,
-     * a 1000 ms page, one language, and zero scripts stays 971 ms and
-     * 2.9% faster with the switcher off, and 946 ms and 5.4% faster with
-     * the switcher on. A non-finite load time does not reuse either result.
+     * A language_count of 0 is one language. A fractional language or script
+     * count uses the whole number below it, so 1.9 languages is still one.
+     * With the shipped coefficients, a 1000 ms page, one language, and zero
+     * scripts stays 971 ms and 2.9% faster with the switcher off, and 946 ms
+     * and 5.4% faster with the switcher on. A non-finite load time does not
+     * reuse either result.
      * A finite load time, count, or coefficient past the safe integer range
      * fails with no percent. A ratio above 1 or below 0 still fails the
      * range check, including when that ratio is also past the safe range.
@@ -147,6 +149,7 @@ class Speed_Estimate
         }
 
         // A language count of 0 still estimates as one language.
+        // 1.9 languages is one language; the fraction does not add another.
         $languages = max(1, self::metric_count($metrics, 'language_count'));
         $scripts = self::metric_count($metrics, 'script_count');
         $switcher = self::switcher_present($metrics, $measurement);
@@ -857,6 +860,8 @@ class Speed_Estimate
     /**
      * Whole count from a metric. Missing counts are 0.
      *
+     * A fraction keeps the whole number below it. 1.9 is 1, not 2.
+     *
      * @param array  $metrics
      * @param string $key
      * @return int
@@ -867,12 +872,17 @@ class Speed_Estimate
             return 0;
         }
 
-        $count = self::integer_milliseconds($metrics[$key]);
+        $count = self::finite_number($metrics[$key]);
         if ($count === null) {
             return 0;
         }
 
-        return $count;
+        $whole = floor((float) $count);
+        if (!is_finite($whole) || $whole > self::MAX_SAFE_MS || $whole < 0) {
+            return 0;
+        }
+
+        return (int) $whole;
     }
 
     /**
