@@ -232,6 +232,7 @@ namespace WMM\Tolka {
                 $GLOBALS['wmm_tolka_stub_html'],
                 $GLOBALS['wmm_tolka_stub_bad_shape'],
                 $GLOBALS['wmm_tolka_stub_bad_report'],
+                $GLOBALS['wmm_tolka_stub_report_html'],
                 $GLOBALS['wmm_tolka_test_home']
             );
         }
@@ -1522,6 +1523,20 @@ namespace WMM\Tolka {
                 \wmm_tolka_ajax_run();
             });
             $this->assertSame('Migration finished', $GLOBALS['wmm_tolka_test_json']['data']['title']);
+
+            $GLOBALS['wmm_tolka_stub_report_html'] = true;
+            $this->capture(function () {
+                \wmm_tolka_ajax_run();
+            });
+            $report_payload = $GLOBALS['wmm_tolka_test_json'];
+            $report_encoded = json_encode($report_payload);
+            $this->assertTrue($report_payload['success']);
+            $this->assertSame('Done & "', $report_payload['data']['title']);
+            $this->assertSame('Left & in place.', $report_payload['data']['summary']);
+            $this->assertSame('">', $report_payload['data']['lines'][0]['value']);
+            $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $report_encoded);
+            $this->assertStringNotContainsString('alert(1)', $report_encoded);
+            $this->assertStringNotContainsString('onerror', $report_encoded);
         }
 
         public function test_polylang_status_is_safe_and_nonfatal()
@@ -2098,12 +2113,20 @@ class Migration_Report {
         if (!empty($GLOBALS['wmm_tolka_stub_bad_report'])) {
             return 'not-a-report';
         }
+        $title = 'Migration finished';
+        $summary = 'Polylang data was left in place.';
+        $value = '0';
+        if (!empty($GLOBALS['wmm_tolka_stub_report_html'])) {
+            $title = 'Done & "<script>alert(1)</script>';
+            $summary = 'Left & <img src=x onerror=alert(1)> in place.';
+            $value = '"><script>alert(1)</script>';
+        }
         return array(
             'ok' => true,
-            'title' => 'Migration finished',
-            'summary' => 'Polylang data was left in place.',
+            'title' => $title,
+            'summary' => $summary,
             'lines' => array(
-                array('label' => 'Languages', 'value' => '0'),
+                array('label' => 'Languages', 'value' => $value),
             ),
         );
     }
