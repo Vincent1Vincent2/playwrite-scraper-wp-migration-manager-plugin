@@ -2222,32 +2222,55 @@
   }
 
   function menuLine(item) {
-    var location = text(item.location) || "Menu";
-    var parts = mapEntries(item.translations).map(function (entry) {
-      var name = field(entry.value, "name") || entry.lang || "Menu";
-      var label =
-        entry.lang && name !== entry.lang ? entry.lang + ": " + name : String(name);
-      var menuItems =
-        entry.value && Array.isArray(entry.value.items) ? entry.value.items : null;
-      if (menuItems) {
-        label += " (" + menuItems.length + (menuItems.length === 1 ? " item" : " items") + ")";
-        var titles = [];
-        menuItems.forEach(function (menuItem) {
-          if (titles.length >= 3 || !menuItem) {
-            return;
-          }
-          var title = text(menuItem.title) || text(menuItem.url);
-          if (title) {
-            titles.push(clip(title, 40));
-          }
-        });
-        if (titles.length) {
-          label += ": " + titles.join(", ");
-        }
+    var location = text(item.location);
+    var label = text(item.label);
+    var head = "Menu";
+    if (label && location && normalizeLabel(label) !== normalizeLabel(location)) {
+      head = label + " (" + location + ")";
+    } else {
+      head = label || location || "Menu";
+    }
+    var parts = mapEntries(item.translations).map(menuTranslationLabel);
+    return parts.length ? head + " · " + parts.join(", ") : head;
+  }
+
+  function menuTranslationLabel(entry) {
+    var value = entry.value;
+    if (value == null || value === "") {
+      return entry.lang ? entry.lang + ": no menu" : "no menu";
+    }
+    if (typeof value === "number" || (typeof value === "string" && /^\d+$/.test(String(value).trim()))) {
+      var id = Number(value);
+      if (!id) {
+        return entry.lang ? entry.lang + ": no menu" : "no menu";
       }
-      return label;
-    });
-    return parts.length ? location + " · " + parts.join(", ") : location;
+      return (entry.lang ? entry.lang + ": " : "") + "menu " + id;
+    }
+    var name = field(value, "name");
+    var menuId = field(value, "menu_id");
+    var menuItems = value && Array.isArray(value.items) ? value.items : [];
+    if (!name && (!menuId || Number(menuId) === 0) && !menuItems.length) {
+      return entry.lang ? entry.lang + ": no menu" : "no menu";
+    }
+    var shown = name || (menuId ? "menu " + menuId : "") || entry.lang || "Menu";
+    var label = entry.lang && shown !== entry.lang ? entry.lang + ": " + shown : String(shown);
+    if (menuItems.length) {
+      label += " (" + menuItems.length + (menuItems.length === 1 ? " item" : " items") + ")";
+      var titles = [];
+      menuItems.forEach(function (menuItem) {
+        if (titles.length >= 3 || !menuItem) {
+          return;
+        }
+        var title = text(menuItem.title) || text(menuItem.url);
+        if (title) {
+          titles.push(clip(title, 40));
+        }
+      });
+      if (titles.length) {
+        label += ": " + titles.join(", ");
+      }
+    }
+    return label;
   }
 
   function mediaLine(item) {
