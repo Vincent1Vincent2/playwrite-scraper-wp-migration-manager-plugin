@@ -57,15 +57,14 @@ class Migration_Report
         $errors = self::collect_errors($run, $write);
         $missing = self::collect_missing($run);
         $unavailable = self::missing_section_keys($missing['classes']);
-        $phrases = self::phrases($counts, $unavailable);
-        $list = self::list_phrase($phrases);
+        $description = self::describe_content($counts, $unavailable);
         $total = self::total_items($counts);
         $has_problems = !empty($errors) || !empty($missing['labels']);
         $status = self::decide($run_ok, $package, $has_problems, $total);
         $inactive = self::polylang_is_inactive($errors);
         $next = self::next_step($status, $inactive, count($missing['labels']), $has_problems);
         $title = self::title_for($status);
-        $summary = self::summary_for($status, $package, $list, $total, $missing['labels'], $errors, $next, $run_ok);
+        $summary = self::summary_for($status, $package, $description, $total, $missing['labels'], $errors, $next, $run_ok);
 
         return array(
             'ok' => ($status === 'complete' || $status === 'empty'),
@@ -279,65 +278,60 @@ class Migration_Report
     }
 
     /**
+     * Split counts into what was found and what was empty.
+     *
+     * Sections whose exporter is missing are left out of both lists. The
+     * missing-step sentence tells the site owner those could not be read.
+     *
      * @param array<string, int>  $counts      Section counts.
      * @param array<string, bool> $unavailable Sections that could not be read.
-     * @return array<string, string>
+     * @return array{present: string, absent: string}
      */
-    private static function phrases(array $counts, array $unavailable)
+    private static function describe_content(array $counts, array $unavailable)
     {
-        $phrases = array();
+        $present = array();
+        $absent = array();
 
         foreach (self::section_catalog() as $key => $meta) {
             $count = isset($counts[$key]) ? (int) $counts[$key] : 0;
-            $phrases[$key] = self::phrase_for($meta, $count, !empty($unavailable[$key]));
+            if (!empty($unavailable[$key]) && $count <= 0) {
+                continue;
+            }
+
+            if ($count <= 0) {
+                $absent[] = self::text($meta['group']);
+                continue;
+            }
+
+            $present[] = self::phrase_for($meta, $count);
         }
 
-        return $phrases;
+        $absent_sentence = '';
+        if (!empty($absent)) {
+            $absent_sentence = sprintf(
+                self::text('No %s were found.'),
+                self::join_or($absent)
+            );
+        }
+
+        return array(
+            'present' => self::join_and($present),
+            'absent' => $absent_sentence,
+        );
     }
 
     /**
-     * @param array $meta         Section copy.
-     * @param int   $count        Item count.
-     * @param bool  $unavailable  Exporter was missing and the count is empty.
+     * @param array $meta  Section copy.
+     * @param int   $count Item count, at least 1.
      * @return string
      */
-    private static function phrase_for(array $meta, $count, $unavailable)
+    private static function phrase_for(array $meta, $count)
     {
-        if ($unavailable && $count <= 0) {
-            return self::text($meta['unavailable_phrase']);
-        }
-
-        if ($count <= 0) {
-            return self::text($meta['none_phrase']);
-        }
-
-        if ($count === 1) {
+        if ((int) $count === 1) {
             return sprintf(self::text($meta['one']), self::number(1));
         }
 
         return sprintf(self::text($meta['many']), self::number($count));
-    }
-
-    /**
-     * @param array<string, string> $phrases Mid-sentence count phrases, in section order.
-     * @return string
-     */
-    private static function list_phrase(array $phrases)
-    {
-        $ordered = array();
-        foreach (array_keys(self::section_catalog()) as $key) {
-            $ordered[] = isset($phrases[$key]) ? $phrases[$key] : self::text('no items');
-        }
-
-        return sprintf(
-            self::text('%1$s, %2$s, %3$s, %4$s, %5$s, and %6$s'),
-            $ordered[0],
-            $ordered[1],
-            $ordered[2],
-            $ordered[3],
-            $ordered[4],
-            $ordered[5]
-        );
     }
 
     /**
@@ -490,17 +484,17 @@ class Migration_Report
     /**
      * Finished sentences for the status the site owner is in.
      *
-     * @param string   $status   Report status.
-     * @param string   $package  Package state.
-     * @param string   $list     Count list.
-     * @param int      $total    Sum of counts.
-     * @param string[] $labels   Missing step labels.
-     * @param string[] $errors   Error sentences.
-     * @param string   $next     Next step sentence.
-     * @param bool     $run_ok   Runner ok flag.
+     * @param string               $status      Report status.
+     * @param string               $package     Package state.
+     * @param array<string, string> $description Present phrase and absent sentence.
+     * @param int                  $total       Sum of counts.
+     * @param string[]             $labels      Missing step labels.
+     * @param string[]             $errors      Error sentences.
+     * @param string               $next        Next step sentence.
+     * @param bool                 $run_ok      Runner ok flag.
      * @return string
      */
-    private static function summary_for($status, $package, $list, $total, array $labels, array $errors, $next, $run_ok)
+    private static function summary_for($status, $package, array $description, $total, array $labels, array $errors, $next, $run_ok)
     {
         $closing = self::text('Your existing Polylang data was left in place.');
         $missing_sentence = self::missing_sentence($labels);
@@ -508,7 +502,8 @@ class Migration_Report
 
         if ($status === 'complete') {
             return self::join_sentences(array(
-                sprintf(self::text('Your Polylang content is packaged for Tolka: %s.'), $list),
+                self::packaged_lead($description),
+                $description['absent'],
                 self::text('The package is saved on this site.'),
                 $closing,
             ));
@@ -532,7 +527,8 @@ class Migration_Report
 
         if ($status === 'unconfirmed') {
             return self::join_sentences(array(
-                sprintf(self::text('Your Polylang content is packaged for Tolka: %s.'), $list),
+                self::packaged_lead($description),
+                $description['absent'],
                 self::text('The plugin could not confirm that the Tolka package was saved.'),
                 $next,
                 $closing,
@@ -543,7 +539,8 @@ class Migration_Report
             $parts = array();
 
             if ($total > 0) {
-                $parts[] = sprintf(self::text('Your Polylang content is packaged for Tolka: %s.'), $list);
+                $parts[] = self::packaged_lead($description);
+                $parts[] = $description['absent'];
             } else {
                 $parts[] = self::text('The migration reported a problem before any content was packaged.');
             }
@@ -567,11 +564,12 @@ class Migration_Report
         }
 
         $parts = array();
-        if ($total > 0) {
+        if ($total > 0 && $description['present'] !== '') {
             $parts[] = sprintf(
                 self::text('The migration did not finish. This site has %s, but that content was not saved into a Tolka package.'),
-                $list
+                $description['present']
             );
+            $parts[] = $description['absent'];
         } else {
             $parts[] = self::text('The migration did not finish, so the Tolka package was not saved.');
         }
@@ -582,6 +580,22 @@ class Migration_Report
         $parts[] = $closing;
 
         return self::join_sentences($parts);
+    }
+
+    /**
+     * @param array{present: string, absent: string} $description Count phrases.
+     * @return string
+     */
+    private static function packaged_lead(array $description)
+    {
+        if ($description['present'] === '') {
+            return self::text('Your Polylang content is packaged for Tolka.');
+        }
+
+        return sprintf(
+            self::text('Your Polylang content is packaged for Tolka: %s.'),
+            $description['present']
+        );
     }
 
     /**
@@ -740,49 +754,43 @@ class Migration_Report
         return array(
             'languages' => array(
                 'label' => 'Languages',
+                'group' => 'languages',
                 'none_line' => 'No languages',
-                'none_phrase' => 'no languages',
-                'unavailable_phrase' => 'languages unavailable',
                 'one' => '%s language',
                 'many' => '%s languages',
             ),
             'posts' => array(
                 'label' => 'Posts',
+                'group' => 'posts',
                 'none_line' => 'No posts',
-                'none_phrase' => 'no posts',
-                'unavailable_phrase' => 'posts unavailable',
                 'one' => '%s post',
                 'many' => '%s posts',
             ),
             'terms' => array(
                 'label' => 'Terms',
+                'group' => 'terms',
                 'none_line' => 'No terms',
-                'none_phrase' => 'no terms',
-                'unavailable_phrase' => 'terms unavailable',
                 'one' => '%s term',
                 'many' => '%s terms',
             ),
             'strings' => array(
                 'label' => 'Strings',
+                'group' => 'strings',
                 'none_line' => 'No strings',
-                'none_phrase' => 'no strings',
-                'unavailable_phrase' => 'strings unavailable',
                 'one' => '%s string',
                 'many' => '%s strings',
             ),
             'menus' => array(
                 'label' => 'Menus',
+                'group' => 'menus',
                 'none_line' => 'No menus',
-                'none_phrase' => 'no menus',
-                'unavailable_phrase' => 'menus unavailable',
                 'one' => '%s menu',
                 'many' => '%s menus',
             ),
             'media' => array(
                 'label' => 'Media',
+                'group' => 'media items',
                 'none_line' => 'No media',
-                'none_phrase' => 'no media',
-                'unavailable_phrase' => 'media unavailable',
                 'one' => '%s media item',
                 'many' => '%s media items',
             ),
@@ -996,6 +1004,36 @@ class Migration_Report
 
         return sprintf(
             self::text('%1$s, and %2$s'),
+            implode(', ', $parts),
+            $last
+        );
+    }
+
+    /**
+     * @param string[] $parts Items to join with "or".
+     * @return string
+     */
+    private static function join_or(array $parts)
+    {
+        $parts = array_values($parts);
+        $count = count($parts);
+
+        if ($count === 0) {
+            return '';
+        }
+
+        if ($count === 1) {
+            return $parts[0];
+        }
+
+        if ($count === 2) {
+            return sprintf(self::text('%1$s or %2$s'), $parts[0], $parts[1]);
+        }
+
+        $last = array_pop($parts);
+
+        return sprintf(
+            self::text('%1$s, or %2$s'),
             implode(', ', $parts),
             $last
         );

@@ -47,7 +47,7 @@ class Test_Migration_Report extends TestCase
         $this->assertTrue($report['ok']);
         $this->assertSame('Migration complete', $report['title']);
         $this->assertSame(
-            'Your Polylang content is packaged for Tolka: 2 languages, 1 post, no terms, 10 strings, 1 menu, and 2 media items. The package is saved on this site. Your existing Polylang data was left in place.',
+            'Your Polylang content is packaged for Tolka: 2 languages, 1 post, 10 strings, 1 menu, and 2 media items. No terms were found. The package is saved on this site. Your existing Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('2 languages', $this->line($report, 'Languages'));
@@ -176,7 +176,7 @@ class Test_Migration_Report extends TestCase
 
         $this->assertFalse($report['ok']);
         $this->assertSame(
-            'The migration did not finish. This site has 2 languages, 4 posts, no terms, no strings, no menus, and no media, but that content was not saved into a Tolka package. Could not read menus. 1 more problem is listed below. Run the migration again from Migrate to Tolka. Your existing Polylang data was left in place.',
+            'The migration did not finish. This site has 2 languages and 4 posts, but that content was not saved into a Tolka package. No terms, strings, menus, or media items were found. Could not read menus. 1 more problem is listed below. Run the migration again from Migrate to Tolka. Your existing Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame(
@@ -208,7 +208,7 @@ class Test_Migration_Report extends TestCase
         $this->assertFalse($report['ok']);
         $this->assertSame('Migration finished with problems', $report['title']);
         $this->assertSame(
-            'Your Polylang content is packaged for Tolka: 2 languages, 3 posts, no terms, no strings, no menus, and no media. The package is saved on this site. One menu had no items. Review the problems below, then run the migration again if you want to retry. Your existing Polylang data was left in place.',
+            'Your Polylang content is packaged for Tolka: 2 languages and 3 posts. No terms, strings, menus, or media items were found. The package is saved on this site. One menu had no items. Review the problems below, then run the migration again if you want to retry. Your existing Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('Saved on this site', $this->line($report, 'Tolka package'));
@@ -254,7 +254,13 @@ class Test_Migration_Report extends TestCase
             'errors' => array(),
         ));
 
-        $this->assertStringContainsString('2 languages, posts unavailable, no terms, no strings, no menus, and no media', $partial['summary']);
+        $this->assertStringContainsString(
+            'This site has 2 languages, but that content was not saved into a Tolka package.',
+            $partial['summary']
+        );
+        $this->assertStringContainsString('No terms, strings, menus, or media items were found.', $partial['summary']);
+        $this->assertStringContainsString('The posts step is missing from this plugin.', $partial['summary']);
+        $this->assertStringNotContainsString('unavailable', $partial['summary']);
         $this->assertSame('Not available', $this->line($partial, 'Posts'));
     }
 
@@ -304,7 +310,8 @@ class Test_Migration_Report extends TestCase
         ));
 
         $this->assertTrue($report['ok']);
-        $this->assertStringContainsString('2 languages, 1 post, no terms, no strings, no menus, and no media', $report['summary']);
+        $this->assertStringContainsString('2 languages and 1 post', $report['summary']);
+        $this->assertStringContainsString('No terms, strings, menus, or media items were found.', $report['summary']);
     }
 
     public function test_flat_writer_counts_are_used_when_the_run_has_none()
