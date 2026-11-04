@@ -90,8 +90,9 @@ class Speed_Estimate
      * benchmarks() returns the five coefficient keys stored in the file.
      * A total_ms of 0 still estimates from a 1 ms floor and returns a percent.
      * A language_count of 0 is one language. With the shipped coefficients,
-     * 1000 ms, one language, no switcher, and zero scripts is 2.9% faster.
-     * The same page with the switcher on is 5.4% faster.
+     * a 1000 ms page, one language, and zero scripts stays 971 ms and
+     * 2.9% faster with the switcher off, and 946 ms and 5.4% faster with
+     * the switcher on. A non-finite load time does not reuse either result.
      *
      * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
