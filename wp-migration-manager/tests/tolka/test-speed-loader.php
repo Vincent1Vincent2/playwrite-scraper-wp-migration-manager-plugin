@@ -880,6 +880,7 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame(0, $result['html_bytes'], $location);
         $this->assertSame(302, $result['status_code'], $location);
         $this->assertGreaterThanOrEqual(0, $result['total_ms'], $location);
+        $this->assertSame('https://example.com/start', $result['url'], $location);
         $this->assertSame(array('https://example.com/start'), Speed_Loader_Harness::$requested_urls, $location);
         $this->assertStringNotContainsString('secret', (string) json_encode($result));
         $this->assertStringNotContainsString('should not load', (string) json_encode($result));
