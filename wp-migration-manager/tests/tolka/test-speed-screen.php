@@ -174,7 +174,7 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
 
         $this->assertStringContainsString('wmm-tolka-is-empty', $html);
         $this->assertSame(
-            'No measurement yet. Enter the public site URL and choose Measure speed to see the current load, the estimated Tolka load, the percent faster, and the basis of that estimate.',
+            'No measurement yet. Measure the site: enter its public URL and choose Measure speed. You will see the current load, the estimated Tolka load, the percent faster, and the basis of that estimate.',
             $this->text($html, 'wmm-tolka-speed-summary')
         );
         $this->assertSame('Current load', $this->text($html, 'wmm-tolka-current-load-label'));
@@ -234,6 +234,90 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame('provenance_note', $note->parentNode->getAttribute('data-wmm-tolka'));
         $this->assertStringContainsString('wmm-tolka-provenance', $note->parentNode->getAttribute('class'));
         $this->assertStringContainsString('wmm-tolka-value', $note->getAttribute('class'));
+    }
+
+    public function test_before_measurement_tells_the_administrator_to_measure_the_site()
+    {
+        $html = $this->render(false);
+        $document = $this->document($html);
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+
+        $this->assertStringContainsString('Measure the site', $this->text($html, 'wmm-tolka-speed-summary'));
+        $this->assertStringContainsString('Measure speed', $this->text($html, 'wmm-tolka-speed-summary'));
+        foreach ($ids as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+            $this->assertSame(1, substr_count($html, 'id="' . $id . '"'), $id);
+        }
+        $this->assertSame('', $document->getElementById('wmm-tolka-current-load')->getAttribute('data-ms'));
+        $this->assertSame('', $document->getElementById('wmm-tolka-tolka-load')->getAttribute('data-ms'));
+        $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-faster'));
+    }
+
+    public function test_successful_estimate_shows_the_milliseconds_and_the_faster_label()
+    {
+        $cases = array(
+            'contract label' => array(
+                'current_ms' => 1842,
+                'tolka_ms' => 900,
+                'current_text' => '1,842 ms',
+                'tolka_text' => '900 ms',
+                'current_attr' => '1842',
+                'tolka_attr' => '900',
+                'faster_label' => '51.1% faster',
+                'faster_percent' => 51.1,
+            ),
+            'supplied label' => array(
+                'current_ms' => 2500,
+                'tolka_ms' => 400,
+                'current_text' => '2,500 ms',
+                'tolka_text' => '400 ms',
+                'current_attr' => '2500',
+                'tolka_attr' => '400',
+                'faster_label' => 'Nearly twice as quick',
+                'faster_percent' => 84,
+            ),
+        );
+
+        foreach ($cases as $name => $case) {
+            $html = $this->render(true, array(
+                'ok' => true,
+                'current_ms' => $case['current_ms'],
+                'tolka_ms' => $case['tolka_ms'],
+                'faster_percent' => $case['faster_percent'],
+                'faster_label' => $case['faster_label'],
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'lab',
+                'provenance_note' => 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.',
+                'error' => '',
+            ));
+            $document = $this->document($html);
+
+            foreach (array(
+                'wmm-tolka-current-load',
+                'wmm-tolka-tolka-load',
+                'wmm-tolka-faster',
+                'wmm-tolka-basis',
+                'wmm-tolka-provenance-note',
+            ) as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' #' . $id);
+            }
+
+            $this->assertSame($case['current_attr'], $document->getElementById('wmm-tolka-current-load')->getAttribute('data-ms'), $name);
+            $this->assertSame($case['tolka_attr'], $document->getElementById('wmm-tolka-tolka-load')->getAttribute('data-ms'), $name);
+            $this->assertStringContainsString($case['current_text'], $this->text($html, 'wmm-tolka-current-load'), $name);
+            $this->assertStringContainsString($case['tolka_text'], $this->text($html, 'wmm-tolka-tolka-load'), $name);
+            $this->assertSame($case['faster_label'], $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertStringContainsString($case['faster_label'], $this->text($html, 'wmm-tolka-speed-summary'), $name);
+            $this->assertStringNotContainsString('Placeholder coefficients', $html, $name);
+        }
     }
 
     public function test_empty_array_stays_unmeasured()
