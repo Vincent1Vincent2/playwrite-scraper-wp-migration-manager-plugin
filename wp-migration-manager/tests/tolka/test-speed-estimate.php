@@ -772,6 +772,18 @@ class Test_Speed_Estimate extends TestCase
             'A Tolka speed estimate is not available. The page at https://example.com/%73tart could not be measured (404).',
             $estimate['error']
         );
+
+        $placeholder = Speed_Estimate::project(
+            array('ok' => false, 'url' => 'https://example.com/%s', 'error' => 'bad %s thing'),
+            array(),
+            self::contractBenchmarks()
+        );
+        $this->assertSame(
+            'A Tolka speed estimate is not available. The page at https://example.com/%s could not be measured. bad %s thing.',
+            $placeholder['error']
+        );
+        $this->assertSame('', $placeholder['faster_label']);
+        $this->assertSame(0.0, $placeholder['faster_percent']);
     }
 
     public function test_missing_or_unusable_load_time_does_not_invent_a_percent()
