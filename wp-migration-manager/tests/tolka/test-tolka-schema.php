@@ -1654,6 +1654,59 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
     }
 
+    public function test_clean_html_content_is_stored_unchanged()
+    {
+        $content = "<article>\n<h1>Title</h1>\n<p>Hello &amp; welcome</p>\n<ul><li>One</li></ul>\n<!-- comment -->\n</article>";
+        $title = '<span class="kicker">Hello</span>';
+        $string = '<a href="https://example.com/?a=1&amp;b=2">Go</a>';
+        $package = Tolka_Schema::package(array(
+            'posts' => array(
+                'items' => array(
+                    array(
+                        'group' => 'post:30',
+                        'type' => 'post',
+                        'translations' => array(
+                            'en' => array(
+                                'id' => 30,
+                                'title' => $title,
+                                'content' => $content,
+                            ),
+                        ),
+                    ),
+                ),
+                'errors' => array(),
+            ),
+            'strings' => array(
+                'items' => array(
+                    array(
+                        'name' => 'link',
+                        'string' => $string,
+                        'context' => 'theme',
+                        'translations' => array('sv' => $string),
+                    ),
+                ),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assertSame($content, $package['posts'][0]['translations']['en']['content']);
+        $this->assertSame($title, $package['posts'][0]['translations']['en']['title']);
+        $this->assertSame($string, $package['strings'][0]['string']);
+
+        $result = Tolka_Writer::write($package);
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame($content, $stored['posts'][0]['translations']['en']['content']);
+        $this->assertSame($title, $stored['posts'][0]['translations']['en']['title']);
+        $this->assertSame($string, $stored['strings'][0]['string']);
+        $this->assertSame($string, $stored['strings'][0]['translations']['sv']);
+        $this->assertSame(
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+            $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+        );
+    }
+
     public function test_null_bytes_inside_html_do_not_drop_the_tags()
     {
         $result = Tolka_Writer::write(array(
