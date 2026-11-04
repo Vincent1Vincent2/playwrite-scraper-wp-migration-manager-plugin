@@ -634,7 +634,8 @@ class Test_Migration_Report extends TestCase
 
         $this->assertFalse($report['ok']);
         $this->assertSame('Migration finished with problems', $report['title']);
-        $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
+        $this->assertStringContainsString('The Tolka package on this site is incomplete.', $report['summary']);
+        $this->assertStringNotContainsString('packaged for Tolka', $report['summary']);
         $this->assertStringContainsString(
             'Not everything that was found was saved. 8 of 10 posts were saved and the menu was not saved.',
             $report['summary']
@@ -643,6 +644,150 @@ class Test_Migration_Report extends TestCase
             'Not everything that was found was saved. 8 of 10 posts were saved and the menu was not saved.',
             $this->line($report, 'Saved counts')
         );
+    }
+
+    public function test_writer_stored_fewer_items_than_the_package_contained()
+    {
+        $posts = array();
+        for ($i = 1; $i <= 5; $i++) {
+            $posts[] = array('group' => 'post:' . $i);
+        }
+
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 2,
+                'posts' => 5,
+            ),
+            'package' => array(
+                'format' => 'tolka-migration',
+                'version' => 1,
+                'languages' => array(
+                    array('slug' => 'en'),
+                    array('slug' => 'sv'),
+                ),
+                'posts' => $posts,
+                'terms' => array(),
+                'strings' => array(),
+                'menus' => array(),
+                'media' => array(),
+            ),
+            'write' => array(
+                'ok' => true,
+                'counts' => array(
+                    'languages' => 2,
+                    'posts' => 3,
+                    'terms' => 0,
+                    'strings' => 0,
+                    'menus' => 0,
+                    'media' => 0,
+                ),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assert_not_a_clean_finish($report);
+        $this->assertSame('Migration finished with problems', $report['title']);
+        $this->assertStringContainsString(
+            'The package contained more than was stored. 3 of 5 posts were saved.',
+            $report['summary']
+        );
+        $this->assertStringContainsString('The Tolka package on this site is incomplete.', $report['summary']);
+        $this->assertSame('Saved, but it is incomplete', $this->line($report, 'Tolka package'));
+        $this->assertSame('5 posts', $this->line($report, 'Posts'));
+    }
+
+    public function test_exporter_envelope_counts_the_items_inside_the_package()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'package' => array(
+                'posts' => array(
+                    'items' => array(
+                        array('group' => 'post:1'),
+                        array('group' => 'post:2'),
+                        array('group' => 'post:3'),
+                    ),
+                    'errors' => array(),
+                ),
+            ),
+            'write' => array(
+                'ok' => true,
+                'counts' => array('posts' => 1),
+            ),
+        ));
+
+        $this->assert_not_a_clean_finish($report);
+        $this->assertSame('3 posts', $this->line($report, 'Posts'));
+        $this->assertStringContainsString(
+            'The package contained more than was stored. 1 of 3 posts was saved.',
+            $report['summary']
+        );
+        $this->assertSame('Saved, but it is incomplete', $this->line($report, 'Tolka package'));
+    }
+
+    public function test_failed_write_with_counts_is_not_a_clean_finish()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 2,
+                'posts' => 6,
+                'terms' => 1,
+            ),
+            'write' => array(
+                'ok' => false,
+                'counts' => array(
+                    'languages' => 2,
+                    'posts' => 6,
+                    'terms' => 1,
+                    'strings' => 0,
+                    'menus' => 0,
+                    'media' => 0,
+                ),
+                'errors' => array('Saving stopped before the package was stored'),
+            ),
+        ));
+
+        $this->assert_not_a_clean_finish($report);
+        $this->assertSame('Migration did not finish', $report['title']);
+        $this->assertStringContainsString('6 posts', $report['summary']);
+        $this->assertStringContainsString('Saving stopped before the package was stored.', $report['summary']);
+        $this->assertStringContainsString('was not saved into a Tolka package.', $report['summary']);
+        $this->assertSame('Not saved', $this->line($report, 'Tolka package'));
+
+        $partial = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'posts' => 6,
+            ),
+            'package' => array(
+                'posts' => array(
+                    array('group' => 'post:1'),
+                    array('group' => 'post:2'),
+                    array('group' => 'post:3'),
+                    array('group' => 'post:4'),
+                    array('group' => 'post:5'),
+                    array('group' => 'post:6'),
+                ),
+            ),
+            'write' => array(
+                'ok' => false,
+                'counts' => array(
+                    'posts' => 4,
+                ),
+                'errors' => array('Saving stopped before the package was stored'),
+            ),
+        ));
+
+        $this->assert_not_a_clean_finish($partial);
+        $this->assertStringContainsString(
+            'Saving did not finish. The package contained more than was stored. 4 of 6 posts were saved.',
+            $partial['summary']
+        );
+        $this->assertStringContainsString('That is not a finished migration.', $partial['summary']);
+        $this->assertStringContainsString('Saving stopped before the package was stored.', $partial['summary']);
+        $this->assertSame('Not saved', $this->line($partial, 'Tolka package'));
     }
 
     public function test_matching_saved_counts_stay_a_clean_success()
@@ -773,6 +918,19 @@ class Test_Migration_Report extends TestCase
 
         $report = $this->format_run(array('languages' => 1));
         $this->assertSame($report, get_option(Migration_Report::OPTION_LAST_REPORT));
+    }
+
+    /**
+     * @param array $report Formatted report.
+     */
+    private function assert_not_a_clean_finish(array $report)
+    {
+        $this->assertFalse($report['ok']);
+        $this->assertNotSame('Migration complete', $report['title']);
+        $haystack = strtolower($report['title'] . ' ' . $report['summary']);
+        $this->assertStringNotContainsString('migration complete', $haystack);
+        $this->assertStringNotContainsString('clean finish', $haystack);
+        $this->assertStringNotContainsString('packaged for tolka', $haystack);
     }
 
     /**
