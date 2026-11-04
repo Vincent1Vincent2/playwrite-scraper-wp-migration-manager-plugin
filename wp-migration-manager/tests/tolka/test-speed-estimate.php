@@ -1091,6 +1091,20 @@ class Test_Speed_Estimate extends TestCase
         $this->assertStringNotContainsString('SECRET_PAGE_MARKUP', (string) json_encode($estimate));
         $this->assertArrayNotHasKey('polylang_extra_ms_per_language', $estimate['coefficients']);
 
+        $listed = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            array(35, 25, 8, 6, 0.7)
+        );
+        $this->assertUnavailable(
+            $listed,
+            'A Tolka speed estimate is not available. The benchmark file is missing numbers for extra milliseconds per language (polylang_extra_ms_per_language), language switcher milliseconds (polylang_switcher_ms), extra milliseconds per script (polylang_extra_ms_per_script), Tolka milliseconds per language (tolka_ms_per_language), and maximum overhead ratio (max_overhead_ratio).'
+        );
+        $this->assertSame(0.0, $listed['faster_percent']);
+        $this->assertSame('', $listed['faster_label']);
+        $this->assertNotSame(856, $listed['tolka_ms']);
+        $this->assertNotSame(14.4, $listed['faster_percent']);
+
         $blank = self::contractBenchmarks();
         $blank['polylang_switcher_ms'] = '   ';
         $blank_estimate = Speed_Estimate::project(
