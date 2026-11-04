@@ -681,6 +681,42 @@
     background: var(--wmm-tolka-win-bg);
 }
 
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields,
+dl.wmm-tolka-speed-fields {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin: 0;
+}
+
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt,
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields > dd,
+dl.wmm-tolka-speed-fields > dt,
+dl.wmm-tolka-speed-fields > dd {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt,
+dl.wmm-tolka-speed-fields > dt {
+    margin-top: 12px;
+    padding-top: 0;
+    color: var(--wmm-tolka-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+dl.wmm-tolka-speed-fields > dt:first-child {
+    margin-top: 0;
+}
+
 #wmm-tolka-speed .wmm-tolka-basis,
 #wmm-tolka-speed .wmm-tolka-speed__basis,
 #wmm-tolka-speed [data-wmm-tolka="basis"] {
@@ -780,9 +816,10 @@ table.wmm-tolka-summary {
     font-weight: 600;
 }
 
-.wmm-tolka-counts {
+.wmm-tolka-counts,
+.wmm-tolka-preview-counts {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 10px;
     margin: 0 0 16px;
     padding: 0;
@@ -1846,6 +1883,17 @@ dl.wmm-tolka-lines dd,
     }
 
     #wmm-tolka-speed > dl > dt:nth-of-type(2) {
+        margin-top: 12px;
+    }
+
+    #wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt,
+    #wmm-tolka-speed > dl.wmm-tolka-speed-fields > dd {
+        grid-column: 1 / -1;
+        grid-row: auto;
+        margin-top: 0;
+    }
+
+    #wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt {
         margin-top: 12px;
     }
 
