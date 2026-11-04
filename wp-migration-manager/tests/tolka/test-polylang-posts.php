@@ -320,6 +320,9 @@ class Tolka_Posts_Fake_Db
         if ($this->fail || $this->fail_results) {
             return null;
         }
+        if (strpos($sql, 'SELECT ID, post_type FROM') !== false) {
+            return $this->type_rows($sql);
+        }
         if (strpos($sql, 'post_excerpt') !== false) {
             return $this->filter_posts($sql);
         }
@@ -349,6 +352,24 @@ class Tolka_Posts_Fake_Db
             return isset($this->posts_rows[$id]) ? $this->posts_rows[$id] : null;
         }
         return null;
+    }
+
+    private function type_rows($sql)
+    {
+        $ids = array_keys($this->posts_rows);
+        if (preg_match('/\bID IN \(([^)]+)\)/i', $sql, $match)) {
+            $ids = array_map('intval', explode(',', $match[1]));
+        }
+        $rows = array();
+        foreach ($ids as $id) {
+            if (isset($this->posts_rows[$id])) {
+                $rows[] = array(
+                    'ID' => (int) $id,
+                    'post_type' => $this->posts_rows[$id]['post_type'],
+                );
+            }
+        }
+        return $rows;
     }
 
     private function page_ids($sql)
@@ -1078,6 +1099,38 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('draft', $result['items'][1]['translations']['de']['status']);
         $this->assertSame('Only the excerpt', $result['items'][1]['translations']['de']['excerpt']);
         $this->assertSame('', $result['items'][1]['translations']['de']['content']);
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'post_content') !== false) {
+                $this->assertStringNotContainsString('99', $sql);
+            }
+        }
+    }
+
+    public function test_draft_product_is_exported()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->languages = array(21 => 'en', 22 => 'de');
+        $fake->posts_rows = array(
+            21 => $this->db_post(21, 'draft', 'Sko', 'sko', 'product', '', 'Blå sko'),
+            22 => $this->db_post(22, 'draft', 'Schuh', 'schuh', 'product', '', 'Blauer Schuh'),
+        );
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 11,
+                'description' => serialize(array('en' => 21, 'de' => 22)),
+            ),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:21', $result['items'][0]['group']);
+        $this->assertSame('product', $result['items'][0]['type']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
+        $this->assertSame('Blå sko', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame('Schuh', $result['items'][0]['translations']['de']['title']);
     }
 
     public function test_double_serialized_description_still_exports_the_draft()

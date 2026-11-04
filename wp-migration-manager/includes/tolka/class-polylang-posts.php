@@ -37,6 +37,13 @@ class Polylang_Posts
     protected $record_cache = array();
 
     /**
+     * Post types looked up without loading post content.
+     *
+     * @var array<int, string>
+     */
+    protected $type_cache = array();
+
+    /**
      * Export post translation groups.
      *
      * @return array{items: array<int, array>, errors: string[]}
@@ -44,6 +51,7 @@ class Polylang_Posts
     public function export()
     {
         $this->record_cache = array();
+        $this->type_cache = array();
 
         try {
             if (!$this->polylang_present()) {
@@ -367,7 +375,22 @@ class Polylang_Posts
             return array();
         }
 
-        $records = $this->posts_by_ids(array_keys($pending));
+        $this->warm_post_types(array_keys($pending));
+        $skip_types = array_merge($this->ignored_post_types(), array('attachment'));
+        $content_ids = array();
+        foreach ($pending as $post_id => $lang) {
+            $type = $this->post_type_of((int) $post_id);
+            if ($type !== '' && in_array($type, $skip_types, true)) {
+                unset($pending[$post_id]);
+                continue;
+            }
+            $content_ids[] = (int) $post_id;
+        }
+        if (empty($pending)) {
+            return array();
+        }
+
+        $records = $this->posts_by_ids($content_ids);
         $maps = array();
         $missing = array();
         foreach ($pending as $post_id => $lang) {
@@ -414,6 +437,13 @@ class Polylang_Posts
         }
 
         $default_lang = is_string($default_lang) ? trim($default_lang) : '';
+        $single_ids = array();
+        foreach ($prepared as $map) {
+            if (count($map) === 1) {
+                $single_ids[] = (int) reset($map);
+            }
+        }
+        $this->warm_post_types($single_ids);
         usort($prepared, function ($left, $right) use ($default_lang) {
             $left_id = $this->default_post_id($left, $default_lang);
             $right_id = $this->default_post_id($right, $default_lang);
@@ -554,6 +584,9 @@ class Polylang_Posts
         if ($post_id <= 0) {
             return '';
         }
+        if (isset($this->type_cache[$post_id])) {
+            return $this->type_cache[$post_id];
+        }
         if (array_key_exists($post_id, $this->record_cache) && is_array($this->record_cache[$post_id])) {
             return (string) $this->record_cache[$post_id]['type'];
         }
@@ -572,7 +605,56 @@ class Polylang_Posts
             "SELECT post_type FROM {$wpdb->posts} WHERE ID = %d",
             $post_id
         ));
-        return is_string($type) ? $type : '';
+        $type = is_string($type) ? $type : '';
+        if ($type !== '') {
+            $this->type_cache[$post_id] = $type;
+        }
+        return $type;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     */
+    private function warm_post_types(array $ids)
+    {
+        $missing = array();
+        foreach ($ids as $post_id) {
+            $post_id = (int) $post_id;
+            if ($post_id > 0 && !isset($this->type_cache[$post_id])) {
+                $missing[$post_id] = true;
+            }
+        }
+        if (empty($missing)) {
+            return;
+        }
+        if (function_exists('get_post')) {
+            foreach (array_keys($missing) as $post_id) {
+                $post = get_post($post_id);
+                if (is_object($post) && isset($post->post_type)) {
+                    $this->type_cache[$post_id] = (string) $post->post_type;
+                }
+            }
+            return;
+        }
+        global $wpdb;
+        if (!$this->db_ready($wpdb)) {
+            return;
+        }
+        foreach (array_chunk(array_keys($missing), $this->page_size()) as $chunk) {
+            $placeholders = implode(', ', array_fill(0, count($chunk), '%d'));
+            $sql = "SELECT ID, post_type FROM {$wpdb->posts} WHERE ID IN ($placeholders)";
+            $prepared = $wpdb->prepare($sql, ...array_map('intval', $chunk));
+            $rows = $this->normalize_rows($wpdb->get_results($prepared, 'ARRAY_A'));
+            if (!is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                $post_id = isset($row['ID']) ? (int) $row['ID'] : 0;
+                if ($post_id > 0 && isset($row['post_type'])) {
+                    $this->type_cache[$post_id] = (string) $row['post_type'];
+                }
+            }
+        }
     }
 
     /**
