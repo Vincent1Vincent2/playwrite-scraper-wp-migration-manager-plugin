@@ -806,6 +806,75 @@ namespace WMM\Tolka {
             $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls']);
         }
 
+        public function test_measure_url_with_userinfo_does_not_call_speed_loader()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+
+            $rejected = array(
+                'https://user:secret@example.com',
+                'https://user@example.com',
+                'http://:secret@example.com',
+                'https://user:@example.com',
+                'HTTPS://User:Secret@Example.com/path',
+                'https://user:secret@example.com:8443/x?q=1',
+                'https://example.com:secret@evil.com',
+                '  https://user:secret@example.com/path  ',
+            );
+
+            foreach ($rejected as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+
+                ob_start();
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $output = ob_get_clean();
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+                $encoded = json_encode($payload);
+
+                $this->assertSame('', $output);
+                $this->assertFalse($payload['success']);
+                $this->assertStringContainsString('username or password', $payload['data']['message']);
+                $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+                $this->assertStringNotContainsString('secret', $encoded);
+                $this->assertStringNotContainsString('user:secret', $encoded);
+                $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $encoded);
+                $this->assertSame(0, $GLOBALS['wmm_tolka_measure_calls']);
+                $this->assertNoSpeedPercent($payload);
+            }
+
+            $allowed = array(
+                'https://public.example.test/?email=a@b.com',
+                'https://public.example.test/path#user:secret@example.com',
+            );
+
+            foreach ($allowed as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success']);
+                $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls']);
+                $encoded = json_encode($GLOBALS['wmm_tolka_test_json']);
+                $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $encoded);
+                $this->assertStringNotContainsString('secret-html', $encoded);
+            }
+        }
+
         public function test_saved_report_is_shown()
         {
             $this->requireStubs();
