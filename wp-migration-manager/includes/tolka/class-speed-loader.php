@@ -1380,7 +1380,10 @@ class Speed_Loader
         if (!is_array($value)) {
             return;
         }
-        foreach ($value as $item) {
+        foreach ($value as $key => $item) {
+            if (is_string($key) && $key !== '') {
+                $bits[] = $key;
+            }
             if (is_string($item) || is_numeric($item) || is_array($item)) {
                 self::collect_error_text($item, $bits);
             }
@@ -1437,7 +1440,11 @@ class Speed_Loader
             }
         }
 
-        return preg_match('/\btimeout\b/', $text) === 1;
+        if (preg_match('/\btimeout\b/', $text) === 1) {
+            return true;
+        }
+
+        return strpos($text, 'curl') !== false && preg_match('/\b28\b/', $text) === 1;
     }
 
     /**
