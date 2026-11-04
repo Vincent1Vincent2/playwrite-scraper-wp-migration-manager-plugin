@@ -44,7 +44,7 @@ function wmm_tolka_path($relative)
  * @param array|null $error File name and message, or null to read the list.
  * @return array
  */
-function wmm_tolka_load_errors($error = null)
+function wmm_tolka_shell_load_errors($error = null)
 {
     static $errors = array();
 
@@ -58,7 +58,7 @@ function wmm_tolka_load_errors($error = null)
 /**
  * Require every installed Tolka class file. A broken file is skipped.
  */
-function wmm_tolka_load_classes()
+function wmm_tolka_shell_load_classes()
 {
     $class_files = glob(wmm_tolka_path('class-*.php'));
 
@@ -72,12 +72,30 @@ function wmm_tolka_load_classes()
         try {
             require_once $class_file;
         } catch (Throwable $e) {
-            wmm_tolka_load_errors(array(
+            wmm_tolka_shell_load_errors(array(
                 'file' => basename($class_file),
                 'message' => $e->getMessage(),
             ));
             error_log('Migrate to Tolka: could not load ' . basename($class_file));
         }
+    }
+}
+
+/*
+ * The PHPUnit harness uses these two names for its own loader. Keep them
+ * when they are still free so this file can load beside that harness.
+ */
+if (!function_exists('wmm_tolka_load_errors')) {
+    function wmm_tolka_load_errors($error = null)
+    {
+        return wmm_tolka_shell_load_errors($error);
+    }
+}
+
+if (!function_exists('wmm_tolka_load_classes')) {
+    function wmm_tolka_load_classes()
+    {
+        wmm_tolka_shell_load_classes();
     }
 }
 
@@ -757,7 +775,7 @@ function wmm_tolka_render_title()
  */
 function wmm_tolka_render_load_errors()
 {
-    $errors = wmm_tolka_load_errors();
+    $errors = wmm_tolka_shell_load_errors();
 
     if (empty($errors)) {
         return;
@@ -1771,4 +1789,4 @@ add_action('wp_ajax_wmm_tolka_measure', 'wmm_tolka_ajax_measure');
 add_action('wp_ajax_wmm_tolka_preview', 'wmm_tolka_ajax_preview');
 add_action('wp_ajax_wmm_tolka_run', 'wmm_tolka_ajax_run');
 
-wmm_tolka_load_classes();
+wmm_tolka_shell_load_classes();

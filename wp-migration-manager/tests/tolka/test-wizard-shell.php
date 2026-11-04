@@ -121,19 +121,25 @@ namespace {
             return is_string($url) ? $url : '';
         }
 
-        function esc_html($text)
-        {
-            return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8');
+        if (!function_exists('esc_html')) {
+            function esc_html($text)
+            {
+                return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8');
+            }
         }
 
-        function esc_attr($text)
-        {
-            return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8');
+        if (!function_exists('esc_attr')) {
+            function esc_attr($text)
+            {
+                return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8');
+            }
         }
 
-        function __($text, $domain = 'default')
-        {
-            return $text;
+        if (!function_exists('__')) {
+            function __($text, $domain = 'default')
+            {
+                return $text;
+            }
         }
 
         function esc_html__($text, $domain = 'default')
@@ -292,11 +298,6 @@ namespace WMM\Tolka {
             $GLOBALS['wmm_tolka_test_scripts'] = array();
             $GLOBALS['wmm_tolka_test_localized'] = array();
 
-            \wmm_tolka_enqueue_assets('index.php');
-            \wmm_tolka_enqueue_assets(\wmm_tolka_menu_hook());
-            $this->assertSame(array(), $GLOBALS['wmm_tolka_test_styles']);
-            $this->assertSame(array(), $GLOBALS['wmm_tolka_test_scripts']);
-
             $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/assets/';
             if (!is_dir($directory)) {
                 mkdir($directory, 0777, true);
@@ -304,20 +305,29 @@ namespace WMM\Tolka {
 
             $css = $directory . 'tolka-admin.css';
             $js = $directory . 'tolka-admin.js';
-            file_put_contents($css, '/* test */');
-            file_put_contents($js, '/* test */');
-            clearstatcache();
+            $cssOwned = $this->readOwnedFile($css);
+            $jsOwned = $this->readOwnedFile($js);
 
             try {
+                $this->restoreOwnedFile($css, null);
+                $this->restoreOwnedFile($js, null);
+                \wmm_tolka_enqueue_assets('index.php');
+                \wmm_tolka_enqueue_assets(\wmm_tolka_menu_hook());
+                $this->assertSame(array(), $GLOBALS['wmm_tolka_test_styles']);
+                $this->assertSame(array(), $GLOBALS['wmm_tolka_test_scripts']);
+
+                file_put_contents($css, '/* test */');
+                file_put_contents($js, '/* test */');
+                clearstatcache();
+
                 \wmm_tolka_enqueue_assets(\wmm_tolka_menu_hook());
                 $this->assertSame('wmm-tolka-admin', $GLOBALS['wmm_tolka_test_styles'][0]['handle']);
                 $this->assertSame('wmm-tolka-admin', $GLOBALS['wmm_tolka_test_scripts'][0]['handle']);
                 $this->assertSame('wmmTolka', $GLOBALS['wmm_tolka_test_localized'][0]['object_name']);
                 $this->assertArrayNotHasKey('messages', $GLOBALS['wmm_tolka_test_localized'][0]['l10n']);
             } finally {
-                unlink($css);
-                unlink($js);
-                clearstatcache();
+                $this->restoreOwnedFile($css, $cssOwned);
+                $this->restoreOwnedFile($js, $jsOwned);
             }
         }
 
@@ -498,6 +508,7 @@ namespace WMM\Tolka {
                 mkdir($directory, 0777, true);
             }
             $js = $directory . 'tolka-admin.js';
+            $jsOwned = $this->readOwnedFile($js);
             file_put_contents($js, '/* behavior slice */');
             clearstatcache();
 
@@ -506,7 +517,7 @@ namespace WMM\Tolka {
                 $this->assertStringNotContainsString('id="wmm-tolka-fallback"', $with_js);
                 $this->assertStringContainsString('id="wmm-tolka-wizard"', $with_js);
             } finally {
-                unlink($js);
+                $this->restoreOwnedFile($js, $jsOwned);
                 clearstatcache();
             }
         }
@@ -521,6 +532,7 @@ namespace WMM\Tolka {
             }
 
             $view = $directory . 'wizard.php';
+            $viewOwned = $this->readOwnedFile($view);
             file_put_contents($view, "<?php\n/* empty screen */\n");
             clearstatcache();
 
@@ -529,7 +541,7 @@ namespace WMM\Tolka {
                 $this->assertSame(1, substr_count($html, 'id="wmm-tolka-wizard"'));
                 $this->assertStringContainsString('id="wmm-tolka-url"', $html);
             } finally {
-                unlink($view);
+                $this->restoreOwnedFile($view, $viewOwned);
                 clearstatcache();
             }
         }
@@ -617,9 +629,9 @@ namespace WMM\Tolka {
             file_put_contents($parsed, "<?php\nthis is not valid php;\n");
 
             try {
-                \wmm_tolka_load_classes();
+                \wmm_tolka_shell_load_classes();
                 $files = array();
-                foreach (\wmm_tolka_load_errors() as $error) {
+                foreach (\wmm_tolka_shell_load_errors() as $error) {
                     $files[] = $error['file'];
                 }
                 $this->assertContains('class-zz-thrown.php', $files);
@@ -646,6 +658,7 @@ namespace WMM\Tolka {
             }
 
             $view = $directory . 'wizard.php';
+            $viewOwned = $this->readOwnedFile($view);
             file_put_contents($view, '<div id="wmm-tolka-wizard">SCREEN_MARKER</div>');
             clearstatcache();
 
@@ -655,7 +668,7 @@ namespace WMM\Tolka {
                 $this->assertSame(1, substr_count($html, 'id="wmm-tolka-wizard"'));
                 $this->assertStringNotContainsString('No measurement yet.', $html);
             } finally {
-                unlink($view);
+                $this->restoreOwnedFile($view, $viewOwned);
                 clearstatcache();
             }
         }
@@ -670,6 +683,7 @@ namespace WMM\Tolka {
             }
 
             $view = $directory . 'wizard.php';
+            $viewOwned = $this->readOwnedFile($view);
             file_put_contents($view, "<?php\nthrow new RuntimeException('view broke');\n");
             clearstatcache();
 
@@ -678,8 +692,7 @@ namespace WMM\Tolka {
                 $this->assertStringContainsString('A basic screen is shown instead.', $html);
                 $this->assertStringContainsString('No measurement yet.', $html);
             } finally {
-                unlink($view);
-                clearstatcache();
+                $this->restoreOwnedFile($view, $viewOwned);
             }
         }
 
@@ -781,6 +794,8 @@ PHP
 
             $speed = $directory . 'speed-estimate.php';
             $help = $directory . 'help.php';
+            $speedOwned = $this->readOwnedFile($speed);
+            $helpOwned = $this->readOwnedFile($help);
             file_put_contents($speed, '<p id="speed-partial">SPEED_PARTIAL</p>');
             file_put_contents($help, '<p id="help-partial">HELP_PARTIAL</p>');
             clearstatcache();
@@ -792,9 +807,8 @@ PHP
                 $this->assertStringNotContainsString('No measurement yet.', $html);
                 $this->assertStringNotContainsString('See whether Polylang is active.', $html);
             } finally {
-                unlink($speed);
-                unlink($help);
-                clearstatcache();
+                $this->restoreOwnedFile($speed, $speedOwned);
+                $this->restoreOwnedFile($help, $helpOwned);
             }
         }
 
@@ -827,6 +841,44 @@ PHP
             });
             $this->assertStringContainsString('did not finish', $GLOBALS['wmm_tolka_test_json']['data']['message']);
             $this->assertStringContainsString('not deleted', $GLOBALS['wmm_tolka_test_json']['data']['message']);
+        }
+
+        /**
+         * Remember a slice file so a shell test can replace it and put it back.
+         *
+         * @param string $path Absolute path.
+         * @return string|null
+         */
+        private function readOwnedFile($path)
+        {
+            if (!is_file($path)) {
+                return null;
+            }
+
+            $contents = file_get_contents($path);
+
+            return is_string($contents) ? $contents : null;
+        }
+
+        /**
+         * Put back a slice file after a shell test replaced it.
+         *
+         * @param string      $path     Absolute path.
+         * @param string|null $contents Previous contents, or null when the file was absent.
+         * @return void
+         */
+        private function restoreOwnedFile($path, $contents)
+        {
+            if ($contents === null) {
+                if (is_file($path)) {
+                    unlink($path);
+                }
+                clearstatcache(true, $path);
+                return;
+            }
+
+            file_put_contents($path, $contents);
+            clearstatcache(true, $path);
         }
 
         private function requireStubs()
