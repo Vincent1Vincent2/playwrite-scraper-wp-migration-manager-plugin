@@ -859,6 +859,27 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             $this->assertStringContainsString('&lt;script&gt;', $html, $name);
             $this->assertStringContainsString('&lt;img', $html, $name);
         }
+
+        $blank = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 0,
+            'tolka_ms' => 0,
+            'faster_percent' => 50,
+            'faster_label' => '',
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => '',
+        ));
+        $this->assertSame('0 ms', $this->text($blank, 'wmm-tolka-current-load'));
+        $this->assertSame('0 ms', $this->text($blank, 'wmm-tolka-tolka-load'));
+        $this->assertSame('0', $this->document($blank)->getElementById('wmm-tolka-current-load')->getAttribute('data-ms'));
+        $this->assertSame('0', $this->document($blank)->getElementById('wmm-tolka-tolka-load')->getAttribute('data-ms'));
+        $this->assertSame(
+            'Measured page load plus coefficients from benchmarks.json.',
+            $this->text($blank, 'wmm-tolka-basis')
+        );
+        $this->assertStringNotContainsString('% faster', $blank);
+        $this->assertStringNotContainsString('50', $blank);
     }
 
     public function test_measure_payload_and_missing_label_still_render()
