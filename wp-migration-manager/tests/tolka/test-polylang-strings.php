@@ -50,6 +50,20 @@ class WMM_Tolka_Strings_Probe extends Polylang_Strings
     public $pll_fields = null;
 
     /**
+     * When set, pretends pll_languages_list() exists.
+     *
+     * @var bool|null
+     */
+    public $pll_list_exists = null;
+
+    /**
+     * Language records returned by pll_languages_list().
+     *
+     * @var array|null
+     */
+    public $pll_records = null;
+
+    /**
      * @param array $snapshot Already-read rows.
      * @return array
      */
@@ -125,6 +139,30 @@ class WMM_Tolka_Strings_Probe extends Polylang_Strings
         }
 
         return parent::pll_language_field($field);
+    }
+
+    /**
+     * @return bool
+     */
+    protected function pll_languages_list_exists()
+    {
+        if ($this->pll_list_exists !== null) {
+            return (bool) $this->pll_list_exists;
+        }
+
+        return parent::pll_languages_list_exists();
+    }
+
+    /**
+     * @return array|null
+     */
+    protected function pll_language_records()
+    {
+        if (is_array($this->pll_records)) {
+            return $this->pll_records;
+        }
+
+        return parent::pll_language_records();
     }
 }
 
@@ -258,6 +296,20 @@ class WMM_Tolka_Strings_Db
     public $fail_languages = false;
 
     /**
+     * The ordered language query fails and the unordered query still returns rows.
+     *
+     * @var bool
+     */
+    public $fail_ordered_languages = false;
+
+    /**
+     * The language query returns its rows and also sets a database warning.
+     *
+     * @var bool
+     */
+    public $language_warning = false;
+
+    /**
      * @var bool
      */
     public $fail_term_meta = false;
@@ -378,9 +430,16 @@ class WMM_Tolka_Strings_Db
             if ($this->throw_on_languages) {
                 throw new RuntimeException('language taxonomy threw');
             }
+            if ($this->fail_ordered_languages && stripos($plain, 'order by') !== false) {
+                $this->last_error = 'Unknown column term_group';
+                return null;
+            }
             if ($this->fail_languages) {
                 $this->last_error = 'language taxonomy is unreadable';
                 return null;
+            }
+            if ($this->language_warning) {
+                $this->last_error = 'sqlite translated the query';
             }
             return $this->language_rows;
         }
@@ -2357,6 +2416,197 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertSame('Färjor till öar', $result['items'][0]['string']);
         $this->assertSame(array('fr'), array_keys($result['items'][0]['translations']));
         $this->assertSame('Öppet', $result['items'][0]['translations']['fr']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * pll_languages_list() is the list Polylang shows for English and Svenska.
+     *
+     * @return void
+     */
+    public function test_pll_languages_list_records_supply_english_and_svenska()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_languages = true;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Hej'))),
+            ),
+        );
+        $probe = $this->probe($db, array(), true);
+        $probe->pll_list_exists = true;
+        $probe->pll_records = array(
+            (object) array('slug' => 'EN', 'name' => 'English', 'term_id' => 10),
+            (object) array('slug' => 'SV', 'name' => 'Svenska', 'term_id' => 11),
+        );
+        $result = $probe->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Hello', $result['items'][0]['string']);
+        $this->assertSame(array('en', 'sv'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame('Hej', $result['items'][0]['translations']['sv']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_language_records_read_term_id_from_term_props()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_languages = true;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Hej'))),
+            ),
+        );
+        $probe = $this->probe($db, array(), true);
+        $probe->pll_list_exists = true;
+        $probe->pll_records = array(
+            array('slug' => 'en', 'term_id' => 0),
+            array(
+                'slug' => 'sv',
+                'term_props' => array(
+                    'language' => array('term_id' => '11'),
+                ),
+            ),
+        );
+        $result = $probe->export();
+
+        $this->assertSame('Hej', $result['items'][0]['translations']['sv']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_pll_languages_list_omits_the_language_list_error()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_languages = true;
+        $probe = $this->probe($db, array(), false);
+        $probe->pll_list_exists = true;
+        $result = $probe->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertNotContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_matched_strings_omit_the_language_list_error()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_languages = true;
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Hej'))),
+            ),
+        );
+        $db->term_slug_rows = array(
+            array('term_id' => 11, 'slug' => 'sv'),
+        );
+        $result = $this->probe($db, array(), false)->export();
+
+        $this->assertSame('Hej', $result['items'][0]['translations']['sv']);
+        $this->assertNotContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_build_skips_the_language_list_error_when_the_api_exists_or_strings_match()
+    {
+        $without_strings = $this->probe()->build_snapshot(array(
+            'active' => false,
+            'language_list_failed' => true,
+            'pll_languages_list' => true,
+            'languages' => array(),
+            'mo' => array(),
+        ));
+        $this->assertNotContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $without_strings['errors']
+        );
+
+        $matched = $this->probe()->build_snapshot(array(
+            'active' => false,
+            'language_list_failed' => true,
+            'pll_languages_list' => false,
+            'languages' => array(),
+            'mo' => array(
+                'sv' => array(array('Hello', 'Hej')),
+            ),
+        ));
+        $this->assertSame('Hej', $matched['items'][0]['translations']['sv']);
+        $this->assertNotContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $matched['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_database_warning_does_not_hide_returned_languages()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_warning = true;
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'sv'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Hej'))),
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Hej', $result['items'][0]['translations']['sv']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertNotContains(
+            'The language list could not be read. String translations that could still be matched are included.',
+            $result['errors']
+        );
+        $this->assertNotContains(
+            'String translations for a language that is no longer installed were skipped.',
+            $result['errors']
+        );
+    }
+
+    /**
+     * @return void
+     */
+    public function test_languages_are_read_when_the_ordered_query_fails()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->fail_ordered_languages = true;
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'sv'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Hello', 'Hej'))),
+            ),
+        );
+        $result = $this->probe($db, array(), true)->export();
+
+        $this->assertSame('Hej', $result['items'][0]['translations']['sv']);
         $this->assertSame(array(), $result['errors']);
     }
 
