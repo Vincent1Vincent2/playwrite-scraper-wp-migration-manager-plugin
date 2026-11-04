@@ -44,7 +44,7 @@ if (!defined('ABSPATH')) {
         <li class="wmm-tolka-help__step">
             <h3 class="wmm-tolka-help__step-title"><?php esc_html_e('Estimate the public site', 'migration-manager'); ?></h3>
             <p>
-                <?php esc_html_e('The plugin loads the public site URL and shows how much faster Tolka is estimated to be. The address starts as the home URL of this site, and you can replace it with another public page before the check runs.', 'migration-manager'); ?>
+                <?php esc_html_e('The plugin loads the public site URL and shows how much faster Tolka is estimated to be. The address starts as the public home address of this site, and you can replace it with another public page before the check runs.', 'migration-manager'); ?>
             </p>
             <p>
                 <?php esc_html_e('The result shows the measured load time, the estimated Tolka load time, the percent faster, and a basis line. The basis line reads:', 'migration-manager'); ?>
@@ -67,7 +67,7 @@ if (!defined('ABSPATH')) {
             <ul class="wmm-tolka-help__details">
                 <li><?php esc_html_e('Languages are the languages configured in Polylang, including which one is the default.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Posts are grouped by translation, so one row covers the same post in each language rather than a separate row per language.', 'migration-manager'); ?></li>
-                <li><?php esc_html_e('Terms are categories, tags, and other taxonomies, also grouped by translation.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Terms are categories, tags, and similar labels, grouped by translation.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Strings are the interface phrases Polylang stores, with a translation for each language.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Menus are the theme locations and the translated menu assigned to each language.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Media is the alternative text and titles on attachments, per language.', 'migration-manager'); ?></li>
@@ -82,7 +82,7 @@ if (!defined('ABSPATH')) {
         <li class="wmm-tolka-help__step">
             <h3 class="wmm-tolka-help__step-title"><?php esc_html_e('Run the migration', 'migration-manager'); ?></h3>
             <p>
-                <?php esc_html_e('Run the migration after you have read the preview. The plugin stores a Tolka package on this site and records Tolka language and group fields on each translated post and term.', 'migration-manager'); ?>
+                <?php esc_html_e('Run the migration after you have read the preview. The plugin stores a Tolka package on this site. That package is a snapshot of the languages, posts, terms, strings, menus, and media. It also records a language field and a group field on each translated post and term.', 'migration-manager'); ?>
             </p>
             <p>
                 <?php esc_html_e('Polylang data stays in place. The plugin does not delete other custom fields, and it does not delete Polylang content, options, or terms.', 'migration-manager'); ?>
@@ -92,6 +92,17 @@ if (!defined('ABSPATH')) {
             </p>
         </li>
     </ol>
+
+    <h3 class="wmm-tolka-help__limits-title"><?php esc_html_e('What stays the same', 'migration-manager'); ?></h3>
+    <p class="wmm-tolka-help__limits">
+        <?php esc_html_e('Visitors still see this Polylang site. The screen does not turn Polylang off, and it does not switch the public site over to Tolka.', 'migration-manager'); ?>
+    </p>
+    <p class="wmm-tolka-help__limits">
+        <?php esc_html_e('The speed percent is an estimate for the single page you load. It is not a result for every page on the site.', 'migration-manager'); ?>
+    </p>
+    <p class="wmm-tolka-help__limits">
+        <?php esc_html_e('Running the migration again replaces the stored Tolka package and writes the language and group fields again. Polylang data is still left in place.', 'migration-manager'); ?>
+    </p>
 
     <h3 class="wmm-tolka-help__benchmark-title"><?php esc_html_e('Benchmark file', 'migration-manager'); ?></h3>
     <p class="wmm-tolka-help__benchmark">
