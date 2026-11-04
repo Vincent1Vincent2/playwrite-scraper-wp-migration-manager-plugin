@@ -204,6 +204,38 @@ namespace WMM\Tolka\RunnerTest {
         }
     }
 
+    class ThrowingConstructor
+    {
+        public static $constructed = 0;
+        public static $exports = 0;
+        public static $throw_error = false;
+
+        public function __construct()
+        {
+            self::$constructed++;
+            if (self::$throw_error) {
+                throw new \Error('constructor blew up');
+            }
+            throw new \RuntimeException('constructor blew up');
+        }
+
+        public function export()
+        {
+            self::$exports++;
+            return array(
+                'items' => array(array('title' => 'should not export')),
+                'errors' => array(),
+            );
+        }
+
+        public static function reset()
+        {
+            self::$constructed = 0;
+            self::$exports = 0;
+            self::$throw_error = false;
+        }
+    }
+
     class Schema
     {
         public static $parts = null;
@@ -342,6 +374,7 @@ namespace {
             \WMM\Tolka\RunnerTest\Exporter::reset();
             \WMM\Tolka\RunnerTest\InstanceExporter::reset();
             \WMM\Tolka\RunnerTest\StaticExporter::reset();
+            \WMM\Tolka\RunnerTest\ThrowingConstructor::reset();
             \WMM\Tolka\RunnerTest\Schema::reset();
             \WMM\Tolka\RunnerTest\Writer::reset();
             $map = array();
@@ -1599,6 +1632,89 @@ namespace {
             $this->assertSame(0, \WMM\Tolka\RunnerTest\StaticChild::$constructed);
             $this->assertSame('Inherited', \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['title']);
             $this->assertSame('Static parent', \WMM\Tolka\RunnerTest\Writer::$package['terms'][0]['title']);
+        }
+
+        public function test_throwing_constructor_names_the_section_and_continues()
+        {
+            foreach (array(false, true) as $throw_error) {
+                $this->reset_doubles();
+                \WMM\Tolka\RunnerTest\ThrowingConstructor::$throw_error = $throw_error;
+                \WMM\Tolka\RunnerTest\Exporter::$items = array(array(
+                    'slug' => 'en',
+                    'name' => 'English',
+                    'title' => 'Kept',
+                ));
+                Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\ThrowingConstructor';
+
+                $collected = Migration_Runner_Test_Double::collect();
+                $this->assertSame(array(), $collected['posts']['items']);
+                $this->assertSame(
+                    array('Posts could not be read (constructor failed: constructor blew up).'),
+                    $collected['posts']['errors']
+                );
+                $this->assertCount(1, $collected['languages']['items']);
+                $this->assertCount(1, $collected['terms']['items']);
+                $this->assertCount(1, $collected['media']['items']);
+                $this->assertSame(1, \WMM\Tolka\RunnerTest\ThrowingConstructor::$constructed);
+                $this->assertSame(0, \WMM\Tolka\RunnerTest\ThrowingConstructor::$exports);
+                $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+                \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+                \WMM\Tolka\RunnerTest\ThrowingConstructor::$constructed = 0;
+                $run = Migration_Runner_Test_Double::run();
+                $this->assertFalse($run['ok']);
+                $this->assertContains(
+                    'Posts could not be read (constructor failed: constructor blew up).',
+                    $run['errors']
+                );
+                $this->assertSame(
+                    'Posts could not be read (constructor failed: constructor blew up).',
+                    $run['detail']
+                );
+                $this->assertSame(
+                    'The Tolka package was saved, but Posts could not be read. Existing Polylang data was not changed.',
+                    $run['message']
+                );
+                $this->assertStringNotContainsString('Migration finished', $run['message']);
+                $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
+                $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['languages']['items']);
+                $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['media']['items']);
+                $this->assertSame(0, \WMM\Tolka\RunnerTest\ThrowingConstructor::$exports);
+                $this->assertNotContains('WMM\\Tolka\\RunnerTest\\ThrowingConstructor', $run['missing']);
+            }
+        }
+
+        public function test_preview_does_not_call_the_writer()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+            \WMM\Tolka\RunnerTest\Writer::$throw = true;
+
+            $ready = Migration_Runner_Test_Double::preview();
+            $this->assertSame('ready', $ready['state']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertArrayNotHasKey('write', $ready);
+
+            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\ThrowingConstructor';
+
+            $preview = Migration_Runner_Test_Double::preview();
+
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertArrayNotHasKey('write', $preview);
+            $this->assertSame(1, $preview['counts']['languages']);
+            $this->assertSame(0, $preview['counts']['posts']);
+            $this->assertContains(
+                'Posts could not be read (constructor failed: constructor blew up).',
+                $preview['errors']
+            );
+            $this->assertSame('error', $preview['state']);
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertFalse($run['ok']);
+            $this->assertNull($run['write']);
         }
     }
 }
