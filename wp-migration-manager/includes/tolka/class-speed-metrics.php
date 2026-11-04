@@ -405,31 +405,24 @@ class Speed_Metrics
                 continue;
             }
 
-            $skipped = false;
+            $next_char = ($next + 1 < $length) ? $lower_html[$next + 1] : '';
 
-            foreach (self::raw_text_elements() as $name) {
-                if (!self::opens_element($lower_html, $next, $name)) {
+            if ($next_char >= 'a' && $next_char <= 'z') {
+                $tag = self::read_tag($lower_html, $next, $length);
+                $name = self::tag_name($tag['html']);
+
+                if (in_array($name, self::raw_text_elements(), true)) {
+                    if ($name === 'script') {
+                        $scripts++;
+                    }
+
+                    $close = self::find_close($lower_html, $tag['next'], $name);
+                    $i = ($close === null) ? $length : $close['next'];
                     continue;
                 }
 
-                if ($name === 'script') {
-                    $scripts++;
-                }
-
-                $tag = self::read_tag($lower_html, $next, $length);
-                $close = self::find_close($lower_html, $tag['next'], $name);
-
-                if ($close === null) {
-                    $i = $length;
-                } else {
-                    $i = $close['next'];
-                }
-
-                $skipped = true;
-                break;
-            }
-
-            if ($skipped) {
+                $chunks[] = $tag['html'];
+                $i = $tag['next'] > $next ? $tag['next'] : $next + 1;
                 continue;
             }
 
@@ -532,19 +525,21 @@ class Speed_Metrics
         $length = strlen($markup);
         $offset = 0;
 
-        while (($pos = strpos($markup, '<img', $offset)) !== false) {
-            if (!self::is_tag_boundary($markup, $pos + 4)) {
-                $offset = $pos + 4;
+        while (($pos = strpos($markup, '<', $offset)) !== false) {
+            $next_char = ($pos + 1 < $length) ? $markup[$pos + 1] : '';
+
+            if ($next_char < 'a' || $next_char > 'z') {
+                $offset = $pos + 1;
                 continue;
             }
 
             $tag = self::read_tag($markup, $pos, $length);
 
-            if (self::image_has_source($tag['html'])) {
+            if (self::tag_name($tag['html']) === 'img' && self::image_has_source($tag['html'])) {
                 $count++;
             }
 
-            $offset = $tag['next'] > $pos ? $tag['next'] : $pos + 4;
+            $offset = $tag['next'] > $pos ? $tag['next'] : $pos + 1;
         }
 
         return $count;
@@ -758,7 +753,52 @@ class Speed_Metrics
      */
     private static function has_polylang_switcher($lower_html)
     {
-        if ($lower_html === '') {
+        if ($lower_html === '' || !self::string_has_marker($lower_html)) {
+            return false;
+        }
+
+        $length = strlen($lower_html);
+        $i = 0;
+
+        while ($i < $length) {
+            $next = strpos($lower_html, '<', $i);
+
+            if ($next === false) {
+                return self::string_has_marker(substr($lower_html, $i));
+            }
+
+            if ($next > $i && self::string_has_marker(substr($lower_html, $i, $next - $i))) {
+                return true;
+            }
+
+            $next_char = ($next + 1 < $length) ? $lower_html[$next + 1] : '';
+
+            if ($next_char >= 'a' && $next_char <= 'z') {
+                $tag = self::read_tag($lower_html, $next, $length);
+
+                if (self::attributes_contain_switcher($tag['html'])) {
+                    return true;
+                }
+
+                $i = $tag['next'] > $next ? $tag['next'] : $next + 1;
+                continue;
+            }
+
+            $i = $next + 1;
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether any marker appears in this already-lowercased string.
+     *
+     * @param string $text Text or attribute value.
+     * @return bool
+     */
+    private static function string_has_marker($text)
+    {
+        if ($text === '') {
             return false;
         }
 
@@ -770,7 +810,101 @@ class Speed_Metrics
         );
 
         foreach ($markers as $marker) {
-            if (strpos($lower_html, $marker) !== false) {
+            if (strpos($text, $marker) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a real attribute value contains a switcher marker.
+     *
+     * A value that itself contains "<" is stored HTML, not the live switcher.
+     *
+     * @param string $tag One start tag.
+     * @return bool
+     */
+    private static function attributes_contain_switcher($tag)
+    {
+        $length = strlen($tag);
+        $i = 0;
+
+        while ($i < $length && !self::is_ascii_space($tag[$i]) && $tag[$i] !== '>' && $tag[$i] !== '/') {
+            $i++;
+        }
+
+        while ($i < $length) {
+            while ($i < $length && self::is_ascii_space($tag[$i])) {
+                $i++;
+            }
+
+            if ($i >= $length || $tag[$i] === '>' || $tag[$i] === '/') {
+                break;
+            }
+
+            while (
+                $i < $length
+                && !self::is_ascii_space($tag[$i])
+                && $tag[$i] !== '='
+                && $tag[$i] !== '>'
+                && $tag[$i] !== '/'
+            ) {
+                $i++;
+            }
+
+            while ($i < $length && self::is_ascii_space($tag[$i])) {
+                $i++;
+            }
+
+            if ($i >= $length || $tag[$i] !== '=') {
+                continue;
+            }
+
+            $i++;
+
+            while ($i < $length && self::is_ascii_space($tag[$i])) {
+                $i++;
+            }
+
+            if ($i >= $length) {
+                break;
+            }
+
+            if ($tag[$i] === '"' || $tag[$i] === "'") {
+                $quote = $tag[$i];
+                $i++;
+                $start = $i;
+
+                while ($i < $length && $tag[$i] !== $quote) {
+                    $i++;
+                }
+
+                $value = substr($tag, $start, $i - $start);
+
+                if ($i < $length) {
+                    $i++;
+                }
+            } else {
+                $start = $i;
+
+                while ($i < $length && !self::is_ascii_space($tag[$i]) && $tag[$i] !== '>') {
+                    if ($tag[$i] === '/' && ($i + 1 >= $length || $tag[$i + 1] === '>')) {
+                        break;
+                    }
+
+                    $i++;
+                }
+
+                if ($i === $start || $i >= $length) {
+                    break;
+                }
+
+                $value = substr($tag, $start, $i - $start);
+            }
+
+            if (strpos($value, '<') === false && self::string_has_marker($value)) {
                 return true;
             }
         }
@@ -797,19 +931,21 @@ class Speed_Metrics
         $length = strlen($lower_html);
         $offset = 0;
 
-        while (($pos = strpos($lower_html, '<link', $offset)) !== false) {
-            if (!self::is_tag_boundary($lower_html, $pos + 5)) {
-                $offset = $pos + 5;
+        while (($pos = strpos($lower_html, '<', $offset)) !== false) {
+            $next_char = ($pos + 1 < $length) ? $lower_html[$pos + 1] : '';
+
+            if ($next_char < 'a' || $next_char > 'z') {
+                $offset = $pos + 1;
                 continue;
             }
 
             $tag = self::read_tag($lower_html, $pos, $length);
 
-            if (self::rel_has_stylesheet($tag['html'])) {
+            if (self::tag_name($tag['html']) === 'link' && self::rel_has_stylesheet($tag['html'])) {
                 $count++;
             }
 
-            $offset = $tag['next'];
+            $offset = $tag['next'] > $pos ? $tag['next'] : $pos + 1;
         }
 
         return $count;
