@@ -971,6 +971,49 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         }
     }
 
+    public function test_term_description_and_parent_are_kept_with_the_language_tag()
+    {
+        $item = array(
+            'taxonomy' => 'category',
+            'group' => 'term:4',
+            'translations' => array(
+                'en' => array(
+                    'id' => 4,
+                    'name' => 'News',
+                    'slug' => 'news',
+                    'description' => '  Daily news  ',
+                    'parent' => 0,
+                ),
+                'sv' => array(
+                    'id' => 5,
+                    'name' => 'Nyheter',
+                    'slug' => 'nyheter',
+                    'description' => '',
+                    'parent' => 4,
+                ),
+            ),
+        );
+
+        $package = Tolka_Schema::package(array(
+            'terms' => array(
+                'items' => array($item),
+                'errors' => array(),
+            ),
+        ));
+
+        $this->assertSame(array($item), $package['terms']);
+
+        $result = Tolka_Writer::write($package);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame($package, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_lang']);
+        $this->assertSame('term:4', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_group']);
+        $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][5]['_wmm_tolka_lang']);
+        $this->assertSame('term:4', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][5]['_wmm_tolka_group']);
+    }
+
     public function test_menu_trees_are_stored_without_tagging_menu_terms()
     {
         $item = array(
