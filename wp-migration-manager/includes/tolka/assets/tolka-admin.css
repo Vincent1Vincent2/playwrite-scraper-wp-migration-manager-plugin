@@ -2140,10 +2140,76 @@ button.wmm-tolka-is-busy::after,
     color: #063828;
     background-color: #fff;
     box-shadow: 0 0 0 4px #fff;
-    font-size: clamp(2rem, 5vw, 3.75rem);
     font-weight: 700;
     line-height: 1.2;
     letter-spacing: -0.02em;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) {
+    display: flex;
+    flex-direction: column;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > dt:nth-of-type(3) {
+    order: 1;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > #wmm-tolka-faster {
+    order: 2;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > dt:nth-of-type(1) {
+    order: 3;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > #wmm-tolka-current-load {
+    order: 4;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > dt:nth-of-type(2) {
+    order: 5;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > #wmm-tolka-tolka-load {
+    order: 6;
+}
+
+.wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-faster) {
+    order: -2;
+    grid-column: 1 / -1;
+}
+
+.wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+.wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+    order: 1;
+}
+
+#wmm-tolka-speed #wmm-tolka-current-load,
+#wmm-tolka-speed #wmm-tolka-tolka-load,
+dl.wmm-tolka-speed-fields > #wmm-tolka-current-load,
+dl.wmm-tolka-speed-fields > #wmm-tolka-tolka-load {
+    font-size: clamp(1.2rem, 2.2vw, 1.7rem);
+}
+
+#wmm-tolka-speed #wmm-tolka-faster,
+#wmm-tolka-wizard #wmm-tolka-faster,
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-faster,
+#wmm-tolka-wizard.wmm-tolka-is-busy #wmm-tolka-faster,
+dl.wmm-tolka-speed-fields > #wmm-tolka-faster {
+    font-size: clamp(2.5rem, 6vw, 3.75rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    button.wmm-tolka-is-busy::after,
+    .wmm-tolka-button.wmm-tolka-is-busy::after,
+    #wmm-tolka-measure.wmm-tolka-is-busy::after,
+    #wmm-tolka-preview.wmm-tolka-is-busy::after,
+    #wmm-tolka-run.wmm-tolka-is-busy::after,
+    #wmm-tolka-wizard button[aria-busy="true"]::after {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
 }
 
 #wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-provenance-note[hidden],
