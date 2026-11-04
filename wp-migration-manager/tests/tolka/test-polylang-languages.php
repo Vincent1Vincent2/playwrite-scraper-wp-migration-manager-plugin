@@ -987,6 +987,26 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_one_language_with_no_posts_stays_when_internal_rows_exist()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(8, 'Svenska', 'sv', 'sv_SE', 'se', 0, 0),
+            $this->language_term(40, 'pll_en', 'pll_en', 'en_US', 'us', 1, 0),
+            $this->language_term(41, 'pll_sv', 'pll_sv', 'sv_SE', 'se', 2, 0),
+        ), 'pll_sv');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('sv', $result['items'][0]['slug']);
+        $this->assertSame('Svenska', $result['items'][0]['name']);
+        $this->assertSame('sv_SE', $result['items'][0]['locale']);
+        $this->assertSame('se', $result['items'][0]['flag']);
+        $this->assertSame(8, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_three_real_languages_stay_when_internal_rows_are_present()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
@@ -1373,7 +1393,7 @@ PHP
         $result = $this->export_isolated(<<<'PHP'
 function pll_languages_list($args = array())
 {
-    return array('pll_en', 'en', 'pll_sv', 'sv');
+    return array('PLL_EN', 'en', 'PLL_SV', 'sv');
 }
 
 function pll_default_language($field = 'slug')
