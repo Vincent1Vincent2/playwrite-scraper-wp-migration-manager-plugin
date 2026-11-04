@@ -576,6 +576,93 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('14.4% faster', $half['faster_label']);
     }
 
+    public function test_zero_milliseconds_still_estimates_from_a_one_millisecond_floor()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $metrics = array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4);
+
+        foreach (array(0, 0.0, '0', '0.0', ' 0 ') as $total) {
+            $estimate = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total),
+                $metrics,
+                $benchmarks
+            );
+            $this->assertTrue($estimate['ok'], 'total_ms ' . var_export($total, true));
+            $this->assertSame(1, $estimate['current_ms']);
+            $this->assertSame(1, $estimate['tolka_ms']);
+            $this->assertSame(0, $estimate['overhead_ms']);
+            $this->assertSame(0.0, $estimate['faster_percent']);
+            $this->assertSame('0.0% faster', $estimate['faster_label']);
+            $this->assertNotSame('', $estimate['faster_label']);
+            $this->assertSame(
+                number_format($estimate['faster_percent'], 1, '.', '') . '% faster',
+                $estimate['faster_label']
+            );
+        }
+
+        $one = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1),
+            $metrics,
+            $benchmarks
+        );
+        $zero = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 0),
+            $metrics,
+            $benchmarks
+        );
+        $this->assertSame($one['current_ms'], $zero['current_ms']);
+        $this->assertSame($one['tolka_ms'], $zero['tolka_ms']);
+        $this->assertSame($one['faster_percent'], $zero['faster_percent']);
+        $this->assertSame($one['faster_label'], $zero['faster_label']);
+    }
+
+    public function test_zero_language_count_uses_one_language()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $measurement = array('ok' => true, 'total_ms' => 1000);
+        $zero = Speed_Estimate::project(
+            $measurement,
+            array('language_count' => 0, 'has_polylang_switcher' => true, 'script_count' => 0),
+            $benchmarks
+        );
+        $one = Speed_Estimate::project(
+            $measurement,
+            array('language_count' => 1, 'has_polylang_switcher' => true, 'script_count' => 0),
+            $benchmarks
+        );
+        $two = Speed_Estimate::project(
+            $measurement,
+            array('language_count' => 2, 'has_polylang_switcher' => true, 'script_count' => 0),
+            $benchmarks
+        );
+
+        // L = max(1, 0) = 1. raw = 35 + 25 = 60. tolka = 1000 - 60 + 6 = 946.
+        // L = 0 with no floor would be raw = 25 and tolka = 975.
+        $this->assertTrue($zero['ok']);
+        $this->assertSame($one['overhead_ms'], $zero['overhead_ms']);
+        $this->assertSame($one['tolka_ms'], $zero['tolka_ms']);
+        $this->assertSame($one['faster_percent'], $zero['faster_percent']);
+        $this->assertSame($one['faster_label'], $zero['faster_label']);
+        $this->assertSame(60, $zero['overhead_ms']);
+        $this->assertSame(946, $zero['tolka_ms']);
+        $this->assertSame(5.4, $zero['faster_percent']);
+        $this->assertSame('5.4% faster', $zero['faster_label']);
+        $this->assertNotSame($two['tolka_ms'], $zero['tolka_ms']);
+        $this->assertNotSame(975, $zero['tolka_ms']);
+
+        foreach (array(0, 0.0, '0', '0.0') as $count) {
+            $estimate = Speed_Estimate::project(
+                $measurement,
+                array('language_count' => $count, 'has_polylang_switcher' => false, 'script_count' => 0),
+                $benchmarks
+            );
+            $this->assertTrue($estimate['ok'], 'language_count ' . var_export($count, true));
+            $this->assertSame(971, $estimate['tolka_ms']);
+            $this->assertSame(2.9, $estimate['faster_percent']);
+            $this->assertSame('2.9% faster', $estimate['faster_label']);
+        }
+    }
+
     public function test_negative_measured_time_uses_one_millisecond()
     {
         $estimate = Speed_Estimate::project(

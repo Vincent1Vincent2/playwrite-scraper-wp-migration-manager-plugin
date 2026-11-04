@@ -133,6 +133,7 @@ class Speed_Estimate
             return self::unavailable($benchmarks, self::unavailable_message($reasons));
         }
 
+        // A language count of 0 still estimates as one language.
         $languages = max(1, self::metric_count($metrics, 'language_count'));
         $scripts = self::metric_count($metrics, 'script_count');
         $switcher = self::switcher_present($metrics, $measurement);
@@ -156,6 +157,7 @@ class Speed_Estimate
                 self::unavailable_message(array(self::translate('The measured load time is not a usable number.')))
             );
         }
+        // A measured 0 ms still estimates. The formula floor is 1 ms.
         $current = max(1, $current);
 
         $raw = ($languages * $per_language)
