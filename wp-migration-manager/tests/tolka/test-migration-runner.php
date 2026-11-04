@@ -14,6 +14,8 @@ namespace WMM\Tolka\RunnerTest {
         public static $errors = array();
         public static $script = array();
         public static $throw_on = null;
+        public static $throw_error = false;
+        public static $throw_message = 'export blew up';
         public static $calls = 0;
 
         public static function export()
@@ -21,7 +23,10 @@ namespace WMM\Tolka\RunnerTest {
             $index = self::$calls;
             self::$calls++;
             if (self::$throw_on !== null && $index === self::$throw_on) {
-                throw new \RuntimeException('export blew up');
+                if (self::$throw_error) {
+                    throw new \Error(self::$throw_message);
+                }
+                throw new \RuntimeException(self::$throw_message);
             }
             if (array_key_exists($index, self::$script)) {
                 return self::$script[$index];
@@ -38,6 +43,8 @@ namespace WMM\Tolka\RunnerTest {
             self::$errors = array();
             self::$script = array();
             self::$throw_on = null;
+            self::$throw_error = false;
+            self::$throw_message = 'export blew up';
             self::$calls = 0;
         }
     }
@@ -97,6 +104,7 @@ namespace WMM\Tolka\RunnerTest {
         public static $result = array('ok' => true, 'errors' => array());
         public static $use_result = false;
         public static $throw = false;
+        public static $throw_error = false;
         public static $calls = 0;
 
         public static function write($package)
@@ -104,6 +112,9 @@ namespace WMM\Tolka\RunnerTest {
             self::$calls++;
             self::$package = $package;
             if (self::$throw) {
+                if (self::$throw_error) {
+                    throw new \Error('write blew up');
+                }
                 throw new \RuntimeException('write blew up');
             }
             if (self::$use_result) {
@@ -121,6 +132,7 @@ namespace WMM\Tolka\RunnerTest {
             self::$result = array('ok' => true, 'errors' => array());
             self::$use_result = false;
             self::$throw = false;
+            self::$throw_error = false;
             self::$calls = 0;
         }
     }
@@ -1232,6 +1244,90 @@ namespace {
                     'The migration did not run. Nothing was written, and existing Polylang data was not changed.',
                     $run['message']
                 );
+            }
+        }
+
+        public function test_one_throwing_exporter_does_not_stop_the_others()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array(
+                'slug' => 'en',
+                'name' => 'English',
+                'title' => 'Hello',
+            ));
+            \WMM\Tolka\RunnerTest\Exporter::$throw_on = 0;
+
+            $collected = Migration_Runner_Test_Double::collect();
+            $this->assertSame(
+                array('languages', 'posts', 'terms', 'strings', 'menus', 'media', 'missing'),
+                array_keys($collected)
+            );
+            $this->assertSame(array(), $collected['languages']['items']);
+            $this->assertSame(
+                array('Languages could not be read (export blew up).'),
+                $collected['languages']['errors']
+            );
+            $this->assertCount(1, $collected['posts']['items']);
+            $this->assertCount(1, $collected['media']['items']);
+            $this->assertSame(array(), $collected['missing']);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertFalse($run['ok']);
+            $this->assertNotSame('saved', $run['state']);
+            $this->assertStringNotContainsString('Migration finished', $run['message']);
+            $this->assertContains('Languages could not be read (export blew up).', $run['errors']);
+            $this->assertSame(
+                'The Tolka package was saved, but Languages could not be fully read. Existing Polylang data was not changed.',
+                $run['message']
+            );
+            $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['languages']['items']);
+            $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
+            $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['media']['items']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Exporter', $run['missing']);
+
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('title' => 'Still here'));
+            \WMM\Tolka\RunnerTest\Exporter::$throw_on = 2;
+            \WMM\Tolka\RunnerTest\Exporter::$throw_error = true;
+            \WMM\Tolka\RunnerTest\Exporter::$throw_message = 'terms exploded';
+            $again = Migration_Runner_Test_Double::collect();
+            $this->assertSame(
+                array('Terms could not be read (terms exploded).'),
+                $again['terms']['errors']
+            );
+            $this->assertCount(1, $again['languages']['items']);
+            $this->assertCount(1, $again['posts']['items']);
+            $this->assertSame(array(), $again['terms']['items']);
+            $this->assertCount(1, $again['menus']['items']);
+        }
+
+        public function test_writer_throw_is_not_a_finished_migration()
+        {
+            foreach (array(false, true) as $throw_error) {
+                $this->reset_doubles();
+                \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+                \WMM\Tolka\RunnerTest\Writer::$throw = true;
+                \WMM\Tolka\RunnerTest\Writer::$throw_error = $throw_error;
+
+                $run = Migration_Runner_Test_Double::run();
+
+                $this->assertFalse($run['ok']);
+                $this->assertNull($run['write']);
+                $this->assertSame('failed', $run['state']);
+                $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+                $this->assertStringNotContainsString('Migration finished', $run['message']);
+                $this->assertStringNotContainsString('Migration finished', $run['detail']);
+                $this->assertSame(
+                    'The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.',
+                    $run['message']
+                );
+                $this->assertSame(
+                    'The migration could not be saved (write blew up). Existing Polylang data was not changed.',
+                    $run['detail']
+                );
+                $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Writer', $run['missing']);
             }
         }
     }
