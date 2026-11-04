@@ -44,6 +44,23 @@ class Speed_Loader
     const USER_AGENT = 'WMM-Tolka-Speed/1.0';
 
     /**
+     * Public addresses found for the host being measured.
+     *
+     * The curl transport is asked to use these addresses so a later DNS
+     * answer cannot point the same request at a private network.
+     *
+     * @var string[]
+     */
+    private static $pinned_ips = array();
+
+    /**
+     * CURLOPT_RESOLVE entries for the request currently in flight.
+     *
+     * @var string[]
+     */
+    private static $curl_resolve = array();
+
+    /**
      * Time one public page load.
      *
      * The same keys are always returned. On failure ok is false, html is
@@ -56,6 +73,8 @@ class Speed_Loader
      */
     public static function measure(string $url): array
     {
+        self::$pinned_ips = array();
+        self::$curl_resolve = array();
         $checked = self::parse_public_url($url);
         $shown = $checked['url'] !== '' ? $checked['url'] : trim($url);
         $result = self::blank($shown);
@@ -98,7 +117,7 @@ class Speed_Loader
                 if ($landed['error'] !== '') {
                     $message = self::text('The site redirected to an address that cannot be measured.');
                     if ($landed['reason'] === 'private' || $landed['reason'] === 'private-dns') {
-                        $message = self::text('The site redirected to a private or local address, so it cannot be measured.');
+                        $message = self::text('The site redirected to a private or local address, so it cannot be measured. Enter the public address visitors use.');
                     }
                     return self::fail($result, $message, $code);
                 }
@@ -159,7 +178,95 @@ class Speed_Loader
             return null;
         }
 
-        return wp_remote_get($url, self::request_args());
+        $pinned = self::curl_resolve_entries($url, self::$pinned_ips);
+        if ($pinned === array() || !function_exists('add_action') || !function_exists('remove_action')) {
+            return wp_remote_get($url, self::request_args());
+        }
+
+        self::$curl_resolve = $pinned;
+        add_action('http_api_curl', array(__CLASS__, 'pin_resolved_addresses'), 10, 3);
+        try {
+            return wp_remote_get($url, self::request_args());
+        } finally {
+            remove_action('http_api_curl', array(__CLASS__, 'pin_resolved_addresses'), 10);
+            self::$curl_resolve = array();
+        }
+    }
+
+    /**
+     * Point curl at the addresses already checked for this host.
+     *
+     * WordPress calls this while the measurement request is running.
+     * The hook is removed before the method returns.
+     *
+     * @param resource|\CurlHandle $handle Curl handle.
+     * @param array                $args   Request arguments.
+     * @param string               $url    Request URL.
+     */
+    public static function pin_resolved_addresses($handle, $args, $url)
+    {
+        unset($args, $url);
+        if (self::$curl_resolve === array() || !function_exists('curl_setopt') || !defined('CURLOPT_RESOLVE')) {
+            return;
+        }
+
+        $is_curl = is_resource($handle);
+        if (!$is_curl && class_exists('CurlHandle', false) && $handle instanceof \CurlHandle) {
+            $is_curl = true;
+        }
+        if (!$is_curl) {
+            return;
+        }
+
+        curl_setopt($handle, CURLOPT_RESOLVE, self::$curl_resolve);
+    }
+
+    /**
+     * Build curl CURLOPT_RESOLVE rows for a URL and a list of addresses.
+     *
+     * Literal IP hosts are left alone. Private addresses are never included.
+     *
+     * @param string   $url Request URL.
+     * @param string[] $ips Addresses from DNS.
+     * @return string[]
+     */
+    private static function curl_resolve_entries($url, array $ips)
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts) || !isset($parts['host']) || (string) $parts['host'] === '') {
+            return array();
+        }
+
+        $host = (string) $parts['host'];
+        if (strlen($host) >= 2 && $host[0] === '[' && substr($host, -1) === ']') {
+            $host = substr($host, 1, -1);
+        }
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return array();
+        }
+
+        $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : 'http';
+        $port = isset($parts['port']) ? (int) $parts['port'] : ($scheme === 'https' ? 443 : 80);
+        if ($port < 1 || $port > 65535) {
+            return array();
+        }
+
+        $entries = array();
+        foreach ($ips as $ip) {
+            if (!is_string($ip) || $ip === '' || self::ip_is_blocked($ip)) {
+                continue;
+            }
+            if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+                continue;
+            }
+            if (strpos($ip, ':') !== false) {
+                $entries[] = $host . ':' . $port . ':[' . $ip . ']';
+            } else {
+                $entries[] = $host . ':' . $port . ':' . $ip;
+            }
+        }
+
+        return $entries;
     }
 
     /**
@@ -270,7 +377,7 @@ class Speed_Loader
      */
     private static function parse_public_url($url)
     {
-        $trimmed = trim($url);
+        $trimmed = self::normalize_typed_url($url);
         $none = array(
             'url' => '',
             'error' => '',
@@ -282,6 +389,9 @@ class Speed_Loader
             $none['reason'] = 'empty';
             return $none;
         }
+
+        $trimmed = self::with_https_scheme($trimmed);
+        $trimmed = self::bracket_bare_ipv6($trimmed);
 
         if (strlen($trimmed) > 4096) {
             $none['url'] = $trimmed;
@@ -408,13 +518,19 @@ class Speed_Loader
 
         if ($saw_name) {
             $ips = static::resolve_ips($name_for_dns);
+            $safe = array();
             if (is_array($ips)) {
                 foreach ($ips as $ip) {
-                    if (is_string($ip) && $ip !== '' && self::ip_is_blocked($ip)) {
+                    if (!is_string($ip) || $ip === '') {
+                        continue;
+                    }
+                    if (self::ip_is_blocked($ip)) {
                         return 'private-dns';
                     }
+                    $safe[] = $ip;
                 }
             }
+            self::$pinned_ips = $safe;
             return '';
         }
 
@@ -935,6 +1051,154 @@ class Speed_Loader
     }
 
     /**
+     * Trim a pasted address and drop invisible characters.
+     *
+     * A non-breaking space or zero-width character from a web page should
+     * not hide a private address or break an otherwise valid URL.
+     *
+     * @param string $url Raw address.
+     * @return string
+     */
+    private static function normalize_typed_url($url)
+    {
+        $url = str_replace("\xEF\xBB\xBF", '', (string) $url);
+        $stripped = @preg_replace('/[\x{200B}-\x{200D}\x{FEFF}\x{2060}]/u', '', $url);
+        if (is_string($stripped)) {
+            $url = $stripped;
+        }
+        $spaced = @preg_replace('/\p{Z}/u', ' ', $url);
+        if (is_string($spaced)) {
+            $url = $spaced;
+        }
+
+        return trim($url);
+    }
+
+    /**
+     * Put brackets around an IPv6 host typed without them.
+     *
+     * https://::1 is otherwise read as host ":" and port 1.
+     *
+     * @param string $url Address that may already include a scheme.
+     * @return string
+     */
+    private static function bracket_bare_ipv6($url)
+    {
+        if ($url === '' || strpos($url, '[') !== false) {
+            return $url;
+        }
+
+        $scheme = '';
+        $rest = $url;
+        if (preg_match('#^(https?://)(.*)$#i', $url, $matches)) {
+            $scheme = $matches[1];
+            $rest = $matches[2];
+        } else {
+            return $url;
+        }
+
+        $end = strlen($rest);
+        foreach (array('/', '?', '#') as $mark) {
+            $pos = strpos($rest, $mark);
+            if ($pos !== false && $pos < $end) {
+                $end = $pos;
+            }
+        }
+        $authority = substr($rest, 0, $end);
+        $tail = substr($rest, $end);
+        $user = '';
+        $hostport = $authority;
+        $at = strrpos($authority, '@');
+        if ($at !== false) {
+            $user = substr($authority, 0, $at + 1);
+            $hostport = substr($authority, $at + 1);
+        }
+        if (substr_count($hostport, ':') < 2) {
+            return $url;
+        }
+
+        $host = $hostport;
+        $port = '';
+        if (filter_var($hostport, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            $host = $hostport;
+        } elseif (
+            preg_match('/^(.*):(\d+)$/', $hostport, $parts)
+            && filter_var($parts[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)
+        ) {
+            $host = $parts[1];
+            $port = ':' . $parts[2];
+        } else {
+            return $url;
+        }
+
+        return $scheme . $user . '[' . $host . ']' . $port . $tail;
+    }
+
+    /**
+     * Treat a pasted host, such as example.com, as https.
+     *
+     * A scheme that is already present is left alone, including ftp and
+     * javascript. Words that are not a host stay unchanged.
+     *
+     * @param string $url Trimmed address.
+     * @return string
+     */
+    private static function with_https_scheme($url)
+    {
+        if ($url === '') {
+            return $url;
+        }
+        if (filter_var($url, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return 'https://[' . $url . ']';
+        }
+        // A dotted name before the colon is host:port, not a scheme.
+        // user:pass@host is credentials, not a scheme. javascript: is a scheme.
+        if (preg_match('#^([a-z][a-z0-9+.-]*):(.*)$#i', $url, $matches)) {
+            $scheme_name = $matches[1];
+            $hierarchical = strpos($matches[2], '//') === 0;
+            $userinfo = preg_match('#^[^/@]+:[^/@]*@#', $url) === 1;
+            if (!$userinfo && ($hierarchical || strpos($scheme_name, '.') === false)) {
+                return $url;
+            }
+        }
+        if (strpos($url, '//') === 0) {
+            return 'https:' . $url;
+        }
+        if (preg_match('/[\s\x00-\x1f\x7f\\\\]/', $url)) {
+            return $url;
+        }
+
+        $host = $url;
+        $slash = strpos($host, '/');
+        if ($slash !== false) {
+            $host = substr($host, 0, $slash);
+        }
+        $at = strrpos($host, '@');
+        if ($at !== false) {
+            $host = substr($host, $at + 1);
+        }
+        if ($host !== '' && $host[0] !== '[') {
+            $colon = strpos($host, ':');
+            if ($colon !== false) {
+                $host = substr($host, 0, $colon);
+            }
+        }
+
+        $host = strtolower(rtrim($host, '.'));
+        $looks_like_host = strpos($host, '.') !== false
+            || $host === 'localhost'
+            || (strlen($host) >= 2 && $host[0] === '[');
+        if (!$looks_like_host && preg_match('/^(0x[0-9a-f]+|[0-9]+)$/i', $host)) {
+            $looks_like_host = true;
+        }
+        if (!$looks_like_host) {
+            return $url;
+        }
+
+        return 'https://' . $url;
+    }
+
+    /**
      * Customer-facing sentence for a validation reason.
      *
      * @param string $reason Reason code.
@@ -944,7 +1208,7 @@ class Speed_Loader
     {
         switch ($reason) {
             case 'empty':
-                return self::text('Enter a public http or https address to measure.');
+                return self::text('Enter the public address of the site you want to measure.');
             case 'long':
                 return self::text('That address is too long to measure. Use the site\'s public home page.');
             case 'scheme':
@@ -952,9 +1216,9 @@ class Speed_Loader
             case 'host':
                 return self::text('That address has no host name, so it cannot be measured.');
             case 'private':
-                return self::text('That address points at a private or local network, so it cannot be measured.');
+                return self::text('That address points at a private or local network, so it cannot be measured. Enter the public address visitors use.');
             case 'private-dns':
-                return self::text('That address resolves to a private or local network, so it cannot be measured.');
+                return self::text('That address resolves to a private or local network, so it cannot be measured. Enter the public address visitors use.');
             default:
                 return self::text('That address could not be read. Use a full http or https URL.');
         }
@@ -1058,6 +1322,37 @@ class Speed_Loader
      */
     private static function http_status_error($code)
     {
+        $code = (int) $code;
+        if ($code === 401) {
+            return self::text('The site asked for a login, so the public page could not be measured.');
+        }
+        if ($code === 403) {
+            return self::text('The site refused access to that page, so the load time could not be measured.');
+        }
+        if ($code === 404) {
+            return self::text('That page was not found, so the load time could not be measured.');
+        }
+        if ($code >= 300 && $code <= 399) {
+            $template = 'The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.';
+            if (function_exists('__')) {
+                $template = __(
+                    'The site redirected (HTTP %d) and did not return a page, so the load time could not be measured.',
+                    'migration-manager'
+                );
+            }
+            return sprintf($template, $code);
+        }
+        if ($code >= 500 && $code <= 599) {
+            $template = 'The site reported an error (HTTP %d), so the load time could not be measured.';
+            if (function_exists('__')) {
+                $template = __(
+                    'The site reported an error (HTTP %d), so the load time could not be measured.',
+                    'migration-manager'
+                );
+            }
+            return sprintf($template, $code);
+        }
+
         $template = 'The site returned HTTP %d, so the load time could not be measured.';
         if (function_exists('__')) {
             $template = __(
@@ -1066,7 +1361,7 @@ class Speed_Loader
             );
         }
 
-        return sprintf($template, (int) $code);
+        return sprintf($template, $code);
     }
 
     /**
