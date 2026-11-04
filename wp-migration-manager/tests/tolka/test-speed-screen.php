@@ -373,6 +373,77 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertStringContainsString('wmm-tolka-value', $note->getAttribute('class'));
     }
 
+    public function test_empty_zero_and_failed_estimates_stay_distinct()
+    {
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+        $label = '<script>alert(1)</script>';
+        $pages = array(
+            'unset' => $this->render(false),
+            'empty array' => $this->render(true, array()),
+        );
+
+        foreach ($pages as $name => $html) {
+            $document = $this->document($html);
+            $this->assertStringContainsString('Measure the site', $this->text($html, 'wmm-tolka-speed-summary'), $name);
+            $this->assertFalse($document->getElementById('wmm-tolka-speed-summary')->hasAttribute('hidden'), $name);
+            $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-current-load'), $name);
+            $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-tolka-load'), $name);
+            $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-basis'), $name);
+            $this->assertFalse($document->getElementById('wmm-tolka-basis')->hasAttribute('hidden'), $name);
+            $this->assertNotSame('Unavailable', $this->text($html, 'wmm-tolka-faster'), $name);
+            $this->assertNotSame('0 ms', $this->text($html, 'wmm-tolka-current-load'), $name);
+            foreach ($ids as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' #' . $id);
+                $this->assertSame(1, substr_count($html, 'id="' . $id . '"'), $name . ' #' . $id);
+            }
+        }
+
+        $zero = $this->render(true, array(
+            'ok' => true,
+            'current_ms' => 0,
+            'tolka_ms' => 0,
+            'faster_percent' => 0,
+            'faster_label' => $label,
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => '',
+        ));
+        $this->assertSame('0 ms', $this->text($zero, 'wmm-tolka-current-load'));
+        $this->assertSame('0 ms', $this->text($zero, 'wmm-tolka-tolka-load'));
+        $this->assertNotSame('Unavailable', $this->text($zero, 'wmm-tolka-current-load'));
+        $this->assertNotSame('Unavailable', $this->text($zero, 'wmm-tolka-tolka-load'));
+        $this->assertSame($label, $this->text($zero, 'wmm-tolka-faster'));
+        $this->assertStringNotContainsString('<script', $zero);
+        $this->assertStringContainsString('&lt;script&gt;', $zero);
+
+        $failed = $this->render(true, array(
+            'ok' => false,
+            'current_ms' => 0,
+            'tolka_ms' => 0,
+            'faster_percent' => 0,
+            'faster_label' => '0.0% faster',
+            'basis' => $label,
+            'provenance' => 'lab',
+            'error' => 'The page could not be loaded.',
+        ));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-faster'));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-current-load'));
+        $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-tolka-load'));
+        $this->assertStringNotContainsString('0.0% faster', $failed);
+        $this->assertStringNotContainsString('<script', $failed);
+        $this->assertNotSame('0 ms', $this->text($failed, 'wmm-tolka-current-load'));
+        foreach ($ids as $id) {
+            $this->assertNotNull($this->document($failed)->getElementById($id), $id);
+        }
+    }
+
     public function test_no_estimate_passed_in_asks_to_measure_the_site_and_keeps_the_five_ids()
     {
         $view = dirname(__DIR__, 2) . '/includes/tolka/views/speed-estimate.php';
