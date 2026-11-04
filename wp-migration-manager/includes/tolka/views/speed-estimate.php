@@ -189,14 +189,11 @@ if (is_array($wmm_tolka_speed_payload) && array() !== $wmm_tolka_speed_payload) 
         );
 
         $wmm_tolka_speed_percent = null;
-        if (isset($wmm_tolka_speed_payload['faster_percent']) && is_numeric($wmm_tolka_speed_payload['faster_percent'])) {
+        if ('' !== $wmm_tolka_speed_view['faster'] && isset($wmm_tolka_speed_payload['faster_percent']) && is_numeric($wmm_tolka_speed_payload['faster_percent'])) {
             $wmm_tolka_speed_percent = (float) $wmm_tolka_speed_payload['faster_percent'];
             if (!is_finite($wmm_tolka_speed_percent)) {
                 $wmm_tolka_speed_percent = null;
             }
-        }
-        if ('' === $wmm_tolka_speed_view['faster'] && null !== $wmm_tolka_speed_percent) {
-            $wmm_tolka_speed_view['faster'] = number_format($wmm_tolka_speed_percent, 1, '.', '') . '% faster';
         }
 
         $wmm_tolka_speed_view['basis'] = $wmm_tolka_speed_finish($wmm_tolka_speed_text(
