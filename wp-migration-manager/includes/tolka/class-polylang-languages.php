@@ -259,6 +259,12 @@ class Polylang_Languages
             $this->add_item($items, $this->item_from_language_term($term, $default));
         }
 
+        // term_language mirrors each language. Use it only to fill a language
+        // whose language-taxonomy row is missing.
+        foreach ($this->terms_for_taxonomy('term_language') as $term) {
+            $this->add_item($items, $this->item_from_language_term($term, $default));
+        }
+
         $extras = array();
         foreach ($this->slugs_from_translations() as $slug) {
             if (isset($items[$slug])) {
@@ -434,12 +440,12 @@ class Polylang_Languages
      * A language with no posts can be filtered out of get_terms even when
      * hide_empty is false. Missing rows produce an empty list, not an exception.
      *
-     * @param string $taxonomy language, post_translations, or term_translations.
+     * @param string $taxonomy language, term_language, post_translations, or term_translations.
      * @return array
      */
     private function terms_for_taxonomy($taxonomy)
     {
-        $allowed = array('language', 'post_translations', 'term_translations');
+        $allowed = array('language', 'term_language', 'post_translations', 'term_translations');
         if (!in_array($taxonomy, $allowed, true)) {
             return array();
         }
