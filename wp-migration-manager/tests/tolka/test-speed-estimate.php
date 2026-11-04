@@ -750,7 +750,7 @@ class Test_Speed_Estimate extends TestCase
         $this->assertTrue($estimate['ok']);
         $this->assertSame(856, $estimate['tolka_ms']);
         $this->assertSame(14.4, $estimate['faster_percent']);
-        $this->assertSame($benchmarks, $estimate['coefficients']);
+        $this->assertSame($this->fiveUsedCoefficients($benchmarks), $estimate['coefficients']);
 
         $decimal = Speed_Estimate::project(
             array('ok' => true, 'total_ms' => '1000.0'),
@@ -810,7 +810,9 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(14.4, $estimate['faster_percent']);
         $this->assertSame('lab', $estimate['provenance']);
         $this->assertSame('Lab note kept verbatim.', $estimate['provenance_note']);
-        $this->assertSame($benchmarks, $estimate['coefficients']);
+        $this->assertSame($this->fiveUsedCoefficients($benchmarks), $estimate['coefficients']);
+        $this->assertArrayNotHasKey('lab_note', $estimate['coefficients']);
+        $this->assertArrayNotHasKey('provenance', $estimate['coefficients']);
     }
 
     public function test_successful_estimate_copies_provenance_from_the_passed_benchmarks()
@@ -860,10 +862,10 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('14.4% faster', $estimate['faster_label']);
         $this->assertSame('field-note', $estimate['provenance']);
         $this->assertSame('This note came from the benchmarks argument. ', $estimate['provenance_note']);
-        $this->assertSame($passed['provenance'], $estimate['provenance']);
         $this->assertSame($passed['provenance_note'], $estimate['provenance_note']);
-        $this->assertSame($passed['provenance'], $estimate['coefficients']['provenance']);
-        $this->assertSame($passed['provenance_note'], $estimate['coefficients']['provenance_note']);
+        $this->assertSame($this->fiveUsedCoefficients($passed), $estimate['coefficients']);
+        $this->assertArrayNotHasKey('provenance', $estimate['coefficients']);
+        $this->assertArrayNotHasKey('provenance_note', $estimate['coefficients']);
         $this->assertNotSame(self::PROVENANCE_NOTE, $estimate['provenance_note']);
         $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
         $this->assertSame(self::PROVENANCE_NOTE, Speed_Estimate::benchmarks()['provenance_note']);
@@ -957,6 +959,45 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(14.4, $safe['faster_percent']);
         $this->assertNotFalse(json_encode($safe));
         $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
+    }
+
+    public function test_second_benchmarks_call_returns_the_same_coefficient_keys()
+    {
+        $keys = array(
+            'polylang_extra_ms_per_language',
+            'polylang_switcher_ms',
+            'polylang_extra_ms_per_script',
+            'tolka_ms_per_language',
+            'max_overhead_ratio',
+        );
+        $first = Speed_Estimate::benchmarks();
+        $second = Speed_Estimate::benchmarks();
+        $this->assertSame($keys, array_values(array_intersect($keys, array_keys($first))));
+        $this->assertSame($keys, array_values(array_intersect($keys, array_keys($second))));
+        foreach ($keys as $key) {
+            $this->assertArrayHasKey($key, $first);
+            $this->assertArrayHasKey($key, $second);
+            $this->assertSame($first[$key], $second[$key]);
+        }
+        $this->assertSame(35, $second['polylang_extra_ms_per_language']);
+        $this->assertSame(25, $second['polylang_switcher_ms']);
+        $this->assertSame(8, $second['polylang_extra_ms_per_script']);
+        $this->assertSame(6, $second['tolka_ms_per_language']);
+        $this->assertSame(0.7, $second['max_overhead_ratio']);
+
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $first
+        );
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame($this->fiveUsedCoefficients($first), $estimate['coefficients']);
+        $this->assertSame(array_keys($this->fiveUsedCoefficients($first)), array_keys($estimate['coefficients']));
+        $third = Speed_Estimate::benchmarks();
+        foreach ($keys as $key) {
+            $this->assertSame($first[$key], $third[$key]);
+            $this->assertSame($first[$key], $estimate['coefficients'][$key]);
+        }
     }
 
     public function test_zero_coefficients_do_not_invent_a_speedup()
@@ -2047,7 +2088,7 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame($expected['faster_percent'], $estimate['faster_percent']);
         $this->assertSame($expected['faster_label'], $estimate['faster_label']);
         $this->assertSame('', $estimate['error']);
-        $this->assertSame($benchmarks, $estimate['coefficients']);
+        $this->assertSame($this->fiveUsedCoefficients($benchmarks), $estimate['coefficients']);
         $this->assertSame(self::BASIS, $estimate['basis']);
         $this->assertSame(
             number_format($estimate['faster_percent'], 1, '.', '') . '% faster',
@@ -2056,6 +2097,32 @@ class Test_Speed_Estimate extends TestCase
         $this->assertMatchesRegularExpression('/^-?\d+\.\d% faster$/', $estimate['faster_label']);
         $this->assertLessThanOrEqual($estimate['current_ms'], $estimate['tolka_ms']);
         $this->assertLessThanOrEqual(100, $estimate['faster_percent']);
+    }
+
+    /**
+     * The five coefficient numbers project() uses from a benchmarks array.
+     *
+     * @param array $benchmarks
+     * @return array
+     */
+    private function fiveUsedCoefficients(array $benchmarks)
+    {
+        $used = array();
+        foreach (array(
+            'polylang_extra_ms_per_language',
+            'polylang_switcher_ms',
+            'polylang_extra_ms_per_script',
+            'tolka_ms_per_language',
+            'max_overhead_ratio',
+        ) as $key) {
+            $value = $benchmarks[$key];
+            if (is_string($value)) {
+                $value = trim($value);
+            }
+            $used[$key] = $value + 0;
+        }
+
+        return $used;
     }
 
     /**

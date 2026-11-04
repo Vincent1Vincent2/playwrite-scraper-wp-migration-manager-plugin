@@ -206,7 +206,8 @@ class Speed_Estimate
             self::faster_label($faster_percent),
             (int) $overhead,
             $benchmarks,
-            ''
+            '',
+            self::used_coefficients($per_language, $switcher_ms, $per_script, $tolka_per_language, $max_ratio)
         );
     }
 
@@ -530,12 +531,17 @@ class Speed_Estimate
      * @param float  $faster_percent
      * @param string $faster_label
      * @param int    $overhead
-     * @param array  $benchmarks
-     * @param string $error
+     * @param array       $benchmarks
+     * @param string      $error
+     * @param array|null  $coefficients
      * @return array
      */
-    private static function result($ok, $current, $tolka, $faster_percent, $faster_label, $overhead, array $benchmarks, $error)
+    private static function result($ok, $current, $tolka, $faster_percent, $faster_label, $overhead, array $benchmarks, $error, $coefficients = null)
     {
+        if (!is_array($coefficients)) {
+            $coefficients = self::json_safe_array($benchmarks);
+        }
+
         return array(
             'ok' => (bool) $ok,
             'current_ms' => (int) $current,
@@ -546,7 +552,7 @@ class Speed_Estimate
             'basis' => self::BASIS,
             'provenance' => self::copied_text($benchmarks, 'provenance'),
             'provenance_note' => self::copied_text($benchmarks, 'provenance_note'),
-            'coefficients' => self::json_safe_array($benchmarks),
+            'coefficients' => $coefficients,
             'error' => $error,
         );
     }
@@ -611,6 +617,27 @@ class Speed_Estimate
         }
 
         return $benchmarks[$key];
+    }
+
+    /**
+     * The five coefficient numbers that were used in the formula.
+     *
+     * @param int|float $per_language
+     * @param int|float $switcher_ms
+     * @param int|float $per_script
+     * @param int|float $tolka_per_language
+     * @param int|float $max_ratio
+     * @return array
+     */
+    private static function used_coefficients($per_language, $switcher_ms, $per_script, $tolka_per_language, $max_ratio)
+    {
+        return array(
+            'polylang_extra_ms_per_language' => $per_language,
+            'polylang_switcher_ms' => $switcher_ms,
+            'polylang_extra_ms_per_script' => $per_script,
+            'tolka_ms_per_language' => $tolka_per_language,
+            'max_overhead_ratio' => $max_ratio,
+        );
     }
 
     /**
