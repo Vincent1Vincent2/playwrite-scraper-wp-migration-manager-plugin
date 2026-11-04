@@ -397,6 +397,13 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-faster'), $name);
             $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-basis'), $name);
             $this->assertFalse($document->getElementById('wmm-tolka-basis')->hasAttribute('hidden'), $name);
+            $this->assertTrue($document->getElementById('wmm-tolka-speed-scope')->hasAttribute('hidden'), $name);
+            $this->assertStringContainsString('single page', $this->text($html, 'wmm-tolka-speed-scope'), $name);
+            $current_at = strpos($html, 'id="wmm-tolka-current-load"');
+            $tolka_at = strpos($html, 'id="wmm-tolka-tolka-load"');
+            $faster_at = strpos($html, 'id="wmm-tolka-faster"');
+            $this->assertLessThan($tolka_at, $current_at, $name);
+            $this->assertLessThan($faster_at, $tolka_at, $name);
             $this->assertNotSame('Unavailable', $this->text($html, 'wmm-tolka-faster'), $name);
             $this->assertNotSame('0 ms', $this->text($html, 'wmm-tolka-current-load'), $name);
             foreach ($ids as $id) {
