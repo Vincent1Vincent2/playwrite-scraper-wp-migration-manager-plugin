@@ -444,6 +444,30 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     }
 
     /**
+     * Languages can exist while no string catalogue has been saved.
+     *
+     * @return void
+     */
+    public function test_polylang_inactive_with_no_stored_strings_returns_an_empty_list_and_an_error()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = (new Polylang_Strings())->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            array('Polylang is not active on this site, and no string translations were found.'),
+            $result['errors']
+        );
+        $this->assertDoesNotWrite($db);
+    }
+
+    /**
      * @return void
      */
     public function test_a_reader_failure_keeps_polylang_data_and_hides_the_internal_error()
@@ -521,6 +545,120 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertSame('Ouvert', $result['items'][1]['translations']['fr']);
         $this->assertSame('Hours', $result['items'][0]['name']);
         $this->assertSame('Footer note', $result['items'][1]['name']);
+    }
+
+    /**
+     * The same original registered twice, and stored twice, is one string.
+     * A later catalogue row replaces the earlier translation.
+     *
+     * @return void
+     */
+    public function test_duplicate_originals_are_exported_once()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'fr' => array(
+                    array('Open daily', 'Ouvert'),
+                    array('Open daily', 'Ouvert tous les jours'),
+                ),
+            ),
+        ));
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Hours', $result['items'][0]['name']);
+        $this->assertSame('Widget', $result['items'][0]['context']);
+        $this->assertSame('Open daily', $result['items'][0]['string']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame('Ouvert tous les jours', $result['items'][0]['translations']['fr']);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array('Open daily', 'Ouvert'),
+                    array('Open daily', 'Ouvert tous les jours'),
+                )),
+            ),
+        );
+        $exported = $this->probe($db, array(), false)->export();
+        $this->assertCount(1, $exported['items']);
+        $this->assertSame('Ouvert tous les jours', $exported['items'][0]['translations']['fr']);
+        $this->assertSame('', $exported['items'][0]['translations']['en']);
+    }
+
+    /**
+     * An empty saved translation leaves that language blank and keeps the others.
+     *
+     * @return void
+     */
+    public function test_a_language_with_an_empty_translation_stays_blank()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr', 'de'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'fr' => array(array('Open daily', 'Ouvert')),
+                'de' => array(array('Open daily', '')),
+            ),
+        ));
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(
+            array(
+                'en' => '',
+                'fr' => 'Ouvert',
+                'de' => '',
+            ),
+            $result['items'][0]['translations']
+        );
+
+        $kept = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array(
+                'fr' => array(
+                    array('Open daily', 'Ouvert'),
+                    array('Open daily', ''),
+                ),
+            ),
+        ));
+        $this->assertSame('Ouvert', $kept['items'][0]['translations']['fr']);
+
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 11, 'slug' => 'fr'),
+            array('term_id' => 12, 'slug' => 'de'),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(array('Open daily', 'Ouvert'))),
+            ),
+            array(
+                'term_id' => 12,
+                'meta_value' => serialize(array(array('Open daily', ''))),
+            ),
+        );
+        $exported = $this->probe($db, array(), true)->export();
+        $this->assertSame('Ouvert', $exported['items'][0]['translations']['fr']);
+        $this->assertSame('', $exported['items'][0]['translations']['de']);
+        $this->assertCount(1, $exported['items']);
     }
 
     /**
