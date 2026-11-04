@@ -95,6 +95,9 @@ class Polylang_Strings
         }
 
         $languages = $this->language_list(isset($snapshot['languages']) ? $snapshot['languages'] : array());
+        $this->note_blank_rows(isset($snapshot['registered']) ? $snapshot['registered'] : null, $errors);
+        $this->note_blank_rows(isset($snapshot['mo']) ? $snapshot['mo'] : null, $errors);
+        $this->note_blank_rows(isset($snapshot['wpml_rows']) ? $snapshot['wpml_rows'] : null, $errors);
         $registered = $this->normalize_registered(isset($snapshot['registered']) ? $snapshot['registered'] : array());
         $items = array();
         $index = array();
@@ -130,15 +133,23 @@ class Polylang_Strings
             }
             foreach ($decoded as $pair) {
                 $known = isset($by_source[$pair['source']]) ? $by_source[$pair['source']] : array();
+                $pair_context = isset($pair['context']) && is_string($pair['context']) ? $pair['context'] : '';
+                $applied = false;
                 if ($known) {
                     foreach ($known as $key) {
                         $position = $index[$key];
+                        if ($pair_context !== '' && $items[$position]['context'] !== $pair_context) {
+                            continue;
+                        }
                         $items[$position]['translations'][$slug] = $pair['translation'];
+                        $applied = true;
                     }
+                }
+                if ($applied) {
                     continue;
                 }
                 $name = isset($pair['name']) && is_string($pair['name']) ? $pair['name'] : '';
-                $context = isset($pair['context']) && is_string($pair['context']) ? $pair['context'] : '';
+                $context = $pair_context;
                 $this->add_item(
                     $items,
                     $index,
@@ -597,6 +608,7 @@ class Polylang_Strings
                 continue;
             }
             foreach ($raw_buckets as $raw) {
+                $this->note_blank_rows($raw, $errors);
                 $decoded = $this->decode_bucket($raw);
                 if ($decoded === null) {
                     $damaged = true;
@@ -1013,6 +1025,114 @@ class Polylang_Strings
         }
 
         return $languages;
+    }
+
+    /**
+     * A row with no name and no text is not a string. Say so once.
+     *
+     * @param mixed    $raw    Registered rows or a stored catalogue.
+     * @param string[] $errors Collected customer messages.
+     * @return void
+     */
+    protected function note_blank_rows($raw, array &$errors)
+    {
+        if (is_string($raw)) {
+            $decoded = $this->decode_stored($raw);
+            if ($decoded !== null) {
+                $this->note_blank_rows($decoded, $errors);
+            }
+            return;
+        }
+        if (is_object($raw)) {
+            $vars = get_object_vars($raw);
+            if (isset($vars['entries'])) {
+                $this->note_blank_rows($vars['entries'], $errors);
+                return;
+            }
+            $raw = $vars;
+        }
+        if (!is_array($raw) || !$raw) {
+            return;
+        }
+        if (isset($raw['entries']) && (is_array($raw['entries']) || is_object($raw['entries']))) {
+            $this->note_blank_rows($raw['entries'], $errors);
+            return;
+        }
+        if (!$this->is_list($raw)) {
+            if ($this->is_string_record($raw)) {
+                if ($this->is_blank_name_and_string($raw)) {
+                    $errors[] = $this->text('A string was left out because it had no name and no text.');
+                }
+                return;
+            }
+            foreach ($raw as $value) {
+                if (is_array($value) || is_object($value)) {
+                    $this->note_blank_rows($value, $errors);
+                }
+            }
+            return;
+        }
+        if ($this->looks_like_pair($raw)) {
+            if ($this->is_blank_name_and_string($raw)) {
+                $errors[] = $this->text('A string was left out because it had no name and no text.');
+            }
+            return;
+        }
+        foreach ($raw as $row) {
+            $this->note_blank_rows($row, $errors);
+        }
+    }
+
+    /**
+     * @param array $row Candidate string row.
+     * @return bool
+     */
+    protected function is_string_record(array $row)
+    {
+        foreach (array('name', 'string', 'value', 'singular', 'original', 'source', 'context') as $key) {
+            if (array_key_exists($key, $row)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param mixed $row One string row or catalogue pair.
+     * @return bool
+     */
+    protected function is_blank_name_and_string($row)
+    {
+        if (is_object($row)) {
+            $row = get_object_vars($row);
+        }
+        if (!is_array($row)) {
+            return false;
+        }
+        if ($this->is_list($row)) {
+            $string = $this->to_text(isset($row[0]) ? $row[0] : null);
+            return $string === null || $string === '';
+        }
+
+        $name = isset($row['name']) ? $this->to_text($row['name']) : '';
+        if ($name === null) {
+            $name = '';
+        }
+        if ($name !== '') {
+            return false;
+        }
+        foreach (array('string', 'value', 'singular', 'original', 'source') as $key) {
+            if (!array_key_exists($key, $row)) {
+                continue;
+            }
+            $text = $this->to_text($row[$key]);
+            if ($text !== null && $text !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -1444,9 +1564,21 @@ class Polylang_Strings
         if ($text === '') {
             return $text;
         }
+        if (strpos($text, "\0") !== false) {
+            $text = str_replace("\0", '', $text);
+        }
+        if ($text === '') {
+            return $text;
+        }
         if (function_exists('wp_check_invalid_utf8')) {
             $clean = wp_check_invalid_utf8($text, true);
-            return is_string($clean) ? $clean : '';
+            if (!is_string($clean)) {
+                return '';
+            }
+            if (strpos($clean, "\0") !== false) {
+                $clean = str_replace("\0", '', $clean);
+            }
+            return $clean;
         }
         if (function_exists('mb_check_encoding') && mb_check_encoding($text, 'UTF-8')) {
             return $text;

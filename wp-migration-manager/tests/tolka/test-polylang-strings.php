@@ -451,6 +451,168 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     /**
      * @return void
      */
+    public function test_export_is_callable_on_an_instance()
+    {
+        $exporter = new Polylang_Strings();
+        $method = new ReflectionMethod($exporter, 'export');
+
+        $this->assertTrue($method->isPublic());
+        $this->assertFalse($method->isStatic());
+        $this->assertTrue(is_callable(array($exporter, 'export')));
+
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertArrayHasKey('items', $first);
+        $this->assertArrayHasKey('errors', $first);
+        $this->assertSame(array(), $first['items']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_html_in_a_string_and_translation_is_kept()
+    {
+        $html = "<p class=\"intro\">Hello <strong>there</strong> &amp; welcome</p>\n<script>alert(1)</script>";
+        $translated = '<p>Bonjour <em>à tous</em></p>';
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array(
+                    'name' => '<span>Greeting</span>',
+                    'string' => $html,
+                    'context' => 'theme',
+                ),
+            ),
+            'mo' => array(
+                'fr' => array(array($html, $translated)),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('<span>Greeting</span>', $result['items'][0]['name']);
+        $this->assertSame($html, $result['items'][0]['string']);
+        $this->assertSame($translated, $result['items'][0]['translations']['fr']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_null_bytes_are_removed_from_strings_and_translations()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array("f\0r"),
+            'registered' => array(
+                array(
+                    'name' => "Gre\0eting",
+                    'string' => "<p>Hel\0lo</p>",
+                    'context' => "the\0me",
+                ),
+                array(
+                    'name' => 'Empty',
+                    'string' => "\0\0",
+                    'context' => 'plugin',
+                ),
+                array(
+                    'name' => 'Hours',
+                    'string' => 'Open',
+                    'context' => 'Widget',
+                ),
+            ),
+            'mo' => array(
+                "f\0r" => array(
+                    array("<p>Hel\0lo</p>", "Bon\0jour"),
+                    array('Open', "\0"),
+                ),
+            ),
+        ));
+
+        $by_string = array();
+        foreach ($result['items'] as $item) {
+            $by_string[$item['string']] = $item;
+        }
+
+        $names = array();
+        foreach ($result['items'] as $item) {
+            $names[] = $item['name'];
+        }
+        $this->assertNotContains('Empty', $names);
+        $this->assertSame('Greeting', $by_string['<p>Hello</p>']['name']);
+        $this->assertSame('theme', $by_string['<p>Hello</p>']['context']);
+        $this->assertSame('Bonjour', $by_string['<p>Hello</p>']['translations']['fr']);
+        $this->assertSame('', $by_string['Open']['translations']['fr']);
+        $this->assertSame(array('fr'), array_keys($by_string['<p>Hello</p>']['translations']));
+        $encoded = json_encode($result);
+        $this->assertNotFalse($encoded);
+        $this->assertFalse(strpos($encoded, "\0"));
+
+        $kept = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array(
+                'fr' => array(
+                    array('Hello', 'Bonjour'),
+                    array('Hello', "\0"),
+                ),
+            ),
+        ));
+        $this->assertSame('Bonjour', $kept['items'][0]['translations']['fr']);
+    }
+
+    /**
+     * The instance export reads stored rows the same way, including markup.
+     *
+     * @return void
+     */
+    public function test_instance_export_keeps_html_and_drops_null_bytes_from_the_database()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => "f\0r"),
+        );
+        $db->option_rows = array(
+            array(
+                'option_name' => 'polylang_wpml_strings',
+                'option_value' => serialize(array(
+                    'greeting' => array(
+                        'name' => '<span>Greeting</span>',
+                        'string' => "<p>Hel\0lo</p>",
+                        'context' => 'theme',
+                    ),
+                )),
+            ),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array("<p>Hel\0lo</p>", "Bon\0jour <em>à</em>"),
+                )),
+            ),
+        );
+        $exporter = $this->probe($db, array(), true);
+        $this->assertTrue(is_callable(array($exporter, 'export')));
+
+        $result = $exporter->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('<span>Greeting</span>', $result['items'][0]['name']);
+        $this->assertSame('<p>Hello</p>', $result['items'][0]['string']);
+        $this->assertSame('Bonjour <em>à</em>', $result['items'][0]['translations']['fr']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertFalse(strpos(json_encode($result), "\0"));
+    }
+
+    /**
+     * @return void
+     */
     public function test_export_without_polylang_returns_an_empty_list_and_an_error()
     {
         $result = (new Polylang_Strings())->export();
@@ -512,7 +674,10 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Polylang is not active on this site, and no string translations were found.'),
+            array(
+                'Polylang is not active on this site, and no string translations were found.',
+                'A string was left out because it had no name and no text.',
+            ),
             $result['errors']
         );
     }
@@ -595,6 +760,123 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertSame('Ouvert', $result['items'][1]['translations']['fr']);
         $this->assertSame('Hours', $result['items'][0]['name']);
         $this->assertSame('Footer note', $result['items'][1]['name']);
+    }
+
+    /**
+     * The same original in two groups is two strings. Polylang still stores
+     * the translation against the original text, so both groups receive it.
+     *
+     * @return void
+     */
+    public function test_same_string_with_different_contexts_stays_two_items()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Footer'),
+            ),
+            'mo' => array(
+                'fr' => array(array('Open daily', 'Ouvert')),
+            ),
+        ));
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(2, $result['items']);
+        $this->assertSame('Open daily', $result['items'][0]['string']);
+        $this->assertSame('Open daily', $result['items'][1]['string']);
+        $this->assertSame('Widget', $result['items'][0]['context']);
+        $this->assertSame('Footer', $result['items'][1]['context']);
+        $this->assertSame('Ouvert', $result['items'][0]['translations']['fr']);
+        $this->assertSame('Ouvert', $result['items'][1]['translations']['fr']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame('', $result['items'][1]['translations']['en']);
+    }
+
+    /**
+     * A stored row that names its group fills only that group.
+     *
+     * @return void
+     */
+    public function test_a_context_specific_translation_does_not_fill_the_other_context()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Footer'),
+            ),
+            'mo' => array(
+                'fr' => array(array(
+                    'singular' => 'Open daily',
+                    'translations' => array('Ouvert'),
+                    'context' => 'Widget',
+                    'name' => 'Hours',
+                )),
+            ),
+        ));
+
+        $by_context = array();
+        foreach ($result['items'] as $item) {
+            $by_context[$item['context']] = $item['translations']['fr'];
+        }
+        $this->assertCount(2, $by_context);
+        $this->assertSame('Ouvert', $by_context['Widget']);
+        $this->assertSame('', $by_context['Footer']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * A name without text is not a string, and it is not the nameless blank row.
+     *
+     * @return void
+     */
+    public function test_a_named_row_with_no_text_is_left_out()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'registered' => array(
+                array('name' => 'Hours', 'string' => '', 'context' => 'Widget'),
+                array('name' => 'Hours', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('Open daily', $result['items'][0]['string']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_row_with_no_name_and_no_text_is_left_out()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array('name' => '', 'string' => '', 'context' => 'Widget'),
+                array('name' => '', 'string' => 'Open daily', 'context' => 'Widget'),
+            ),
+            'mo' => array(
+                'fr' => array(
+                    array('', ''),
+                    array('Open daily', 'Ouvert'),
+                ),
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('', $result['items'][0]['name']);
+        $this->assertSame('Open daily', $result['items'][0]['string']);
+        $this->assertSame('Ouvert', $result['items'][0]['translations']['fr']);
+        $this->assertSame(
+            array('A string was left out because it had no name and no text.'),
+            $result['errors']
+        );
     }
 
     /**
@@ -767,10 +1049,13 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertSame(array(), $result['errors']);
         $this->assertCount(1, $result['items']);
         $this->assertSame('Kept', $result['items'][0]['string']);
         $this->assertSame('Garde', $result['items'][0]['translations']['fr']);
+        $this->assertSame(
+            array('A string was left out because it had no name and no text.'),
+            $result['errors']
+        );
     }
 
     /**
@@ -1052,7 +1337,10 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             $by_string[$item['string']] = $item;
         }
 
-        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(
+            array('A string was left out because it had no name and no text.'),
+            $result['errors']
+        );
         $this->assertSame('Bonjour', $by_string['Hello']['translations']['fr']);
         $this->assertSame('', $by_string['Hello']['translations']['en']);
         $this->assertSame('Option', $by_string['Option only']['translations']['fr']);
@@ -1233,7 +1521,10 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $result = $this->probe($db)->export();
 
         $this->assertNotEmpty($result['items']);
-        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(
+            array('A string was left out because it had no name and no text.'),
+            $result['errors']
+        );
     }
 
     /**
