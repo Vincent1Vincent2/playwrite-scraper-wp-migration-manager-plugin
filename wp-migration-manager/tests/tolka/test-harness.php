@@ -1016,6 +1016,27 @@ class Harness_Test extends Tolka_Test_Case
     use Tolka_Contract_Tests;
 
     /**
+     * WordPress function names the harness must not define.
+     *
+     * @return string[]
+     */
+    private function wordpress_functions()
+    {
+        return array(
+            'add_action',
+            'add_filter',
+            'wp_remote_get',
+            'wp_remote_post',
+            'get_option',
+            'update_option',
+            'home_url',
+            'wp_insert_post',
+            'wp_send_json_success',
+            'plugin_dir_path',
+        );
+    }
+
+    /**
      * The suite must not boot WordPress or pretend Polylang is installed.
      */
     public function test_wordpress_is_not_loaded()
@@ -1024,13 +1045,188 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertTrue(defined('WMM_TOLKA_TEST_BOOTSTRAP'));
         $this->assertFalse(is_file(ABSPATH . 'wp-load.php'));
         $this->assertFalse(is_file(ABSPATH . 'wp-settings.php'));
-        $this->assertFalse(function_exists('add_action'));
-        $this->assertFalse(function_exists('wp_remote_get'));
-        $this->assertFalse(function_exists('get_option'));
-        $this->assertFalse(function_exists('home_url'));
+        $this->assertFalse($this->included_wordpress_bootstrap());
+
+        foreach ($this->wordpress_functions() as $function) {
+            $this->assert_not_defined_by_bootstrap($function);
+        }
+
         $this->assertFalse(function_exists('pll_languages_list'));
         $this->assertFalse(class_exists('PLL', false));
         $this->assertFalse(class_exists('Polylang', false));
+    }
+
+    /**
+     * The bootstrap source does not include WordPress or declare its functions.
+     */
+    public function test_bootstrap_source_does_not_load_wordpress()
+    {
+        $source = file_get_contents(WMM_TOLKA_TEST_DIR . '/bootstrap.php');
+
+        $this->assertTrue(is_string($source));
+        $this->assertStringContainsString("if (!defined('ABSPATH'))", $source);
+        $this->assertFalse(
+            (bool) preg_match('/\b(require|include)(_once)?\b[^;]*wp-load\.php/', $source),
+            'The bootstrap must not load wp-load.php.'
+        );
+        $this->assertFalse(
+            (bool) preg_match('/\b(require|include)(_once)?\b[^;]*wp-settings\.php/', $source),
+            'The bootstrap must not load wp-settings.php.'
+        );
+        $this->assertFalse(
+            (bool) preg_match('/function\s+wp_remote_get\s*\(/', $source),
+            'The bootstrap must not define wp_remote_get.'
+        );
+        $this->assertFalse((bool) preg_match('/function\s+add_action\s*\(/', $source));
+        $this->assertFalse((bool) preg_match('/function\s+get_option\s*\(/', $source));
+        $this->assertFalse((bool) preg_match('/function\s+home_url\s*\(/', $source));
+    }
+
+    /**
+     * An ABSPATH that already exists is left alone, and WordPress stays out.
+     */
+    public function test_bootstrap_defines_abspath_only_when_it_is_missing()
+    {
+        $sentinel = '/wmm-tolka-abspath-sentinel-' . getmypid() . '/';
+        $probe = $this->wordpress_probe('define(\'ABSPATH\', ' . var_export($sentinel, true) . ');');
+
+        $this->assertSame(0, $probe['status'], $probe['output']);
+        $this->assertSame($sentinel, $probe['abspath']);
+        $this->assertSame('', $probe['bootstrap_functions']);
+        $this->assertFalse($probe['loaded']);
+    }
+
+    /**
+     * A fresh process gets a plugin ABSPATH and still does not boot WordPress.
+     */
+    public function test_fresh_bootstrap_sets_abspath_without_wordpress()
+    {
+        $probe = $this->wordpress_probe('');
+
+        $this->assertSame(0, $probe['status'], $probe['output']);
+        $this->assertSame(WMM_TOLKA_PLUGIN_DIR . '/', $probe['abspath']);
+        $this->assertSame('', $probe['bootstrap_functions']);
+        $this->assertFalse($probe['loaded']);
+        $this->assertFalse(is_file($probe['abspath'] . 'wp-load.php'));
+    }
+
+    /**
+     * Loading the bootstrap again must not replace ABSPATH or add WordPress APIs.
+     */
+    public function test_loading_the_bootstrap_twice_does_not_define_wordpress()
+    {
+        $before = ABSPATH;
+        require WMM_TOLKA_TEST_DIR . '/bootstrap.php';
+        $this->assertSame($before, ABSPATH);
+        $this->assertFalse($this->included_wordpress_bootstrap());
+
+        foreach ($this->wordpress_functions() as $function) {
+            $this->assert_not_defined_by_bootstrap($function);
+        }
+    }
+
+    /**
+     * A WordPress API must not be declared by the test bootstrap.
+     *
+     * @param string $function Function name.
+     */
+    private function assert_not_defined_by_bootstrap($function)
+    {
+        if (!function_exists($function)) {
+            $this->assertFalse(function_exists($function), $function);
+            return;
+        }
+
+        $file = str_replace('\\', '/', (string) (new \ReflectionFunction($function))->getFileName());
+        $bootstrap = 'tests/tolka/bootstrap.php';
+        $this->assertFalse(
+            substr($file, -strlen($bootstrap)) === $bootstrap,
+            $function . ' must not be defined by the Tolka test bootstrap.'
+        );
+    }
+
+    /**
+     * Whether this process included the WordPress bootstrap.
+     *
+     * @return bool
+     */
+    private function included_wordpress_bootstrap()
+    {
+        foreach (get_included_files() as $file) {
+            $basename = basename($file);
+
+            if ($basename === 'wp-load.php' || $basename === 'wp-settings.php') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Run the bootstrap in a clean process and report WordPress leakage.
+     *
+     * @param string $preamble PHP statements to run before the bootstrap.
+     * @return array
+     */
+    private function wordpress_probe($preamble)
+    {
+        $runner = $this->make_temp_dir() . '/runner.php';
+        $functions = var_export($this->wordpress_functions(), true);
+        $script = "<?php\n"
+            . $preamble . "\n"
+            . 'require ' . var_export(WMM_TOLKA_TEST_DIR . '/bootstrap.php', true) . ";\n"
+            . '$from_bootstrap = array();' . "\n"
+            . 'foreach (' . $functions . ' as $function) {' . "\n"
+            . '    if (!function_exists($function)) {' . "\n"
+            . '        continue;' . "\n"
+            . '    }' . "\n"
+            . '    $file = str_replace(\'\\\\\', \'/\', (string) (new ReflectionFunction($function))->getFileName());' . "\n"
+            . '    if (substr($file, -strlen(\'tests/tolka/bootstrap.php\')) === \'tests/tolka/bootstrap.php\') {' . "\n"
+            . '        $from_bootstrap[] = $function;' . "\n"
+            . '    }' . "\n"
+            . '}' . "\n"
+            . '$loaded = false;' . "\n"
+            . 'foreach (get_included_files() as $file) {' . "\n"
+            . '    $basename = basename($file);' . "\n"
+            . '    if ($basename === \'wp-load.php\' || $basename === \'wp-settings.php\') {' . "\n"
+            . '        $loaded = true;' . "\n"
+            . '    }' . "\n"
+            . '}' . "\n"
+            . 'echo \'ABSPATH=\' . ABSPATH . "\n";' . "\n"
+            . 'echo \'BOOTFUNCS=\' . implode(\',\', $from_bootstrap) . "\n";' . "\n"
+            . 'echo \'WPLOAD=\' . ($loaded ? \'1\' : \'0\') . "\n";' . "\n";
+        file_put_contents($runner, $script);
+
+        $output = array();
+        $status = 1;
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' 2>&1', $output, $status);
+        $text = implode("\n", $output);
+        $abspath = '';
+        $bootstrap_functions = 'missing';
+        $loaded = true;
+
+        foreach ($output as $line) {
+            if (strpos($line, 'ABSPATH=') === 0) {
+                $abspath = substr($line, strlen('ABSPATH='));
+            }
+
+            if (strpos($line, 'BOOTFUNCS=') === 0) {
+                $bootstrap_functions = substr($line, strlen('BOOTFUNCS='));
+            }
+
+            if (strpos($line, 'WPLOAD=') === 0) {
+                $loaded = substr($line, strlen('WPLOAD=')) === '1';
+            }
+        }
+
+        return array(
+            'status' => $status,
+            'output' => $text,
+            'abspath' => $abspath,
+            'bootstrap_functions' => $bootstrap_functions,
+            'loaded' => $loaded,
+        );
     }
 
     /**
@@ -1067,8 +1263,11 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertSame('.php', $directories->item(0)->getAttribute('suffix'));
 
         $xml = file_get_contents($path);
-        $this->assertStringNotContainsString('wp-load.php', $xml);
         $this->assertStringNotContainsString('WP_TESTS_DIR', $xml);
+        $this->assertFalse(
+            (bool) preg_match('/\b(require|include)(_once)?\b[^;]*wp-load\.php/', $xml),
+            'phpunit.xml.dist must not load wp-load.php.'
+        );
     }
 
     /**

@@ -9,8 +9,9 @@
  * wmm_tolka_skip_without_class('Speed_Estimate') from the test method.
  * Run it from wp-migration-manager with: phpunit -c phpunit.xml.dist
  *
- * ABSPATH is defined so class files that keep the plugin's direct-access
- * guard can load. WordPress functions are not defined.
+ * ABSPATH is defined only when it is missing, so class files that keep the
+ * plugin's direct-access guard can load. This file does not load wp-load.php
+ * and does not define WordPress functions such as wp_remote_get.
  *
  * PHPUnit 10 and 11 only accept a class whose name matches the file name.
  * For that process, each tests/tolka/test-*.php file is linked to a
