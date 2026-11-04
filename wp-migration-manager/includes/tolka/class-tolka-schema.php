@@ -60,8 +60,14 @@ class Tolka_Schema
         }
 
         $stamp = strtotime($value);
+        if ($stamp === false) {
+            return false;
+        }
 
-        return $stamp !== false;
+        $zulu = gmdate('Y-m-d\TH:i:s\Z', $stamp);
+        $offset = gmdate('Y-m-d\TH:i:s\+00:00', $stamp);
+
+        return $value === $zulu || $value === $offset;
     }
 
     /**

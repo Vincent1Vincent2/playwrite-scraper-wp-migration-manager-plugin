@@ -164,6 +164,22 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
             $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
         );
+
+        $this->assertFalse(Tolka_Schema::is_gmt_timestamp('2020-13-40T00:00:00Z'));
+        $before_invalid = time();
+        $invalid = Tolka_Writer::write(array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => '2020-13-40T00:00:00Z',
+        ));
+        $after_invalid = time();
+        $fixed = $GLOBALS['wmm_tolka_schema_driver']['stored_package']['generated_at'];
+
+        $this->assertTrue($invalid['ok']);
+        $this->assertNotSame('2020-13-40T00:00:00Z', $fixed);
+        $this->assertTrue(Tolka_Schema::is_gmt_timestamp($fixed));
+        $this->assertGreaterThanOrEqual($before_invalid, strtotime($fixed));
+        $this->assertLessThanOrEqual($after_invalid, strtotime($fixed));
     }
 
     public function test_writer_stores_gmt_timestamp_and_leaves_polylang_option()
