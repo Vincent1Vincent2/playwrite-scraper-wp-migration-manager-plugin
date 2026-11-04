@@ -525,6 +525,27 @@ PHP
         $this->assertSame(9, $by_slug['no']['term_id']);
     }
 
+    public function test_term_language_rows_fill_a_missing_language_term()
+    {
+        $db = new Polylang_Languages_Test_Db();
+        $db->option_value = serialize(array('default_lang' => 'fr'));
+        $db->term_language_rows = array(
+            $this->language_term(21, 'Français', 'fr', 'fr_FR', 'fr', 0, 0),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('fr', $result['items'][0]['slug']);
+        $this->assertSame('Français', $result['items'][0]['name']);
+        $this->assertSame('fr_FR', $result['items'][0]['locale']);
+        $this->assertSame('fr', $result['items'][0]['flag']);
+        $this->assertSame(21, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_translation_group_can_supply_the_default_language()
     {
         $db = new Polylang_Languages_Test_Db();
@@ -1742,6 +1763,8 @@ class Polylang_Languages_Test_Db
 
     public $language_rows = array();
 
+    public $term_language_rows = array();
+
     public $post_translation_rows = array();
 
     public $term_translation_rows = array();
@@ -1761,6 +1784,9 @@ class Polylang_Languages_Test_Db
     {
         $this->queries[] = $query;
 
+        if (strpos($query, "'term_language'") !== false) {
+            return $this->term_language_rows;
+        }
         if (strpos($query, "'language'") !== false) {
             if ($this->language_fails) {
                 return null;
