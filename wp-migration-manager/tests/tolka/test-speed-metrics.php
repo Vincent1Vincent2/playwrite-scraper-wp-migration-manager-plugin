@@ -351,6 +351,59 @@ HTML;
         $this->assertSame(2, $result['language_count']);
     }
 
+    public function test_five_lang_items_do_not_raise_language_count_above_hreflang()
+    {
+        $items = '';
+
+        for ($i = 0; $i < 5; $i++) {
+            $items .= '<li class="menu-item lang-item current"><a href="/page-' . $i . '/">Page</a></li>';
+        }
+
+        $one = $this->analyze('<link rel="alternate" hreflang="en" href="/"><ul>' . $items . '</ul>');
+        $this->assertTrue($one['has_polylang_switcher']);
+        $this->assertSame(1, $one['hreflang_count']);
+        $this->assertSame(1, $one['language_count']);
+
+        $three = $this->analyze('<link hreflang="en" href="/"><link hreflang="sv" href="/sv/"><link hreflang="de" href="/de/"><ul>' . $items . '</ul>');
+        $this->assertTrue($three['has_polylang_switcher']);
+        $this->assertSame(3, $three['hreflang_count']);
+        $this->assertSame(3, $three['language_count']);
+
+        $repeated = '<link rel="alternate" hreflang="x-default" href="/">';
+
+        for ($i = 0; $i < 5; $i++) {
+            $code = ($i % 2 === 0) ? 'en' : 'sv';
+            $repeated .= '<li class="menu-item lang-item current"><a hreflang="' . $code . '" href="/' . $code . '/">' . $code . '</a></li>';
+        }
+
+        $duplicates = $this->analyze($repeated);
+        $this->assertTrue($duplicates['has_polylang_switcher']);
+        $this->assertSame(2, $duplicates['hreflang_count']);
+        $this->assertSame(2, $duplicates['language_count']);
+
+        $defaults = '';
+
+        for ($i = 0; $i < 5; $i++) {
+            $defaults .= '<li class="menu-item lang-item current"><a hreflang="x-default" href="/">Home</a></li>';
+        }
+
+        $only_default = $this->analyze('<link rel="alternate" hreflang="en" href="/">' . $defaults);
+        $this->assertTrue($only_default['has_polylang_switcher']);
+        $this->assertSame(1, $only_default['hreflang_count']);
+        $this->assertSame(1, $only_default['language_count']);
+
+        $plain = '';
+
+        for ($i = 0; $i < 5; $i++) {
+            $plain .= '<li id="menu-item-' . $i . '" class="menu-item current-menu-item"><a href="/lang-item/' . $i . '/">Item</a></li>';
+        }
+
+        $ordinary = $this->analyze($plain);
+        $this->assertFalse($ordinary['has_polylang_switcher']);
+        $this->assertSame(0, $ordinary['hreflang_count']);
+        $this->assertSame(1, $ordinary['language_count']);
+    }
+
     public function test_menu_lang_item_counts_once_not_per_item()
     {
         $items = '';
