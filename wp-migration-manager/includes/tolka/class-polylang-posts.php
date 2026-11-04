@@ -927,7 +927,11 @@ class Polylang_Posts
     {
         $union = $stored;
         foreach ($from_api as $lang => $post_id) {
-            $union[$lang] = (int) $post_id;
+            $post_id = (int) $post_id;
+            if ($post_id <= 0) {
+                continue;
+            }
+            $union[$lang] = $post_id;
         }
         return $union;
     }
@@ -1382,6 +1386,12 @@ class Polylang_Posts
             }
             $added = 0;
             foreach ($batch as $post_id) {
+                if (is_object($post_id) && isset($post_id->ID)) {
+                    $post_id = $post_id->ID;
+                }
+                if (!is_numeric($post_id)) {
+                    continue;
+                }
                 $post_id = (int) $post_id;
                 if ($post_id <= 0 || isset($collected[$post_id])) {
                     continue;
