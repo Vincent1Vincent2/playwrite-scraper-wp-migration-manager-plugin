@@ -337,6 +337,35 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($before, $after);
     }
 
+    public function test_polylang_named_folder_without_php_is_not_installed(): void
+    {
+        if (function_exists('pll_languages_list') || class_exists('PLL', false) || class_exists('Polylang', false)) {
+            $this->markTestSkipped('Polylang is loaded in this process.');
+        }
+
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/readme.txt', "Polylang\n");
+        $this->write_plugin($root, 'notes/polylang.txt', "not a plugin\n");
+        $link = $root . '/polylang.php';
+        symlink($root . '/missing-polylang-target.php', $link);
+        Polylang_Detector_Fixture::$directories = array($root);
+
+        $status = Polylang_Detector_Fixture::status();
+        $again = Polylang_Detector_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '',
+                'errors' => array(self::INACTIVE_ABSENT),
+            ),
+            $status
+        );
+        $this->assertSame($status, $again);
+        $this->assertCount(1, $status['errors']);
+        $this->assertSame(array(), Polylang_Detector_Api_Fixture::expose_warnings());
+    }
+
     public function test_inactive_without_plugin_asks_the_admin_to_install(): void
     {
         Polylang_Detector_Fixture::$directories = array($this->temp_dir());
