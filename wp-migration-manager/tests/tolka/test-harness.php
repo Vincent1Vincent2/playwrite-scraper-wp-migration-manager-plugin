@@ -2053,13 +2053,13 @@ class Harness_Test extends Tolka_Test_Case
     }
 
     /**
-     * An unreadable class file tells the reader how to fix it.
+     * An unreadable class file skips with a finished sentence and does not abort.
      */
-    public function test_unreadable_class_file_explains_how_to_fix_it()
+    public function test_unreadable_class_file_skips_with_a_finished_sentence()
     {
         $directory = $this->make_temp_dir();
-        $file = $directory . '/class-secret.php';
-        file_put_contents($file, "<?php\nclass Secret_Probe {}\n");
+        $file = $directory . '/class-unreadable-shell.php';
+        file_put_contents($file, "<?php\nnamespace WMM\\Tolka;\nclass Unreadable_Shell {}\n");
         chmod($file, 0000);
 
         if (is_readable($file)) {
@@ -2067,15 +2067,85 @@ class Harness_Test extends Tolka_Test_Case
             $this->markTestSkipped('This environment can still read a file with mode 000, so the unreadable-file test was skipped.');
         }
 
+        $previous = wmm_tolka_load_errors();
+
         try {
-            wmm_tolka_load_classes($directory);
-            $this->fail('An unreadable class file should stop the suite with a clear message.');
-        } catch (RuntimeException $error) {
-            $this->assertStringContainsString('could not read', $error->getMessage());
-            $this->assertStringContainsString('class-secret.php', $error->getMessage());
-            $this->assertStringContainsString('readable', $error->getMessage());
+            $loaded = wmm_tolka_load_classes($directory);
+            $found = false;
+
+            foreach ($loaded as $path) {
+                if (basename($path) === 'class-unreadable-shell.php') {
+                    $found = true;
+                }
+            }
+
+            $this->assertFalse($found);
+            $this->assertFalse(class_exists('WMM\\Tolka\\Unreadable_Shell', false));
+
+            try {
+                wmm_tolka_skip_without_class('Unreadable_Shell');
+                $this->fail('An unreadable class file should skip the test.');
+            } catch (Throwable $error) {
+                $this->assertTrue($this->is_skip_exception($error), get_class($error));
+                $this->assertStringContainsString('could not read', $error->getMessage());
+                $this->assertStringContainsString('class-unreadable-shell.php', $error->getMessage());
+                $this->assertStringContainsString('readable', $error->getMessage());
+                $this->assertStringContainsString('skipped', strtolower($error->getMessage()));
+                $this->assert_finished_sentence($error->getMessage(), 'unreadable file');
+            }
         } finally {
             chmod($file, 0644);
+            $GLOBALS['wmm_tolka_load_errors'] = $previous;
+        }
+    }
+
+    /**
+     * Loading the bootstrap leaves the process in the directory it started in.
+     */
+    public function test_loading_the_bootstrap_does_not_change_the_working_directory()
+    {
+        $before = getcwd();
+        require WMM_TOLKA_TEST_DIR . '/bootstrap.php';
+        $this->assertSame($before, getcwd());
+
+        $workdir = $this->make_temp_dir();
+        $runner = $workdir . '/runner.php';
+        $script = "<?php\n"
+            . 'chdir(' . var_export($workdir, true) . ");\n"
+            . 'require ' . var_export(WMM_TOLKA_TEST_DIR . '/bootstrap.php', true) . ";\n"
+            . "echo getcwd();\n";
+        file_put_contents($runner, $script);
+
+        $output = array();
+        $status = 1;
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' 2>&1', $output, $status);
+        $text = implode("\n", $output);
+
+        $this->assertSame(0, $status, $text);
+        $this->assertSame(realpath($workdir), trim($text));
+    }
+
+    /**
+     * A class file that changes directory does not leave the suite there.
+     */
+    public function test_a_class_file_cannot_change_the_working_directory()
+    {
+        $directory = $this->make_temp_dir();
+        $away = $this->make_temp_dir();
+        file_put_contents(
+            $directory . '/class-chdir-shell.php',
+            "<?php\nnamespace WMM\\Tolka;\nchdir(" . var_export($away, true) . ");\nclass Chdir_Shell {}\n"
+        );
+        $before = getcwd();
+
+        try {
+            wmm_tolka_load_classes($directory);
+            $this->assertSame($before, getcwd());
+            $this->assertTrue(class_exists('WMM\\Tolka\\Chdir_Shell', false));
+        } finally {
+            if (getcwd() !== $before && $before !== false) {
+                chdir($before);
+            }
         }
     }
 

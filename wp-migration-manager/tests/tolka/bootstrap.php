@@ -567,13 +567,51 @@ if (!function_exists('wmm_tolka_class_directory_is_missing')) {
     }
 }
 
+if (!function_exists('wmm_tolka_record_load_error')) {
+    /**
+     * Remember a class file that could not be used, without stopping the suite.
+     *
+     * @param string $basename File name.
+     * @param string $sentence Finished explanation.
+     * @return void
+     */
+    function wmm_tolka_record_load_error($basename, $sentence)
+    {
+        if (!isset($GLOBALS['wmm_tolka_load_errors']) || !is_array($GLOBALS['wmm_tolka_load_errors'])) {
+            $GLOBALS['wmm_tolka_load_errors'] = array();
+        }
+
+        $GLOBALS['wmm_tolka_load_errors'][$basename] = $sentence;
+    }
+}
+
+if (!function_exists('wmm_tolka_restore_cwd')) {
+    /**
+     * Put the process back in the directory it started from.
+     *
+     * @param string|false $cwd Directory from getcwd(), or false when unknown.
+     * @return void
+     */
+    function wmm_tolka_restore_cwd($cwd)
+    {
+        if ($cwd === false) {
+            return;
+        }
+
+        if (getcwd() !== $cwd) {
+            chdir($cwd);
+        }
+    }
+}
+
 if (!function_exists('wmm_tolka_load_classes')) {
     /**
      * Require class-*.php files from the Tolka include directory.
      *
      * A missing directory is an empty state and loads nothing. A file that
      * exists but cannot be read, or that has a syntax error, stops the suite
-     * with a clear message. A file that hits a missing WordPress API while it
+     * with a clear message. A class file that cannot be read is recorded, and
+     * the test that needs it skips. A file that hits a missing WordPress API while it
      * is loading is recorded, and tests that need its class can skip. A file
      * that loads but does not define the class its name promises is recorded
      * the same way, and the suite keeps running.
@@ -631,9 +669,11 @@ if (!function_exists('wmm_tolka_load_classes')) {
             }
 
             if (!is_readable($file)) {
-                throw new RuntimeException(
-                    'The Tolka test bootstrap could not read ' . $file . '. Make that class file readable and run the suite again.'
+                wmm_tolka_record_load_error(
+                    basename($file),
+                    'The bootstrap could not read ' . basename($file) . '. Make that class file readable and run the suite again.'
                 );
+                continue;
             }
 
             $real = realpath($file);
@@ -641,6 +681,8 @@ if (!function_exists('wmm_tolka_load_classes')) {
             if ($real !== false) {
                 $file = $real;
             }
+
+            $cwd = getcwd();
 
             try {
                 require_once $file;
@@ -651,10 +693,6 @@ if (!function_exists('wmm_tolka_load_classes')) {
                     $error
                 );
             } catch (Throwable $error) {
-                if (!isset($GLOBALS['wmm_tolka_load_errors']) || !is_array($GLOBALS['wmm_tolka_load_errors'])) {
-                    $GLOBALS['wmm_tolka_load_errors'] = array();
-                }
-
                 $detail = wmm_tolka_finish_sentence($error->getMessage());
                 $sentence = 'The bootstrap could not finish loading ' . basename($file) . '.';
 
@@ -662,8 +700,10 @@ if (!function_exists('wmm_tolka_load_classes')) {
                     $sentence .= ' ' . $detail;
                 }
 
-                $GLOBALS['wmm_tolka_load_errors'][basename($file)] = $sentence;
+                wmm_tolka_record_load_error(basename($file), $sentence);
                 continue;
+            } finally {
+                wmm_tolka_restore_cwd($cwd);
             }
 
             $expected = wmm_tolka_expected_class(basename($file));
@@ -683,5 +723,8 @@ if (!function_exists('wmm_tolka_load_classes')) {
     }
 }
 
+$wmm_tolka_cwd = getcwd();
 wmm_tolka_rewire_test_files();
 wmm_tolka_load_classes();
+wmm_tolka_restore_cwd($wmm_tolka_cwd);
+unset($wmm_tolka_cwd);
