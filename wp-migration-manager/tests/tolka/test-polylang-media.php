@@ -2004,6 +2004,107 @@ class Test_Polylang_Media extends TestCase
         $this->assertStringNotContainsString("\0", $second['items'][0]['title']['fr']);
     }
 
+    public function test_second_export_keeps_a_latin1_swedish_file_name_and_a_blank_path()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('get_posts') || function_exists('get_post_meta') || function_exists('pll_get_post_translations')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $stored_file = "2024/05/br\xF6d-\xE5\xE4.jpg";
+        $GLOBALS['wpdb'] = new class($stored_file) {
+            public $posts = 'wp_posts';
+            public $terms = 'wp_terms';
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $term_relationships = 'wp_term_relationships';
+            public $options = 'wp_options';
+            public $postmeta = 'wp_postmeta';
+            public $last_error = '';
+            private $stored_file;
+
+            public function __construct($stored_file)
+            {
+                $this->stored_file = $stored_file;
+            }
+
+            public function prepare($query, ...$args)
+            {
+                foreach ($args as $arg) {
+                    $replacement = is_int($arg) ? (string) $arg : "'" . (string) $arg . "'";
+                    $query = preg_replace('/%[sd]/', $replacement, $query, 1);
+                }
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                if (strpos($query, 'option_name') !== false) {
+                    return serialize(array('default_lang' => 'sv'));
+                }
+                return '8';
+            }
+
+            public function get_results($query, $output = null)
+            {
+                unset($output);
+                if (strpos($query, 'AS attachment_id') !== false) {
+                    return array(
+                        array('attachment_id' => 40, 'language_slug' => 'sv'),
+                        array('attachment_id' => 41, 'language_slug' => 'en'),
+                    );
+                }
+                if (strpos($query, 'description') !== false) {
+                    return array();
+                }
+                if (strpos($query, 'post_title') !== false) {
+                    return array(
+                        array('ID' => 40, 'post_title' => 'Bröd'),
+                        array('ID' => 41, 'post_title' => 'Empty'),
+                    );
+                }
+                if (strpos($query, 'meta_value') !== false) {
+                    return array(
+                        array('post_id' => 40, 'meta_key' => '_wp_attached_file', 'meta_value' => $this->stored_file),
+                        array('post_id' => 40, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Bröd'),
+                        array('post_id' => 41, 'meta_key' => '_wp_attached_file', 'meta_value' => '   '),
+                        array('post_id' => 41, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Saknas'),
+                    );
+                }
+                if (strpos($query, 'language_slug') !== false) {
+                    return array(
+                        array('language_slug' => 'sv'),
+                        array('language_slug' => 'en'),
+                    );
+                }
+                if (strpos($query, 'post_type') !== false) {
+                    return array(
+                        array('ID' => 40),
+                        array('ID' => 41),
+                    );
+                }
+                return array();
+            }
+        };
+
+        try {
+            $media = new Polylang_Media();
+            $first = $media->export();
+            $second = $media->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame($first, $second);
+        $this->assertSame('2024/05/bröd-åä.jpg', $second['items'][0]['file']);
+        $this->assertStringNotContainsString("\xF6", $second['items'][0]['file']);
+        $this->assertSame('', $second['items'][1]['file']);
+        $this->assertCount(1, $second['errors']);
+        $this->assertCustomerSentence($second['errors'][0]);
+        $this->assertSame(
+            'One media item has no file path and was exported with an empty file. Nothing was changed.',
+            $second['errors'][0]
+        );
+    }
+
     public function test_swedish_letters_are_kept_in_alt_text_titles_and_file_names()
     {
         $file = '2024/05/Skärgård.jpg';
