@@ -1078,7 +1078,11 @@ function wmm_tolka_render_fallback_wizard()
     );
     echo '</p>';
     echo '<p class="wmm-tolka-hint" id="wmm-tolka-run-hint">';
-    echo esc_html__('Running the migration writes a Tolka package and translation meta. Polylang content, terms, and settings stay in place.', 'migration-manager');
+    if (isset($gaps['run'])) {
+        echo esc_html($gaps['run'] . ' ' . __('Nothing was changed.', 'migration-manager'));
+    } else {
+        echo esc_html__('Running the migration writes a Tolka package and translation meta. Polylang content, terms, and settings stay in place.', 'migration-manager');
+    }
     echo '</p>';
 
     echo '<section class="wmm-tolka-section" aria-labelledby="wmm-tolka-speed-heading">';

@@ -602,6 +602,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('A speed estimate is not available on this install yet.', $html);
             $this->assertStringContainsString('Migration preview is not available on this install yet.', $html);
             $this->assertStringContainsString('Running the migration is not available on this install yet.', $html);
+            $this->assertStringNotContainsString('writes a Tolka package', $html);
             $this->assertStringNotContainsString('No measurement yet.', $html);
             $this->assertStringNotContainsString('Nothing has been previewed yet.', $html);
             $this->assertStringNotContainsString('No migration has been run from this screen yet.', $html);
@@ -625,6 +626,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('No migration has been run from this screen yet.', $html);
             $this->assertSame(0, substr_count($html, ' disabled '));
             $this->assertStringContainsString('button-primary', $html);
+            $this->assertStringContainsString('writes a Tolka package', $html);
 
             $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/assets/';
             if (!is_dir($directory)) {
