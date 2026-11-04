@@ -164,6 +164,16 @@ class Polylang_Posts_Fixture extends Polylang_Posts
     }
 }
 
+class Polylang_Posts_Language_Fixture extends Polylang_Posts_Fixture
+{
+    public $actual = array();
+
+    protected function actual_languages(array $ids)
+    {
+        return $this->actual;
+    }
+}
+
 class Polylang_Posts_Api_Fixture extends Polylang_Posts
 {
     public $default_lang = 'en';
@@ -684,9 +694,56 @@ class Polylang_Posts_Test extends TestCase
         );
 
         $result = $exporter->export();
-        $this->assertSame(array(), $result['errors']);
         $this->assertSame(array('en', 'de'), array_keys($result['items'][0]['translations']));
         $this->assertSame(12, $result['items'][0]['translations']['en']['id']);
+        $this->assertSame(
+            array('Post 12 was listed as both en and de-extra in the same translation group. It was exported as en.'),
+            $result['errors']
+        );
+    }
+
+    public function test_stale_stored_language_is_replaced_with_the_posts_language()
+    {
+        $exporter = new Polylang_Posts_Language_Fixture();
+        $exporter->default_lang = 'sv';
+        $exporter->maps = array(
+            array('en' => 5, 'de' => 6),
+        );
+        $exporter->actual = array(5 => 'sv', 6 => 'de');
+        $exporter->posts = array(
+            5 => $this->record(5, 'post', 'Utkast', 'utkast', 'draft', '', 'Ej publicerad'),
+            6 => $this->record(6, 'post', 'Hallo', 'hallo', 'publish'),
+        );
+
+        $result = $exporter->export();
+        $this->assertSame('post:5', $result['items'][0]['group']);
+        $this->assertSame(array('sv', 'de'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame(
+            array('Post 5 is stored as en in its translation group, but its language is sv. It was exported as sv.'),
+            $result['errors']
+        );
+    }
+
+    public function test_stored_language_is_kept_when_the_real_language_is_already_used()
+    {
+        $exporter = new Polylang_Posts_Language_Fixture();
+        $exporter->maps = array(
+            array('en' => 5, 'sv' => 7),
+        );
+        $exporter->actual = array(5 => 'sv', 7 => 'sv');
+        $exporter->posts = array(
+            5 => $this->record(5, 'post', 'Five', 'five', 'draft'),
+            7 => $this->record(7, 'post', 'Seven', 'seven', 'publish'),
+        );
+
+        $result = $exporter->export();
+        $this->assertSame(array('en', 'sv'), array_keys($result['items'][0]['translations']));
+        $this->assertSame(5, $result['items'][0]['translations']['en']['id']);
+        $this->assertSame(
+            array('Post 5 is stored as en in its translation group, but its language is sv. The stored language was kept because sv is already used in that group.'),
+            $result['errors']
+        );
     }
 
     public function test_repeated_export_is_identical()
@@ -893,6 +950,81 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('post:4', $result['items'][0]['group']);
         $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
         $this->assertSame('publish', $result['items'][0]['translations']['de']['status']);
+    }
+
+    public function test_linked_draft_missing_from_the_description_joins_the_group()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 8,
+                'description' => serialize(array('en' => 4)),
+            ),
+        );
+        $fake->relationships = array(8 => array(4, 6));
+        $fake->languages = array(4 => 'en', 6 => 'de');
+        $fake->posts_rows = array(
+            4 => $this->db_post(4, 'publish', 'Hello', 'hello'),
+            6 => $this->db_post(6, 'draft', 'Hallo', 'hallo', 'post', '', 'Entwurf'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:4', $result['items'][0]['group']);
+        $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
+        $this->assertSame('Entwurf', $result['items'][0]['translations']['de']['content']);
+        $this->assertSame(
+            array('Post 6 is linked to a translation group but was missing from its stored description. It was added as de.'),
+            $result['errors']
+        );
+    }
+
+    public function test_deleted_untranslated_post_is_reported_and_the_draft_remains()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->languages = array(9 => 'sv', 44 => 'en');
+        $fake->posts_rows = array(
+            9 => $this->db_post(9, 'draft', '', '', 'post', '', 'Utkast'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array('post:9'), $this->groups($result));
+        $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame(
+            array('Post 44 has a language but no longer exists, so it was left out of the export.'),
+            $result['errors']
+        );
+    }
+
+    public function test_database_language_overrides_a_stale_description()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 3,
+                'description' => serialize(array('en' => 5, 'de' => 6)),
+            ),
+        );
+        $fake->languages = array(5 => 'sv', 6 => 'de');
+        $fake->posts_rows = array(
+            5 => $this->db_post(5, 'draft', 'Utkast', 'utkast'),
+            6 => $this->db_post(6, 'publish', 'Hallo', 'hallo'),
+        );
+
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame('post:5', $result['items'][0]['group']);
+        $this->assertSame(array('sv', 'de'), array_keys($result['items'][0]['translations']));
+        $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame(
+            array('Post 5 is stored as en in its translation group, but its language is sv. It was exported as sv.'),
+            $result['errors']
+        );
     }
 
     public function test_invalid_descriptions_are_reported_once()

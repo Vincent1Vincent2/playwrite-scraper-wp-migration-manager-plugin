@@ -189,7 +189,7 @@ class Polylang_Posts
                     $from_api = $this->map_for_post($sample);
                     if ($from_api === null) {
                         $api = false;
-                        $maps[] = $decoded;
+                        $maps[] = $this->merge_linked_posts($decoded, $term_taxonomy_id, $errors);
                         continue;
                     }
                     if (!empty($from_api)) {
@@ -198,7 +198,7 @@ class Polylang_Posts
                     }
                 }
 
-                $maps[] = $decoded;
+                $maps[] = $this->merge_linked_posts($decoded, $term_taxonomy_id, $errors);
             }
             // No stored groups. Ask Polylang directly so untranslated posts
             // are still found when the API is the only index.
@@ -369,14 +369,27 @@ class Polylang_Posts
 
         $records = $this->posts_by_ids(array_keys($pending));
         $maps = array();
+        $missing = array();
         foreach ($pending as $post_id => $lang) {
             if (!isset($records[$post_id])) {
+                $missing[] = $post_id;
                 continue;
             }
             if ($this->skip_reason($records[$post_id]) !== '') {
                 continue;
             }
             $maps[] = array($lang => $post_id);
+        }
+        if (count($missing) === 1) {
+            $errors[] = $this->say_sprintf(
+                'Post %d has a language but no longer exists, so it was left out of the export.',
+                array($missing[0])
+            );
+        } elseif (count($missing) > 1) {
+            $errors[] = $this->say_sprintf(
+                '%d posts have a language but no longer exist, so they were left out of the export.',
+                array(count($missing))
+            );
         }
         return $maps;
     }
@@ -391,9 +404,12 @@ class Polylang_Posts
     {
         $prepared = array();
         foreach ($maps as $map) {
+            if (is_array($map)) {
+                $this->note_duplicate_assignments($map, $errors);
+            }
             $normalized = $this->normalize_id_map($map);
             if (!empty($normalized)) {
-                $prepared[] = $normalized;
+                $prepared[] = $this->reconcile_languages($normalized, $errors);
             }
         }
 
@@ -594,6 +610,186 @@ class Polylang_Posts
             'A translation group pointed at posts %s, but those posts no longer exist. That group was skipped.',
             array(implode(', ', $labels))
         );
+    }
+
+    /**
+     * A stored description can list one post under two languages. Keep the first.
+     *
+     * @param mixed $map
+     * @param array<int, string> $errors
+     */
+    private function note_duplicate_assignments($map, array &$errors)
+    {
+        if (!is_array($map)) {
+            return;
+        }
+        $seen = array();
+        foreach ($map as $lang => $post_id) {
+            if (is_int($lang) || is_float($lang)) {
+                $lang = (string) $lang;
+            }
+            if (!is_string($lang)) {
+                continue;
+            }
+            $lang = trim($lang);
+            $post_id = $this->normalize_post_id($post_id);
+            if ($lang === '' || $post_id <= 0) {
+                continue;
+            }
+            if (isset($seen[$post_id]) && $seen[$post_id] !== $lang) {
+                $errors[] = $this->say_sprintf(
+                    'Post %1$d was listed as both %2$s and %3$s in the same translation group. It was exported as %2$s.',
+                    array($post_id, $seen[$post_id], $lang)
+                );
+                continue;
+            }
+            if (!isset($seen[$post_id])) {
+                $seen[$post_id] = $lang;
+            }
+        }
+    }
+
+    /**
+     * The language taxonomy is the post's real language. Prefer it when the
+     * translation description has gone stale.
+     *
+     * @param array<string, int> $map
+     * @param array<int, string> $errors
+     * @return array<string, int>
+     */
+    private function reconcile_languages(array $map, array &$errors)
+    {
+        $actual = $this->actual_languages(array_values($map));
+        if (!is_array($actual) || empty($actual)) {
+            return $map;
+        }
+
+        $rebuilt = array();
+        foreach ($map as $stored => $post_id) {
+            $lang = $stored;
+            $real = isset($actual[$post_id]) ? trim((string) $actual[$post_id]) : '';
+            if ($real !== '' && $real !== $stored) {
+                $taken = isset($map[$real]) || isset($rebuilt[$real]);
+                if (!$taken) {
+                    $errors[] = $this->say_sprintf(
+                        'Post %1$d is stored as %2$s in its translation group, but its language is %3$s. It was exported as %3$s.',
+                        array($post_id, $stored, $real)
+                    );
+                    $lang = $real;
+                } else {
+                    $errors[] = $this->say_sprintf(
+                        'Post %1$d is stored as %2$s in its translation group, but its language is %3$s. The stored language was kept because %3$s is already used in that group.',
+                        array($post_id, $stored, $real)
+                    );
+                }
+            }
+            if (!isset($rebuilt[$lang])) {
+                $rebuilt[$lang] = $post_id;
+            }
+        }
+        return $rebuilt;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @return array<int, string>
+     */
+    protected function actual_languages(array $ids)
+    {
+        $languages = array();
+        $remaining = array();
+        foreach ($ids as $post_id) {
+            $post_id = (int) $post_id;
+            if ($post_id <= 0) {
+                continue;
+            }
+            if (function_exists('pll_get_post_language')) {
+                try {
+                    $lang = pll_get_post_language($post_id, 'slug');
+                } catch (\Throwable $e) {
+                    $lang = '';
+                }
+                if (is_string($lang) && trim($lang) !== '') {
+                    $languages[$post_id] = trim($lang);
+                    continue;
+                }
+            }
+            $remaining[] = $post_id;
+        }
+        if (empty($remaining)) {
+            return $languages;
+        }
+        $from_db = $this->language_for_objects($remaining);
+        if (!is_array($from_db)) {
+            return $languages;
+        }
+        foreach ($from_db as $post_id => $lang) {
+            if (!isset($languages[$post_id]) && $lang !== '') {
+                $languages[(int) $post_id] = $lang;
+            }
+        }
+        return $languages;
+    }
+
+    /**
+     * Posts linked to the group in term relationships, but missing from the description.
+     *
+     * @param array<string, int> $map
+     * @param int $term_taxonomy_id
+     * @param array<int, string> $errors
+     * @return array<string, int>
+     */
+    private function merge_linked_posts(array $map, $term_taxonomy_id, array &$errors)
+    {
+        $term_taxonomy_id = (int) $term_taxonomy_id;
+        if ($term_taxonomy_id <= 0) {
+            return $map;
+        }
+        $linked = $this->relationship_ids($term_taxonomy_id);
+        if (!is_array($linked) || empty($linked)) {
+            return $map;
+        }
+
+        $present = array();
+        foreach ($map as $post_id) {
+            $present[(int) $post_id] = true;
+        }
+        $missing = array();
+        foreach ($linked as $post_id) {
+            $post_id = (int) $post_id;
+            if ($post_id > 0 && !isset($present[$post_id])) {
+                $missing[] = $post_id;
+            }
+        }
+        if (empty($missing)) {
+            return $map;
+        }
+
+        $languages = $this->language_for_objects($missing);
+        if (!is_array($languages)) {
+            return $map;
+        }
+        foreach ($missing as $post_id) {
+            if (!isset($languages[$post_id]) || $languages[$post_id] === '') {
+                continue;
+            }
+            $lang = $languages[$post_id];
+            if (isset($map[$lang])) {
+                if ((int) $map[$lang] !== $post_id) {
+                    $errors[] = $this->say_sprintf(
+                        'Post %1$d is linked to a translation group but was missing from its stored description. It was left out because %2$s is already used in that group.',
+                        array($post_id, $lang)
+                    );
+                }
+                continue;
+            }
+            $map[$lang] = $post_id;
+            $errors[] = $this->say_sprintf(
+                'Post %1$d is linked to a translation group but was missing from its stored description. It was added as %2$s.',
+                array($post_id, $lang)
+            );
+        }
+        return $map;
     }
 
     /**
