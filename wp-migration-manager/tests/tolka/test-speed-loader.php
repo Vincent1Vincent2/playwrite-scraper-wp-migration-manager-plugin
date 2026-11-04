@@ -204,6 +204,39 @@ class Speed_Loader_Header_Bag
 }
 
 /**
+ * Timeout that also carries a forged HTTP status and a page body.
+ */
+class Speed_Loader_Timeout_With_Status
+{
+    /**
+     * @return string
+     */
+    public function get_error_code()
+    {
+        return 'http_request_failed';
+    }
+
+    /**
+     * @return string
+     */
+    public function get_error_message()
+    {
+        return 'cURL error 28: Operation timed out after 15000 milliseconds';
+    }
+
+    /**
+     * @return array
+     */
+    public function get_error_data()
+    {
+        return array(
+            'status' => 504,
+            'body' => '<html>secret</html>',
+        );
+    }
+}
+
+/**
  * Timeout that also carries a page body. The body must not be returned.
  */
 class Speed_Loader_Timeout_With_Body
@@ -1094,6 +1127,24 @@ class Speed_Loader_Test extends TestCase
             $this->assertGreaterThanOrEqual(0, $result['total_ms'], (string) $code);
             $this->assertNotSame(self::TIMEOUT_MESSAGE, $result['error'], (string) $code);
         }
+    }
+
+    public function test_timeout_ignores_a_forged_status_on_the_error()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$clock = array(1000, -4000);
+        Speed_Loader_Harness::$response = new Speed_Loader_Timeout_With_Status();
+
+        $result = $this->measureWithoutThrowing('https://example.com/');
+
+        $this->assertTimeoutResult($result);
+        $this->assertSame(0, $result['status_code']);
+        $this->assertSame(0, $result['total_ms']);
+        $this->assertSame(0, $result['html_bytes']);
+        $this->assertSame('', $result['html']);
+        $this->assertStringNotContainsString('secret', (string) json_encode($result));
+        $this->assertStringNotContainsString('504', (string) json_encode($result));
     }
 
     public function test_timeout_after_a_redirect_reports_status_zero()
