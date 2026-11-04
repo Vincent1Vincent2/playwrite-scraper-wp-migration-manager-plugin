@@ -48,7 +48,8 @@ class Polylang_Terms
      * Each item has taxonomy, group (`term:{id}`), and translations.
      * A translation is keyed by language slug and has id, name, slug, description, and parent.
      * HTML in a name is kept. Letters such as å, ä, and ö are kept in names and slugs.
-     * Null bytes are removed from names and slugs. An empty name is still exported.
+     * Null bytes are removed from names and slugs. A slug of only whitespace becomes empty.
+     * An empty name is still exported. The term is not dropped when its slug is empty.
      * description is the term description in that language.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
      * Calling export() again on the same instance does not append duplicate groups.

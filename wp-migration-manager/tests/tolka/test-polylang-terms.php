@@ -610,6 +610,43 @@ class Polylang_Terms_Test extends TestCase
         );
     }
 
+    public function test_a_blank_slug_inside_a_group_does_not_drop_the_term(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('en' => 70, 'sv' => 71)));
+        $database->catalog = array(
+            $this->term(70, '', "\f\v", 'category', 'en', 0),
+            $this->term(71, 'Höst', 'höst', 'category', 'sv', '0'),
+            $this->term(72, 'Noll', '0', 'post_tag', 'sv', 0),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $group = $this->itemByGroup($second['items'], 'term:70');
+
+        $this->assertSame('', $group['translations']['en']['name']);
+        $this->assertSame('', $group['translations']['en']['slug']);
+        $this->assertSame(0, $group['translations']['en']['parent']);
+        $this->assertIsInt($group['translations']['en']['parent']);
+        $this->assertSame('Höst', $group['translations']['sv']['name']);
+        $this->assertSame('höst', $group['translations']['sv']['slug']);
+        $this->assertSame(0, $group['translations']['sv']['parent']);
+        $this->assertIsInt($group['translations']['sv']['parent']);
+
+        $zero = $this->itemByGroup($second['items'], 'term:72');
+        $this->assertSame('0', $zero['translations']['sv']['slug']);
+        $this->assertSame(0, $zero['translations']['sv']['parent']);
+        $this->assertCount(2, $second['items']);
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(
