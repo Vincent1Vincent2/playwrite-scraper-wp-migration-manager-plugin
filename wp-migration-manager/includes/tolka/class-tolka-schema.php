@@ -32,6 +32,46 @@ class Tolka_Schema
     const VERSION = 1;
 
     /**
+     * Package header saved for Tolka.
+     *
+     * Format is tolka-migration, version is the integer 1, and generated_at
+     * ends with Z. A GMT time written with +00:00 keeps its clock time.
+     *
+     * @param mixed $generated_at Candidate timestamp, or null for the current time.
+     * @return array
+     */
+    public static function header($generated_at = null)
+    {
+        return array(
+            'format' => self::FORMAT,
+            'version' => self::VERSION,
+            'generated_at' => self::zulu($generated_at),
+        );
+    }
+
+    /**
+     * ISO-8601 GMT timestamp that ends with Z.
+     *
+     * @param mixed $value Candidate timestamp.
+     * @return string
+     */
+    public static function zulu($value)
+    {
+        if (is_string($value) && substr($value, -1) === 'z') {
+            $value = substr($value, 0, -1) . 'Z';
+        }
+
+        if (self::is_gmt_timestamp($value)) {
+            $stamp = strtotime($value);
+            if ($stamp !== false) {
+                return gmdate('Y-m-d\TH:i:s\Z', $stamp);
+            }
+        }
+
+        return self::gmt_timestamp();
+    }
+
+    /**
      * Current time as ISO-8601 GMT, with a Z suffix.
      *
      * @return string
@@ -99,11 +139,7 @@ class Tolka_Schema
      */
     public static function package(array $parts)
     {
-        $package = array(
-            'format' => self::FORMAT,
-            'version' => self::VERSION,
-            'generated_at' => self::gmt_timestamp(),
-        );
+        $package = self::header();
 
         foreach (self::sections() as $section) {
             $package[$section] = self::items_from(
