@@ -51,6 +51,13 @@ class Polylang_Languages
     private $options_loaded = false;
 
     /**
+     * Whether this export saw a Polylang-internal slug such as pll_en.
+     *
+     * @var bool
+     */
+    private $saw_internal_language = false;
+
+    /**
      * Export languages.
      *
      * `items` is a list of languages. Each item has `slug`, `name`, `locale`,
@@ -99,6 +106,7 @@ class Polylang_Languages
         $this->api_failed = false;
         $this->options_loaded = false;
         $this->options = array();
+        $this->saw_internal_language = false;
 
         $default = $this->default_slug();
         $api_items = array();
@@ -134,6 +142,10 @@ class Polylang_Languages
 
         if ($this->api_failed || $this->storage_failed) {
             return $this->envelope(array(), array($this->message_failed()));
+        }
+
+        if ($this->saw_internal_language) {
+            return $this->envelope(array(), array($this->message_only_internal()));
         }
 
         if (function_exists('pll_languages_list')) {
@@ -989,6 +1001,7 @@ class Polylang_Languages
     {
         $slug = $this->normalized_slug($slug);
         if ($this->is_internal_language_slug($slug)) {
+            $this->saw_internal_language = true;
             $slug = '';
         }
         $name = $this->plain_name($name);
@@ -1393,6 +1406,20 @@ class Polylang_Languages
             'items' => array_values($items),
             'errors' => array_values($clean_errors),
         );
+    }
+
+    /**
+     * Only Polylang-internal rows were found.
+     *
+     * @return string
+     */
+    private function message_only_internal()
+    {
+        if (!function_exists('__')) {
+            return 'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.';
+        }
+
+        return __('No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.', 'migration-manager');
     }
 
     /**

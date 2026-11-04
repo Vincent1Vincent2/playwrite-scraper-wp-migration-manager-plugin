@@ -940,8 +940,10 @@ PHP
         $result = Polylang_Languages::export();
 
         $this->assertSame(array(), $result['items']);
-        $this->assertCount(1, $result['errors']);
-        $this->assertStringNotContainsString('pll_', $result['errors'][0]);
+        $this->assertSame(
+            'No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.',
+            $result['errors'][0]
+        );
     }
 
     public function test_the_api_does_not_export_internal_pll_languages()
