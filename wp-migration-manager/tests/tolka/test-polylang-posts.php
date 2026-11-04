@@ -2910,6 +2910,54 @@ PHP
         $this->assertStringNotContainsString('No language', $encoded);
     }
 
+    public function test_revision_of_the_default_language_post_uses_that_parent()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'SV'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 86,
+                'description' => 'a:2:{s:2:"SV";i:9;s:2:"en";i:8;}',
+            ),
+        );
+        $revision = $this->db_post(9, 'inherit', 'Autosave', '50-revision-v1', 'revision', '', 'Stale Swedish');
+        $revision['post_parent'] = 50;
+        $fake->languages = array(50 => 'SV', 8 => 'en');
+        $fake->posts_rows = array(
+            50 => $this->db_post(50, 'future', 'Fågel', 'fågel-öl', 'post', '', '<p>ä ö å</p>'),
+            9 => $revision,
+            8 => $this->db_post(8, 'draft', 'Bird', 'bird', 'post', '', ''),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame('post:50', $second['items'][0]['group']);
+        $this->assertSame(array('sv', 'en'), array_keys($second['items'][0]['translations']));
+        $this->assertSame(50, $second['items'][0]['translations']['sv']['id']);
+        $this->assertSame('future', $second['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Fågel', $second['items'][0]['translations']['sv']['title']);
+        $this->assertSame('fågel-öl', $second['items'][0]['translations']['sv']['slug']);
+        $this->assertSame('<p>ä ö å</p>', $second['items'][0]['translations']['sv']['content']);
+        $this->assertSame('draft', $second['items'][0]['translations']['en']['status']);
+        $this->assertSame('', $second['items'][0]['translations']['en']['content']);
+        $this->assertSame(
+            array('Post 9 is a revision of post 50. The export uses post 50 instead.'),
+            $second['errors']
+        );
+        $encoded = json_encode($second);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Stale Swedish', $encoded);
+        foreach ($fake->queries as $sql) {
+            if (strpos($sql, 'post_content') !== false) {
+                $this->assertDoesNotMatchRegularExpression('/\b9\b/', $sql);
+            }
+        }
+    }
+
     private function skip_when_wordpress_or_polylang_is_loaded()
     {
         if (function_exists('get_post') || function_exists('get_option') || function_exists('get_posts') || function_exists('pll_get_post_translations') || function_exists('pll_default_language') || class_exists('PLL') || class_exists('Polylang')) {

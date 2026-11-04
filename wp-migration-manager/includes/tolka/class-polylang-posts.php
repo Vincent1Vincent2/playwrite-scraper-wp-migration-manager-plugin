@@ -334,8 +334,16 @@ class Polylang_Posts
 
         $known = array();
         foreach ($maps as $map) {
+            $ids = array();
             foreach ($map as $post_id) {
-                $known[(int) $post_id] = true;
+                $ids[] = (int) $post_id;
+            }
+            foreach ($ids as $post_id) {
+                $known[$post_id] = true;
+                $parent_id = $this->replacement_for_revision($post_id, $ids, array());
+                if ($parent_id > 0) {
+                    $known[$parent_id] = true;
+                }
             }
         }
         foreach ($this->collapsed_languages as $row) {
