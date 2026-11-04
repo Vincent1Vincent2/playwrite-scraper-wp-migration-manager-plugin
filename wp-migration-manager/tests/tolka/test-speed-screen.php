@@ -585,6 +585,61 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         }
     }
 
+    public function test_script_tag_in_the_faster_label_is_text_and_failure_says_unavailable()
+    {
+        $labels = array(
+            '<script>alert(1)</script>',
+            '57.9% <script>alert(1)</script> faster',
+            "<scr\0ipt>alert(1)</script>",
+            '<SCRIPT SRC="javascript:alert(1)"></SCRIPT>',
+        );
+
+        foreach ($labels as $label) {
+            $visible = str_replace("\0", '', $label);
+            $html = $this->render(true, array(
+                'ok' => true,
+                'current_ms' => 1842,
+                'tolka_ms' => 900,
+                'faster_percent' => 57.9,
+                'faster_label' => $label,
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'placeholder',
+                'provenance_note' => 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.',
+                'error' => '',
+            ));
+            $document = $this->document($html);
+            $faster = $document->getElementById('wmm-tolka-faster');
+
+            $this->assertSame($visible, $this->text($html, 'wmm-tolka-faster'));
+            $this->assertSame(0, $this->element_child_count($faster));
+            $this->assertStringContainsString($visible, $this->text($html, 'wmm-tolka-speed-summary'));
+            $this->assertStringContainsString(' ms', $this->text($html, 'wmm-tolka-current-load'));
+            $this->assertStringContainsString(' ms', $this->text($html, 'wmm-tolka-tolka-load'));
+            $this->assertStringNotContainsString('<script', strtolower($html));
+            $this->assertStringNotContainsString('</script', strtolower($html));
+            $this->assertStringContainsString('&lt;scr', strtolower($html));
+            $this->assertFalse($document->getElementById('wmm-tolka-provenance-note')->hasAttribute('hidden'));
+
+            $failed = $this->render(true, array(
+                'ok' => false,
+                'current_ms' => 1842,
+                'tolka_ms' => 900,
+                'faster_percent' => 57.9,
+                'faster_label' => $label,
+                'basis' => '<script>alert(2)</script>',
+                'provenance' => 'lab',
+                'error' => 'The page could not be loaded.',
+            ));
+            $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-faster'));
+            $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-current-load'));
+            $this->assertSame('Unavailable', $this->text($failed, 'wmm-tolka-tolka-load'));
+            $this->assertSame('', $this->document($failed)->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
+            $this->assertStringNotContainsString('<script', strtolower($failed));
+            $this->assertStringNotContainsString('</script', strtolower($failed));
+            $this->assertStringNotContainsString('57.9% faster', $failed);
+        }
+    }
+
     public function test_faster_label_is_shown_exactly_and_failure_says_unavailable()
     {
         $label = '57.9% faster';
