@@ -839,6 +839,26 @@ PHP
         $this->assertSame(9, $by_slug['no']['term_id']);
     }
 
+    public function test_a_language_term_wins_over_its_twin_row()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+        ), 'en');
+        $db->term_language_rows = array(
+            $this->language_term(21, 'E', 'en', 'de_DE', 'de', 0, 0),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('English', $result['items'][0]['name']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertSame(4, $result['items'][0]['term_id']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_term_language_rows_fill_a_missing_language_term()
     {
         $db = new Polylang_Languages_Test_Db();
