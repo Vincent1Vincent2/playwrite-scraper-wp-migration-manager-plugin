@@ -633,10 +633,15 @@ class Test_Polylang_Media extends TestCase
 
     public function test_skipped_media_message_is_a_finished_sentence()
     {
-        $messages = $this->call('messages_for', array(1));
-        $this->assertCount(1, $messages);
-        $this->assertCustomerSentence($messages[0]);
-        $this->assertStringContainsString('Nothing was changed', $messages[0]);
+        $one = $this->call('messages_for', array(1));
+        $this->assertCount(1, $one);
+        $this->assertCustomerSentence($one[0]);
+        $this->assertSame('One media file could not be read and was left out of this export. Nothing was changed.', $one[0]);
+
+        $many = $this->call('messages_for', array(3));
+        $this->assertCount(1, $many);
+        $this->assertCustomerSentence($many[0]);
+        $this->assertSame('3 media files could not be read and were left out of this export. Nothing was changed.', $many[0]);
         $this->assertSame(array(), $this->call('messages_for', array(0)));
     }
 
@@ -838,7 +843,7 @@ class Test_Polylang_Media extends TestCase
     private function assertCustomerSentence($message)
     {
         $this->assertIsString($message);
-        $this->assertMatchesRegularExpression('/^[A-Z].+\.$/', $message);
+        $this->assertMatchesRegularExpression('/^[A-Z0-9].+\.$/', $message);
         $this->assertStringNotContainsString('taxonomy', strtolower($message));
         $this->assertStringNotContainsString('wpdb', strtolower($message));
     }

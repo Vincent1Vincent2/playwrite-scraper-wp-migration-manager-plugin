@@ -82,13 +82,22 @@ class Polylang_Media
      */
     private function messages_for($skipped)
     {
-        if ((int) $skipped <= 0) {
+        $skipped = (int) $skipped;
+        if ($skipped <= 0) {
             return array();
         }
+        if ($skipped === 1) {
+            return array(
+                $this->text('One media file could not be read and was left out of this export. Nothing was changed.'),
+            );
+        }
 
-        return array(
-            $this->text('Some media could not be read and were left out of this export. Nothing was changed.'),
-        );
+        $template = $this->text('%d media files could not be read and were left out of this export. Nothing was changed.');
+        if (strpos($template, '%d') === false) {
+            return array($template);
+        }
+
+        return array(sprintf($template, $skipped));
     }
 
     /**
