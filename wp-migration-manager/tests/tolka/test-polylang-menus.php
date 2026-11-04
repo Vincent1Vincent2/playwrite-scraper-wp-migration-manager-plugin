@@ -49,7 +49,7 @@ class Polylang_Menus_Test extends TestCase
         }
 
         unset($GLOBALS['wpdb']);
-        $result = Polylang_Menus::export();
+        $result = (new Polylang_Menus())->export();
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
@@ -60,7 +60,7 @@ class Polylang_Menus_Test extends TestCase
 
     public function test_inactive_polylang_without_data_returns_a_finished_error(): void
     {
-        $result = Polylang_Menus_Fixture::export();
+        $result = (new Polylang_Menus_Fixture())->export();
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
@@ -155,6 +155,78 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(2, $this->location($result, 'primary')['translations']['en']['link_count']);
     }
 
+    public function test_export_is_callable_on_an_instance(): void
+    {
+        $menus = new Polylang_Menus();
+        $result = $menus->export();
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('items', $result);
+        $this->assertArrayHasKey('errors', $result);
+        $this->assertIsArray($result['items']);
+        $this->assertIsArray($result['errors']);
+    }
+
+    public function test_menu_item_with_empty_title_keeps_its_url(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(6 => 'Main'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 6),
+                    ),
+                ),
+            ),
+            'items' => array(
+                6 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => '',
+                        'url' => 'https://example.com/blank',
+                        'object' => 'custom',
+                        'object_id' => 0,
+                        'position' => 1,
+                    ),
+                    array(
+                        'id' => 2,
+                        'parent' => 0,
+                        'title' => 'Parent',
+                        'url' => 'https://example.com/parent',
+                        'object' => 'page',
+                        'object_id' => 9,
+                        'position' => 2,
+                    ),
+                    array(
+                        'id' => 3,
+                        'parent' => 2,
+                        'title' => '',
+                        'url' => 'https://example.com/child-blank',
+                        'object' => 'custom',
+                        'object_id' => 0,
+                        'position' => 3,
+                    ),
+                ),
+            ),
+        ));
+
+        $result = $fixture->export();
+        $items = $this->location($result, 'primary')['translations']['en']['items'];
+
+        $this->assertCount(2, $items);
+        $this->assertSame('', $items[0]['title']);
+        $this->assertSame('https://example.com/blank', $items[0]['url']);
+        $this->assertSame('custom', $items[0]['object']);
+        $this->assertSame(0, $items[0]['object_id']);
+        $this->assertSame('', $items[1]['children'][0]['title']);
+        $this->assertSame('https://example.com/child-blank', $items[1]['children'][0]['url']);
+        $this->assertSame('custom', $items[1]['children'][0]['object']);
+    }
+
     public function test_polylang_inactive(): void
     {
         $inactive = $this->fixture(array(
@@ -202,6 +274,87 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame('/', $this->location($result, 'primary')['translations']['en']['items'][0]['url']);
         $this->assertSame('custom', $this->location($result, 'primary')['translations']['en']['items'][0]['object']);
         $this->assertSame(1, $this->location($result, 'primary')['translations']['en']['items'][0]['object_id']);
+    }
+
+    public function test_database_row_with_empty_title_keeps_its_url(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->menu_posts[10] = array(
+            array(
+                'id' => 8,
+                'title' => '',
+                'attr_title' => '',
+                'description' => '',
+                'position' => 1,
+            ),
+            array(
+                'id' => 9,
+                'title' => '',
+                'attr_title' => '',
+                'description' => '',
+                'position' => 2,
+            ),
+        );
+        $database->meta[8] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '0',
+            '_menu_item_menu_item_parent' => '0',
+            '_menu_item_url' => 'https://example.com/blank',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[9] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '0',
+            '_menu_item_menu_item_parent' => '8',
+            '_menu_item_url' => 'https://example.com/child-blank',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'en',
+            'nav_menus' => array(
+                'flavor' => array(
+                    'primary' => array('en' => 10),
+                ),
+            ),
+        ));
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $menus = new Polylang_Menus();
+            $result = $menus->export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $blank = null;
+        foreach ($this->location($result, 'primary')['translations']['en']['items'] as $item) {
+            if ($item['url'] === 'https://example.com/blank') {
+                $blank = $item;
+            }
+        }
+
+        $this->assertNotNull($blank);
+        $this->assertSame('', $blank['title']);
+        $this->assertSame('custom', $blank['object']);
+        $this->assertCount(1, $blank['children']);
+        $this->assertSame('', $blank['children'][0]['title']);
+        $this->assertSame('https://example.com/child-blank', $blank['children'][0]['url']);
     }
 
     public function test_groups_locations_and_nests_items(): void
@@ -952,7 +1105,7 @@ class Polylang_Menus_Test extends TestCase
         $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
         $GLOBALS['wpdb'] = $database;
         try {
-            $result = Polylang_Menus::export();
+            $result = (new Polylang_Menus())->export();
         } finally {
             if ($previous === null) {
                 unset($GLOBALS['wpdb']);
@@ -969,7 +1122,7 @@ class Polylang_Menus_Test extends TestCase
         $database->skipped = array(10 => 2);
         $GLOBALS['wpdb'] = $database;
         try {
-            $with_drafts = Polylang_Menus::export();
+            $with_drafts = (new Polylang_Menus())->export();
         } finally {
             if ($previous === null) {
                 unset($GLOBALS['wpdb']);
@@ -1070,7 +1223,7 @@ HTML;
         $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
         $GLOBALS['wpdb'] = $database;
         try {
-            $result = Polylang_Menus::export();
+            $result = (new Polylang_Menus())->export();
         } finally {
             if ($previous === null) {
                 unset($GLOBALS['wpdb']);
@@ -1152,7 +1305,7 @@ HTML;
         $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
         $GLOBALS['wpdb'] = $database;
         try {
-            $result = Polylang_Menus::export();
+            $result = (new Polylang_Menus())->export();
         } finally {
             if ($previous === null) {
                 unset($GLOBALS['wpdb']);
@@ -1453,7 +1606,7 @@ class Polylang_Menus_Fixture extends Polylang_Menus
      */
     public function run()
     {
-        return $this->collect();
+        return $this->export();
     }
 
     /**
@@ -1649,7 +1802,7 @@ class Polylang_Menus_Db_Fixture extends Polylang_Menus
      */
     public function run()
     {
-        return $this->collect();
+        return $this->export();
     }
 
     /**
