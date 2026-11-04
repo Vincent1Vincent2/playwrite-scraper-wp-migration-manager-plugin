@@ -1279,9 +1279,30 @@ class Polylang_Posts
         if (!is_array($map)) {
             return array();
         }
+        $pairs = array();
+        foreach ($map as $lang => $post_id) {
+            $pairs[] = array($lang, $post_id);
+        }
+        return $this->normalize_pairs($pairs);
+    }
+
+    /**
+     * Walk language/post pairs in stored order. The first post for a language
+     * stays. A later post for that same language is reported once per language.
+     *
+     * @param array<int, array{0:mixed,1:mixed}> $pairs
+     * @return array<string, int>
+     */
+    private function normalize_pairs(array $pairs)
+    {
         $clean = array();
         $used = array();
-        foreach ($map as $lang => $post_id) {
+        foreach ($pairs as $pair) {
+            if (!is_array($pair) || !isset($pair[0])) {
+                continue;
+            }
+            $lang = $pair[0];
+            $post_id = isset($pair[1]) ? $pair[1] : 0;
             if (is_int($lang) || is_float($lang)) {
                 $lang = (string) $lang;
             }
@@ -1315,10 +1336,17 @@ class Polylang_Posts
      */
     private function flush_collapsed_languages(array &$errors)
     {
+        $kept_by_lang = array();
         foreach ($this->collapsed_languages as $row) {
+            $lang = $row['lang'];
+            if (!isset($kept_by_lang[$lang])) {
+                $kept_by_lang[$lang] = $row['kept'];
+            }
+        }
+        foreach ($kept_by_lang as $lang => $kept) {
             $errors[] = $this->say_sprintf(
-                'Posts %1$d and %2$d were both stored as %3$s. Post %1$d was kept.',
-                array($row['kept'], $row['dropped'], $row['lang'])
+                'Language %1$s is listed more than once in this translation group. Post %2$d was kept.',
+                array($lang, $kept)
             );
         }
         $this->collapsed_languages = array();
@@ -1388,7 +1416,17 @@ class Polylang_Posts
         if ($description === '') {
             return array();
         }
+        $pairs = $this->serialized_pairs($description);
+        if (is_array($pairs)) {
+            return $this->normalize_pairs($pairs);
+        }
         $value = $this->unserialize_value($description);
+        if (is_string($value)) {
+            $pairs = $this->serialized_pairs($value);
+            if (is_array($pairs)) {
+                return $this->normalize_pairs($pairs);
+            }
+        }
         if (is_string($value)) {
             $again = $this->unserialize_value($value);
             if (is_array($again)) {
@@ -1427,6 +1465,87 @@ class Polylang_Posts
             return null;
         }
         return $decoded;
+    }
+
+    /**
+     * Read a serialized language map without letting a repeated key hide the first post.
+     * Null means the string is not a simple map and the caller should use unserialize.
+     *
+     * @param string $value
+     * @return array<int, array{0:string,1:mixed}>|null
+     */
+    private function serialized_pairs($value)
+    {
+        if (!is_string($value) || $value === '' || $value[0] !== 'a') {
+            return null;
+        }
+        $offset = 0;
+        if (!preg_match('/\Aa:(\d+):\{/', $value, $match)) {
+            return null;
+        }
+        $count = (int) $match[1];
+        $offset = strlen($match[0]);
+        $pairs = array();
+        for ($index = 0; $index < $count; $index++) {
+            $key = $this->read_serialized_scalar($value, $offset);
+            $item = $this->read_serialized_scalar($value, $offset);
+            if ($key === null || $item === null || $key[0] !== 'string') {
+                return null;
+            }
+            $pairs[] = array($key[1], $item[1]);
+        }
+        if (!isset($value[$offset]) || $value[$offset] !== '}') {
+            return null;
+        }
+        $offset++;
+        if (trim(substr($value, $offset)) !== '') {
+            return null;
+        }
+        return $pairs;
+    }
+
+    /**
+     * @param string $value
+     * @param int $offset
+     * @return array{0:string,1:mixed}|null
+     */
+    private function read_serialized_scalar($value, &$offset)
+    {
+        if (!isset($value[$offset])) {
+            return null;
+        }
+        $type = $value[$offset];
+        $rest = substr($value, $offset);
+        if ($type === 'N' && strncmp($rest, 'N;', 2) === 0) {
+            $offset += 2;
+            return array('null', null);
+        }
+        if ($type === 'i' && preg_match('/\Ai:(-?\d+);/', $rest, $match)) {
+            $offset += strlen($match[0]);
+            return array('int', (int) $match[1]);
+        }
+        if ($type === 'b' && preg_match('/\Ab:[01];/', $rest, $match)) {
+            $offset += strlen($match[0]);
+            return array('bool', $match[0][2] === '1');
+        }
+        if ($type === 'd' && preg_match('/\Ad:([-+0-9.eE]+);/', $rest, $match)) {
+            $offset += strlen($match[0]);
+            return array('float', (float) $match[1]);
+        }
+        if ($type === 's' && preg_match('/\As:(\d+):"/', $rest, $match)) {
+            $length = (int) $match[1];
+            $start = $offset + strlen($match[0]);
+            if ($start + $length + 2 > strlen($value)) {
+                return null;
+            }
+            $text = substr($value, $start, $length);
+            if (substr($value, $start + $length, 2) !== '";') {
+                return null;
+            }
+            $offset = $start + $length + 2;
+            return array('string', $text);
+        }
+        return null;
     }
 
     /**

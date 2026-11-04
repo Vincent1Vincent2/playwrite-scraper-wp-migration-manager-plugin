@@ -1901,9 +1901,132 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
         $this->assertSame('First', $result['items'][0]['translations']['en']['content']);
         $this->assertSame(
-            array('Posts 5 and 6 were both stored as en. Post 5 was kept.'),
+            array('Language en is listed more than once in this translation group. Post 5 was kept.'),
             $result['errors']
         );
+    }
+
+    public function test_same_language_listed_twice_keeps_the_first_post()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 70,
+                'description' => 'a:3:{s:2:"en";i:5;s:2:"de";i:8;s:2:"en";i:6;}',
+            ),
+        );
+        $fake->languages = array(5 => 'en', 8 => 'de');
+        $fake->posts_rows = array(
+            5 => $this->db_post(5, 'draft', 'Fågel', 'fagel', 'post', '', '<p>ä ö å</p>'),
+            6 => $this->db_post(6, 'publish', 'Later', 'later', 'post', '', 'Should not appear'),
+            8 => $this->db_post(8, 'publish', 'Hallo', 'hallo', 'post', '', ''),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame('post:5', $second['items'][0]['group']);
+        $this->assertSame(array('en', 'de'), array_keys($second['items'][0]['translations']));
+        $this->assertSame(5, $second['items'][0]['translations']['en']['id']);
+        $this->assertSame('draft', $second['items'][0]['translations']['en']['status']);
+        $this->assertSame('Fågel', $second['items'][0]['translations']['en']['title']);
+        $this->assertSame('<p>ä ö å</p>', $second['items'][0]['translations']['en']['content']);
+        $this->assertSame('', $second['items'][0]['translations']['de']['content']);
+        $this->assertSame(
+            array('Language en is listed more than once in this translation group. Post 5 was kept.'),
+            $second['errors']
+        );
+        $encoded = json_encode($second);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Should not appear', $encoded);
+    }
+
+    public function test_duplicate_language_keeps_the_first_post_even_when_a_later_id_is_lower()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 73,
+                'description' => 'a:3:{s:2:"sv";i:50;s:2:"en";i:8;s:2:"sv";i:2;}',
+            ),
+        );
+        $fake->posts_rows = array(
+            50 => $this->db_post(50, 'future', 'Fågel', 'fagel', 'post', '', '<p>ä ö å</p>'),
+            8 => $this->db_post(8, 'publish', 'Bird', 'bird', 'post', '', ''),
+            2 => $this->db_post(2, 'publish', 'Earlier number', 'earlier', 'post', '', 'Not first'),
+        );
+        $result = (new Polylang_Posts())->export();
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:50', $result['items'][0]['group']);
+        $this->assertSame('future', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Fågel', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('<p>ä ö å</p>', $result['items'][0]['translations']['sv']['content']);
+        $this->assertSame('', $result['items'][0]['translations']['en']['content']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertSame(
+            'Language sv is listed more than once in this translation group. Post 50 was kept.',
+            $result['errors'][0]
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Not first', $encoded);
+    }
+
+    public function test_same_language_listed_three_times_adds_one_sentence()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 71,
+                'description' => 'a:3:{s:2:"sv";i:3;s:2:"sv";i:4;s:2:"sv";i:5;}',
+            ),
+        );
+        $fake->posts_rows = array(
+            3 => $this->db_post(3, 'future', 'Ö', 'o', 'post', '', ''),
+            4 => $this->db_post(4, 'publish', 'Two', 'two'),
+            5 => $this->db_post(5, 'publish', 'Three', 'three'),
+        );
+        $result = (new Polylang_Posts())->export();
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:3', $result['items'][0]['group']);
+        $this->assertSame('future', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Ö', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('', $result['items'][0]['translations']['sv']['content']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertSame(
+            'Language sv is listed more than once in this translation group. Post 3 was kept.',
+            $result['errors'][0]
+        );
+    }
+
+    public function test_same_language_and_same_post_twice_is_not_an_error()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'en'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 72,
+                'description' => 'a:2:{s:2:"en";i:5;s:2:"en";i:5;}',
+            ),
+        );
+        $fake->posts_rows = array(
+            5 => $this->db_post(5, 'draft', 'Hello', 'hello', 'post', '', 'Still here'),
+        );
+        $result = (new Polylang_Posts())->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:5', $result['items'][0]['group']);
+        $this->assertSame('Still here', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
     }
 
     public function test_hyphenated_locale_is_rewritten_for_a_draft()
