@@ -69,7 +69,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Polylang is not active, so there are no term translations to migrate.'),
+            array('Polylang is not active. Term translations were not exported.'),
             $result['errors']
         );
         $this->assertSame(array('items', 'errors'), array_keys($result));
@@ -86,7 +86,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Polylang is not active, so there are no term translations to migrate.'),
+            array('Polylang is not active. Term translations were not exported.'),
             $result['errors']
         );
     }
@@ -99,7 +99,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
@@ -114,7 +114,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
@@ -186,6 +186,10 @@ class Polylang_Terms_Test extends TestCase
         );
         $this->assertSame(9, $result['items'][0]['translations']['fr']['parent']);
         $this->assertSame(array('de', 'fr'), array_keys($result['items'][0]['translations']));
+        $this->assertContains(
+            'Translation group term:12 does not include the default language (en). The group is named after term 12.',
+            $result['errors']
+        );
     }
 
     public function test_a_single_language_group_is_kept(): void
@@ -328,7 +332,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array('term:10', 'term:12'), $this->groupIds($result['items']));
         $this->assertArrayNotHasKey('fr', $result['items'][1]['translations']);
         $this->assertSame(
-            array('A term is listed in more than one translation group. The extra copy was skipped.'),
+            array('Term 11 belongs to more than one translation group. The extra copy was skipped.'),
             $result['errors']
         );
     }
@@ -392,6 +396,25 @@ class Polylang_Terms_Test extends TestCase
         ));
 
         $this->assertSame("Children's books", $result['items'][0]['translations']['en']['name']);
+    }
+
+    public function test_null_bytes_are_removed_from_term_text(): void
+    {
+        $result = $this->exportSnapshot(array(
+            'state' => 'ok',
+            'default_lang' => 'en',
+            'groups' => array(
+                array(
+                    'taxonomy' => 'category',
+                    'translations' => array(
+                        'en' => array('id' => 9, 'name' => "News\0", 'slug' => "news\0"),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame('News', $result['items'][0]['translations']['en']['name']);
+        $this->assertSame('news', $result['items'][0]['translations']['en']['slug']);
     }
 
     public function test_storage_reads_groups_untranslated_terms_and_skips_bad_rows(): void
@@ -479,14 +502,23 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(503, $postTags);
         $this->assertCount(509, $result['items']);
 
-        $this->assertContains('A term translation group could not be read and was skipped.', $result['errors']);
-        $this->assertContains('A translated term no longer exists and was skipped.', $result['errors']);
-        $this->assertContains('A translated term belongs to a different taxonomy and was skipped.', $result['errors']);
+        $this->assertContains(
+            'A term translation group could not be read because its stored description is invalid. That group was skipped.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 99999 was listed in a translation group, but that term no longer exists. It was left out of the export.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 31 belongs to post_tag, so it was left out of the category translation group.',
+            $result['errors']
+        );
         $this->assertContains(
             'A term has no Polylang language. It is included with a blank language so it is not dropped.',
             $result['errors']
         );
-        $this->assertNotContains('Polylang is not active, so there are no term translations to migrate.', $result['errors']);
+        $this->assertNotContains('Polylang is not active. Term translations were not exported.', $result['errors']);
     }
 
     public function test_language_rows_count_as_polylang_when_no_groups_exist_yet(): void
@@ -523,7 +555,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
@@ -629,7 +661,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            array('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.'),
             $result['errors']
         );
     }
