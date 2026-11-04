@@ -62,13 +62,21 @@ if (!defined('ABSPATH')) {
         <li class="wmm-tolka-help__step">
             <h3 class="wmm-tolka-help__step-title"><?php esc_html_e('Preview the content', 'migration-manager'); ?></h3>
             <p>
-                <?php esc_html_e('Preview languages, posts, terms, strings, menus, and media before anything is written. Languages are the languages configured in Polylang. Posts, categories, tags, other terms, and menus are included with their translations. Strings are the interface phrases Polylang stores. Media covers translated alternative text and titles on attachments.', 'migration-manager'); ?>
+                <?php esc_html_e('Preview languages, posts, terms, strings, menus, and media before anything is written.', 'migration-manager'); ?>
             </p>
+            <ul class="wmm-tolka-help__details">
+                <li><?php esc_html_e('Languages are the languages configured in Polylang, including which one is the default.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Posts are grouped by translation, so one row covers the same post in each language rather than a separate row per language.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Terms are categories, tags, and other taxonomies, also grouped by translation.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Strings are the interface phrases Polylang stores, with a translation for each language.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Menus are the theme locations and the translated menu assigned to each language.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Media is the alternative text and titles on attachments, per language.', 'migration-manager'); ?></li>
+            </ul>
             <p>
-                <?php esc_html_e('Each part shows a count and a short sample. The sample is only a look at the data. The migration includes every item that was found, not just the rows in the sample.', 'migration-manager'); ?>
+                <?php esc_html_e('Each part shows a count of everything found and a sample of at most twenty rows. The sample is only a look at the data. The migration includes every item that was found, not just the rows in the sample.', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__note">
-                <?php esc_html_e('If a part has no items, that part stays empty. If a part cannot be read, the preview names that part and still shows the parts that could be read.', 'migration-manager'); ?>
+                <?php esc_html_e('If a part has no items, that part stays empty and the preview can include a short error explaining why. If a part cannot be read at all, the preview names that part and still shows the parts that could be read.', 'migration-manager'); ?>
             </p>
         </li>
         <li class="wmm-tolka-help__step">
