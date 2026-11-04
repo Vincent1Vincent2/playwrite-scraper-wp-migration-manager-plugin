@@ -86,10 +86,22 @@ class Tolka_Writer
                 $hidden,
                 'You need administrator permission to migrate this site to Tolka.'
             );
-            $collected = self::collect($package, $errors, $hidden);
+            $collected = self::collect(self::prepare_package($package), $errors, $hidden);
             return self::result($collected['counts'], $errors, $hidden);
         }
 
+        if (!self::supported_version($package)) {
+            self::add_error(
+                $errors,
+                $hidden,
+                'This Tolka package is version "%s", and this site can save version 1 only. Run the migration again from this site.',
+                array(self::version_label(isset($package['version']) ? $package['version'] : null))
+            );
+            $collected = self::collect(self::prepare_package($package), $errors, $hidden);
+            return self::result($collected['counts'], $errors, $hidden);
+        }
+
+        $package = self::prepare_package($package);
         $collected = self::collect($package, $errors, $hidden);
 
         if (!self::store_package($package, $errors, $hidden)) {
@@ -454,12 +466,203 @@ class Tolka_Writer
             return true;
         }
 
-        self::add_error(
-            $errors,
-            $hidden,
-            'WordPress could not save the Tolka migration package.'
-        );
+        self::add_error($errors, $hidden, self::store_failed_message($package));
         return false;
+    }
+
+    /**
+     * Turn exporter envelopes into a package. A finished package is unchanged.
+     *
+     * The runner normally builds the package first. If it passes envelopes
+     * straight through, the saved option is still a version 1 package and
+     * exporter error text is not stored.
+     *
+     * @param array $input Package or exporter parts.
+     * @return array
+     */
+    private static function prepare_package(array $input)
+    {
+        if (!self::contains_envelopes($input)) {
+            return $input;
+        }
+
+        $parts = self::as_envelopes($input);
+        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
+            return Tolka_Schema::package($parts);
+        }
+
+        $package = array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+        );
+
+        foreach (self::sections() as $section) {
+            $package[$section] = array();
+            if (isset($parts[$section]['items']) && is_array($parts[$section]['items'])) {
+                $package[$section] = $parts[$section]['items'];
+            }
+        }
+
+        return $package;
+    }
+
+    /**
+     * Whether any section is still an exporter envelope.
+     *
+     * @param array $input Package or exporter parts.
+     * @return bool
+     */
+    private static function contains_envelopes(array $input)
+    {
+        foreach (self::sections() as $section) {
+            if (!isset($input[$section]) || !is_array($input[$section])) {
+                continue;
+            }
+
+            if (self::is_envelope($input[$section])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * An envelope has items and is not itself a content record.
+     *
+     * @param array $value Section value.
+     * @return bool
+     */
+    private static function is_envelope(array $value)
+    {
+        if (!array_key_exists('items', $value) || !is_array($value['items'])) {
+            return false;
+        }
+
+        $content_keys = array(
+            'group',
+            'translations',
+            'slug',
+            'name',
+            'string',
+            'location',
+            'attachment_id',
+            'file',
+            'taxonomy',
+            'type',
+        );
+
+        foreach ($content_keys as $key) {
+            if (array_key_exists($key, $value)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Wrap plain lists so the schema can read them next to envelopes.
+     *
+     * @param array $input Package or exporter parts.
+     * @return array
+     */
+    private static function as_envelopes(array $input)
+    {
+        $parts = array();
+
+        foreach (self::sections() as $section) {
+            if (!array_key_exists($section, $input)) {
+                continue;
+            }
+
+            $value = $input[$section];
+            if (!is_array($value)) {
+                continue;
+            }
+
+            if (self::is_envelope($value)) {
+                $parts[$section] = $value;
+                continue;
+            }
+
+            $parts[$section] = array(
+                'items' => $value,
+                'errors' => array(),
+            );
+        }
+
+        return $parts;
+    }
+
+    /**
+     * Version 1 is the only package this site saves. A missing version is allowed.
+     *
+     * @param array $package Package to check.
+     * @return bool
+     */
+    private static function supported_version(array $package)
+    {
+        if (!array_key_exists('version', $package)) {
+            return true;
+        }
+
+        $version = $package['version'];
+        if (is_bool($version)) {
+            return false;
+        }
+
+        if (is_int($version)) {
+            return $version === 1;
+        }
+
+        if (is_float($version)) {
+            return $version === 1.0;
+        }
+
+        if (is_string($version) && preg_match('/^[0-9]+$/', $version)) {
+            return (int) $version === 1;
+        }
+
+        return false;
+    }
+
+    /**
+     * Short text for a package version that cannot be saved.
+     *
+     * @param mixed $version Raw version value.
+     * @return string
+     */
+    private static function version_label($version)
+    {
+        if (is_int($version) || is_float($version) || is_string($version)) {
+            $label = trim((string) $version);
+            if (strlen($label) > 40) {
+                $label = substr($label, 0, 40);
+            }
+            if ($label !== '') {
+                return $label;
+            }
+        }
+
+        return 'unknown';
+    }
+
+    /**
+     * Sentence used when the package option cannot be saved.
+     *
+     * @param array $package Package that failed to save.
+     * @return string
+     */
+    private static function store_failed_message(array $package)
+    {
+        $bytes = strlen(serialize($package));
+        if ($bytes > 900000) {
+            return 'WordPress could not save the Tolka migration package. It is too large for one database option. Ask your host to raise the maximum packet size, then run the migration again.';
+        }
+
+        return 'WordPress could not save the Tolka migration package. Run the migration again.';
     }
 
     /**
