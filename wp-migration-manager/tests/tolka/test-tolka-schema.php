@@ -397,6 +397,51 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertFunctionsStayInsideTolka();
     }
 
+    public function test_post_id_zero_is_skipped_with_a_finished_sentence()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:10',
+                    'translations' => array(
+                        'en' => array('id' => 0, 'title' => 'Empty'),
+                        'sv' => array('id' => '0', 'title' => 'Noll'),
+                        'de' => array('ID' => 0.0, 'title' => 'Null'),
+                        'fr' => 0,
+                        'es' => array('id' => 12, 'title' => 'Real'),
+                    ),
+                ),
+            ),
+            'terms' => array(
+                array(
+                    'group' => 'term:4',
+                    'translations' => array(
+                        'en' => array('id' => 0, 'name' => 'None'),
+                        'sv' => array('id' => 4, 'name' => 'News'),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(
+            array(
+                'Post id 0 for language "en" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id 0 for language "sv" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id 0 for language "de" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id 0 for language "fr" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Term id 0 for language "en" in group "term:4" was skipped because it is not a saved term. Nothing was deleted, and your Polylang content is still in place.',
+            ),
+            $result['errors']
+        );
+        $this->assertArrayNotHasKey(0, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertArrayNotHasKey(0, $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame('es', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12]['_wmm_tolka_lang']);
+        $this->assertSame('post:10', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12]['_wmm_tolka_group']);
+        $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_lang']);
+        $this->assertSame('term:4', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_group']);
+    }
+
     public function test_rejected_ids_do_not_tag_a_post()
     {
         $result = Tolka_Writer::write(array(
@@ -548,12 +593,80 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(1, $result['counts']['posts']);
         $this->assertSame(
             array(
-                'WordPress could not save the Tolka migration package. Run the migration again. Nothing was deleted, and your Polylang content is still in place.',
+                'WordPress could not save the Tolka migration package, so existing Tolka language tags were left unchanged. Run the migration again. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
         $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
         $this->assertSame(0, $this->call_count('update_post_meta'));
+    }
+
+    public function test_failed_package_save_leaves_existing_tolka_meta_unchanged()
+    {
+        $previous = array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'languages' => array(),
+            'posts' => array(),
+            'terms' => array(),
+            'strings' => array(),
+            'menus' => array(),
+            'media' => array(),
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['option_result'] = false;
+        $GLOBALS['wmm_tolka_schema_driver']['stored_package'] = $previous;
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10] = array(
+            '_wmm_tolka_lang' => 'sv',
+            '_wmm_tolka_group' => 'post:10',
+            '_pll_lang' => 'sv',
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4] = array(
+            '_wmm_tolka_lang' => 'sv',
+            '_wmm_tolka_group' => 'term:4',
+            'polylang_note' => 'leave this',
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:11',
+                    'translations' => array(
+                        'en' => 10,
+                        'fr' => 11,
+                    ),
+                ),
+            ),
+            'terms' => array(
+                array(
+                    'group' => 'term:8',
+                    'translations' => array('en' => 4),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($result['ok']);
+        $this->assertNotEmpty($result['errors']);
+        $this->assertSame($previous, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'sv',
+                '_wmm_tolka_group' => 'post:10',
+                '_pll_lang' => 'sv',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][10]
+        );
+        $this->assertArrayNotHasKey(11, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'sv',
+                '_wmm_tolka_group' => 'term:4',
+                'polylang_note' => 'leave this',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]
+        );
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+        $this->assertFunctionsStayInsideTolka();
     }
 
     public function test_missing_option_storage_is_a_clear_error()
@@ -565,7 +678,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertFalse($result['ok']);
         $this->assertSame(
             array(
-                'WordPress could not save the Tolka migration package because this site cannot store options. Nothing was deleted, and your Polylang content is still in place.',
+                'WordPress could not save the Tolka migration package because this site cannot store options, so existing Tolka language tags were left unchanged. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
@@ -749,7 +862,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(0, $result['counts']['languages']);
         $this->assertSame(
             array(
-                'WordPress could not save the Tolka migration package because this site cannot store options. Nothing was deleted, and your Polylang content is still in place.',
+                'WordPress could not save the Tolka migration package because this site cannot store options, so existing Tolka language tags were left unchanged. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
@@ -878,7 +991,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertFalse($result['ok']);
         $this->assertSame(
             array(
-                'WordPress could not save the Tolka migration package. It is too large for one database option. Ask your host to raise the maximum packet size, then run the migration again. Nothing was deleted, and your Polylang content is still in place.',
+                'WordPress could not save the Tolka migration package because it is too large for one database option, so existing Tolka language tags were left unchanged. Ask your host to raise the maximum packet size, then run the migration again. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
         );
