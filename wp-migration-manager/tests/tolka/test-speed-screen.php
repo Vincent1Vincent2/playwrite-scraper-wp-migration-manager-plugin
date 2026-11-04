@@ -271,6 +271,85 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame('Lab sample, March.', $this->text($html, 'wmm-tolka-basis'));
     }
 
+    public function test_placeholder_provenance_always_shows_the_note_and_failure_shows_no_percent()
+    {
+        $contract_note = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
+        $ids = array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        );
+        $cases = array(
+            'ready with the contract note' => array(
+                'ok' => true,
+                'current_ms' => 1000,
+                'tolka_ms' => 800,
+                'faster_percent' => 20,
+                'faster_label' => '20.0% faster',
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'placeholder',
+                'provenance_note' => $contract_note,
+                'error' => '',
+            ),
+            'ready with a blank note' => array(
+                'ok' => true,
+                'current_ms' => 1000,
+                'tolka_ms' => 800,
+                'faster_percent' => 20,
+                'faster_label' => '20.0% faster',
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => ' placeholder ',
+                'provenance_note' => '   ',
+                'error' => '',
+            ),
+            'failed with a percent in the payload' => array(
+                'ok' => false,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 88.2,
+                'faster_label' => '88.2% faster',
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'placeholder',
+                'provenance_note' => $contract_note,
+                'error' => 'The host is not allowed.',
+            ),
+            'failed with an empty note' => array(
+                'ok' => false,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 12,
+                'faster_label' => '12.0% faster',
+                'provenance' => 'placeholder',
+                'provenance_note' => '',
+                'error' => 'Missing coefficient',
+            ),
+        );
+
+        foreach ($cases as $name => $estimate) {
+            $html = $this->render(true, $estimate);
+            $document = $this->document($html);
+
+            foreach ($ids as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' keeps #' . $id);
+            }
+
+            $note = $document->getElementById('wmm-tolka-provenance-note');
+            $this->assertFalse($note->parentNode->hasAttribute('hidden'), $name);
+            $this->assertSame($contract_note, $this->text($html, 'wmm-tolka-provenance-note'), $name);
+
+            if (true !== $estimate['ok']) {
+                $this->assertStringNotContainsString('% faster', $html, $name);
+                $this->assertStringNotContainsString((string) $estimate['faster_percent'], $html, $name);
+                $this->assertSame('', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'), $name);
+                $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'), $name);
+                $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-current-load'), $name);
+                $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-tolka-load'), $name);
+            }
+        }
+    }
+
     public function test_failed_estimate_offers_no_percent()
     {
         $estimate = $this->ready_estimate();
