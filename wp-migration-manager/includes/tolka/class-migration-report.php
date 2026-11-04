@@ -642,7 +642,9 @@ class Migration_Report
                     );
                 } else {
                     $short[] = sprintf(
-                        self::text('%1$s of %2$s %3$s'),
+                        ($saved === 1)
+                            ? self::text('%1$s of %2$s %3$s was saved')
+                            : self::text('%1$s of %2$s %3$s were saved'),
                         self::number($saved),
                         self::number($found),
                         self::noun($meta, $found)
@@ -652,7 +654,9 @@ class Migration_Report
             }
 
             $extra[] = sprintf(
-                self::text('%1$s %2$s saved from %3$s found'),
+                ($saved === 1)
+                    ? self::text('%1$s %2$s was saved from the %3$s that were found')
+                    : self::text('%1$s %2$s were saved from the %3$s that were found'),
                 self::number($saved),
                 self::noun($meta, $saved),
                 self::number($found)
@@ -661,16 +665,10 @@ class Migration_Report
 
         $parts = array();
         if (!empty($short)) {
-            $parts[] = sprintf(
-                self::text('Not everything that was found was saved: %s.'),
-                self::join_and($short)
-            );
+            $parts[] = self::text('Not everything that was found was saved.') . ' ' . self::capitalize(self::join_and($short)) . '.';
         }
         if (!empty($extra)) {
-            $parts[] = sprintf(
-                self::text('The saved package includes more than was found: %s.'),
-                self::join_and($extra)
-            );
+            $parts[] = self::text('The saved package includes more than was found.') . ' ' . self::capitalize(self::join_and($extra)) . '.';
         }
 
         return self::join_sentences($parts);

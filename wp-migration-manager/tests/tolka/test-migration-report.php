@@ -424,11 +424,11 @@ class Test_Migration_Report extends TestCase
         $this->assertSame('Migration finished with problems', $report['title']);
         $this->assertStringContainsString('The package is saved on this site.', $report['summary']);
         $this->assertStringContainsString(
-            'Not everything that was found was saved: 8 of 10 posts and the menu was not saved.',
+            'Not everything that was found was saved. 8 of 10 posts were saved and the menu was not saved.',
             $report['summary']
         );
         $this->assertSame(
-            'Not everything that was found was saved: 8 of 10 posts and the menu was not saved.',
+            'Not everything that was found was saved. 8 of 10 posts were saved and the menu was not saved.',
             $this->line($report, 'Saved counts')
         );
     }
