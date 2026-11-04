@@ -976,6 +976,48 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(2, $second['items']);
     }
 
+    public function test_a_category_slug_named_nav_menu_is_exported_and_the_menu_stays_out(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = '<p>Meny åäö</p> &amp; <em>News</em>';
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('de' => 70, 'sv' => 12)));
+        $database->catalog = array(
+            $this->term(12, 'Höst', 'NAV_MENU', 'category', 'sv', 70, $html),
+            $this->term(70, 'Sidebar', 'SIDEBAR', 'nav_menu', 'de', 0, $html),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $third = $exporter->export();
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame($first, $second);
+        $this->assertSame($second, $third);
+        $this->assertSame(array('term:12'), $this->groupIds($second['items']));
+
+        $item = $this->itemByGroup($second['items'], 'term:12');
+        $this->assertSame('category', $item['taxonomy']);
+        $this->assertSame(array('sv'), array_keys($item['translations']));
+        $this->assertSame('nav_menu', $item['translations']['sv']['slug']);
+        $this->assertSame('Höst', $item['translations']['sv']['name']);
+        $this->assertSame($html, $item['translations']['sv']['description']);
+        $this->assertSame(70, $item['translations']['sv']['parent']);
+        $this->assertIsInt($item['translations']['sv']['parent']);
+        $this->assertNotContains('term:70', $this->groupIds($second['items']));
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Sidebar', $encoded);
+        $this->assertStringNotContainsString('SIDEBAR', $encoded);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertCount(1, $second['items']);
+    }
+
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
     {
         if (!$this->canUseDatabaseStub()) {
