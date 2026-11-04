@@ -47,8 +47,10 @@ class Polylang_Terms
      *
      * Each item has taxonomy, group (`term:{id}`), and translations.
      * A translation is keyed by language slug and has id, name, slug, description, and parent.
+     * HTML in a name is kept. Null bytes are removed from names and slugs.
      * description is the term description in that language.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
+     * Calling export() again on the same instance does not append duplicate groups.
      * The group id is the default-language term when that translation exists,
      * otherwise the lowest term id in the group.
      *
@@ -195,10 +197,24 @@ class Polylang_Terms
                 if (!is_array($row)) {
                     continue;
                 }
+                $row['name'] = $this->stringValue(isset($row['name']) ? $row['name'] : '');
+                $row['slug'] = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
                 $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
                 $items[$index]['translations'][$lang] = $row;
             }
         }
+
+        $seenGroups = array();
+        $deduped = array();
+        foreach ($items as $item) {
+            $group = isset($item['group']) ? (string) $item['group'] : '';
+            if ($group === '' || isset($seenGroups[$group])) {
+                continue;
+            }
+            $seenGroups[$group] = true;
+            $deduped[] = $item;
+        }
+        $items = $deduped;
 
         usort($items, function ($left, $right) {
             return $this->compareItems($left, $right);
@@ -301,7 +317,7 @@ class Polylang_Terms
             'translations' => array(
                 $lang => array(
                     'id' => $id,
-                    'name' => $this->plainText(isset($term['name']) ? $term['name'] : ''),
+                    'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
                     'slug' => $this->stringValue(isset($term['slug']) ? $term['slug'] : ''),
                     'description' => $this->plainText(isset($term['description']) ? $term['description'] : ''),
                     'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
@@ -471,7 +487,7 @@ class Polylang_Terms
             $groupedIds[$translatedId] = true;
             $translations[$lang] = array(
                 'id' => $translatedId,
-                'name' => $this->plainText($details['name']),
+                'name' => $this->stringValue(isset($details['name']) ? $details['name'] : ''),
                 'slug' => $this->stringValue($details['slug']),
                 'description' => $this->plainText(isset($details['description']) ? $details['description'] : ''),
                 'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
@@ -1473,7 +1489,7 @@ class Polylang_Terms
     {
         if (is_array($row)) {
             $id = isset($row['id']) ? (int) $row['id'] : 0;
-            $name = $this->plainText(isset($row['name']) ? $row['name'] : '');
+            $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
             $slug = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
             $description = $this->plainText(isset($row['description']) ? $row['description'] : '');
             $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);

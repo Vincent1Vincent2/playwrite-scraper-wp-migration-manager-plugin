@@ -417,11 +417,47 @@ class Polylang_Terms_Test extends TestCase
         $group = $this->itemByGroup($result['items'], 'term:10');
         $loose = $this->itemByGroup($result['items'], 'term:20');
 
-        $this->assertSame('Fish & Chips', $group['translations']['en']['name']);
+        $this->assertSame('Fish &amp; Chips', $group['translations']['en']['name']);
         $this->assertSame('Tom & Jerry', $group['translations']['en']['description']);
         $this->assertSame('fish-chips', $group['translations']['en']['slug']);
-        $this->assertSame('Salt & pepper', $loose['translations']['en']['name']);
+        $this->assertSame('Salt &amp; pepper', $loose['translations']['en']['name']);
         $this->assertSame('salt-pepper', $loose['translations']['en']['slug']);
+    }
+
+    public function test_html_names_survive_a_second_export_without_duplicate_groups(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(
+            serialize(array('en' => 9, 'sv' => 10)),
+            serialize(array('en' => 11)),
+        );
+        $database->catalog = array(
+            $this->term(9, "<em>News</em>\0 &amp; Notes", "news\0-notes", 'category', 'en'),
+            $this->term(10, 'Nyheter', 'nyheter', 'category', 'sv'),
+            $this->term(11, 'Solo', 'solo', 'post_tag', 'en'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $news = $this->itemByGroup($second['items'], 'term:9');
+
+        $this->assertSame('<em>News</em> &amp; Notes', $news['translations']['en']['name']);
+        $this->assertSame('news-notes', $news['translations']['en']['slug']);
+        $this->assertStringNotContainsString("\0", $news['translations']['en']['name']);
+        $this->assertStringNotContainsString("\0", $news['translations']['en']['slug']);
+        $this->assertSame($this->groupIds($first['items']), $this->groupIds($second['items']));
+        $this->assertSame(
+            $this->groupIds($second['items']),
+            array_values(array_unique($this->groupIds($second['items'])))
+        );
+        $this->assertCount(2, $second['items']);
     }
 
     public function test_null_bytes_are_removed_from_term_text(): void
@@ -433,14 +469,23 @@ class Polylang_Terms_Test extends TestCase
                 array(
                     'taxonomy' => 'category',
                     'translations' => array(
-                        'en' => array('id' => 9, 'name' => "News\0", 'slug' => "news\0"),
+                        'en' => array(
+                            'id' => 9,
+                            'name' => "<em>News</em>\0 &amp; Notes",
+                            'slug' => "news\0-notes",
+                            'description' => "Hello\0 <em>there</em>",
+                        ),
                     ),
                 ),
             ),
         ));
 
-        $this->assertSame('News', $result['items'][0]['translations']['en']['name']);
-        $this->assertSame('news', $result['items'][0]['translations']['en']['slug']);
+        $this->assertSame('<em>News</em> &amp; Notes', $result['items'][0]['translations']['en']['name']);
+        $this->assertNotSame('<em>News</em> & Notes', $result['items'][0]['translations']['en']['name']);
+        $this->assertSame('news-notes', $result['items'][0]['translations']['en']['slug']);
+        $this->assertStringNotContainsString("\0", $result['items'][0]['translations']['en']['name']);
+        $this->assertStringNotContainsString("\0", $result['items'][0]['translations']['en']['slug']);
+        $this->assertSame('Hello <em>there</em>', $result['items'][0]['translations']['en']['description']);
     }
 
     public function test_storage_reads_groups_untranslated_terms_and_skips_bad_rows(): void
@@ -624,8 +669,13 @@ class Polylang_Terms_Test extends TestCase
         $exporter = new Polylang_Terms();
         $first = $exporter->export();
         $second = $exporter->export();
+        $firstGroups = $this->groupIds($first['items']);
+        $secondGroups = $this->groupIds($second['items']);
 
         $this->assertSame($first, $second);
+        $this->assertSame($firstGroups, $secondGroups);
+        $this->assertSame($firstGroups, array_values(array_unique($secondGroups)));
+        $this->assertCount(count($firstGroups), $second['items']);
         $this->assertSame(1, $this->itemByGroup($second['items'], 'term:2')['translations']['en']['parent']);
         $this->assertSame(0, $this->itemByGroup($second['items'], 'term:3')['translations']['en']['parent']);
     }
