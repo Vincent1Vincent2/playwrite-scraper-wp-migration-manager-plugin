@@ -378,7 +378,7 @@ class Polylang_Detector_Test extends TestCase
                 'active' => false,
                 'version' => '3.6.4',
                 'errors' => array(
-                    sprintf(self::INACTIVE_INSTALLED, '3.6.4') . ' ' . sprintf(self::ALSO_PRO, '3.7.1'),
+                    'Polylang 3.6.4 is installed but not active. Polylang Pro 3.7.1 is also installed. Activate Polylang, then return to Migrate to Tolka.',
                 ),
             ),
             $status
@@ -397,7 +397,7 @@ class Polylang_Detector_Test extends TestCase
         $this->assertFalse($status['active']);
         $this->assertSame('3.7.1', $status['version']);
         $this->assertSame(
-            array(sprintf(self::INACTIVE_INSTALLED_PRO, '3.7.1') . ' ' . self::ALSO_MISSING_FREE),
+            array('Polylang Pro 3.7.1 is installed but not active. A Polylang plugin file was also found, but it has no readable Version header. Activate Polylang Pro, then return to Migrate to Tolka.'),
             $status['errors']
         );
     }
@@ -431,7 +431,7 @@ class Polylang_Detector_Test extends TestCase
 
         $this->assertSame('3.6.4', $status['version']);
         $this->assertSame(
-            array(sprintf(self::INACTIVE_INSTALLED, '3.6.4') . ' ' . self::ALSO_MISSING_PRO),
+            array($this->expect_with_note(sprintf(self::INACTIVE_INSTALLED, '3.6.4'), self::ALSO_MISSING_PRO)),
             $status['errors']
         );
     }
@@ -447,7 +447,7 @@ class Polylang_Detector_Test extends TestCase
             array(
                 'active' => false,
                 'version' => '',
-                'errors' => array(self::INACTIVE_HEADER . ' ' . self::ALSO_MISSING_PRO),
+                'errors' => array('A Polylang plugin file was found, but it has no readable Version header, and Polylang is not active. A Polylang Pro plugin file was also found, but it has no readable Version header. Activate Polylang, then return to Migrate to Tolka.'),
             ),
             Polylang_Detector_Fixture::status()
         );
@@ -469,7 +469,7 @@ class Polylang_Detector_Test extends TestCase
 
         $this->assertSame('3.6.4', $status['version']);
         $this->assertSame(
-            array(sprintf(self::INACTIVE_INSTALLED, '3.6.4') . ' ' . sprintf(self::ALSO_PRO, '3.7.0')),
+            array($this->expect_with_note(sprintf(self::INACTIVE_INSTALLED, '3.6.4'), sprintf(self::ALSO_PRO, '3.7.0'))),
             $status['errors']
         );
         $this->assertStringNotContainsString('0.0.1', $status['errors'][0]);
@@ -490,7 +490,7 @@ class Polylang_Detector_Test extends TestCase
 
         $this->assertSame('3.7.0', $status['version']);
         $this->assertSame(
-            array(sprintf(self::INACTIVE_INSTALLED_PRO, '3.7.0') . ' ' . sprintf(self::ALSO_FREE, '3.6.4')),
+            array($this->expect_with_note(sprintf(self::INACTIVE_INSTALLED_PRO, '3.7.0'), sprintf(self::ALSO_FREE, '3.6.4'))),
             $status['errors']
         );
     }
@@ -1069,6 +1069,19 @@ class Polylang_Detector_Test extends TestCase
         file_put_contents($path, $contents);
 
         return $path;
+    }
+
+    private function expect_with_note(string $message, string $note): string
+    {
+        $note = trim($note);
+        foreach (array(' Activate ', ' Reload ') as $marker) {
+            $position = strpos($message, $marker);
+            if ($position !== false) {
+                return substr($message, 0, $position) . ' ' . $note . substr($message, $position);
+            }
+        }
+
+        return $message . ' ' . $note;
     }
 
     private function header_without_version(string $name): string
