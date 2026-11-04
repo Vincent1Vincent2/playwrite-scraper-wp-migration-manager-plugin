@@ -371,6 +371,11 @@ class Migration_Runner
             } elseif (!empty($section_errors)) {
                 $status = 'error';
                 $message = self::line($meta['review']);
+                if ($count === 1) {
+                    $message .= ' ' . self::line($meta['found_one']);
+                } elseif ($count > 1) {
+                    $message .= ' ' . sprintf(self::line($meta['found_many']), $count);
+                }
             } elseif ($count === 0) {
                 $status = 'empty';
                 $message = self::line($meta['empty']);
@@ -397,6 +402,7 @@ class Migration_Runner
                 'message' => $message,
                 'labels' => $labels,
                 'more' => max(0, $count - count($presented)),
+                'error_count' => count($section_errors),
             );
             foreach ($section_errors as $error) {
                 $errors[] = $error;
@@ -457,7 +463,10 @@ class Migration_Runner
             return self::line('Nothing could be previewed because the Polylang exporters are not available. Activate the rest of the migration plugin and try again.');
         }
         if ($state === 'incomplete') {
-            return self::line('The preview is incomplete because some exporters are not available. Existing Polylang data was not changed.');
+            return sprintf(
+                self::line('The preview is incomplete because %s could not be read. Existing Polylang data was not changed.'),
+                self::join_clauses(self::missing_labels($view))
+            );
         }
         if ($state === 'error') {
             return self::line('The preview finished with errors. Review them before migrating. Existing Polylang data was not changed.');
@@ -517,19 +526,11 @@ class Migration_Runner
             );
         }
         if ($saved) {
-            $skipped = 0;
-            foreach (self::section_keys() as $section) {
-                if ($view['sections'][$section]['status'] === 'missing') {
-                    $skipped++;
-                }
-            }
-            if ($skipped === 1) {
-                return self::line('The Tolka package was saved, but 1 section was skipped. Review the errors before using it. Existing Polylang data was not changed.');
-            }
-            if ($skipped > 1) {
+            $labels = self::missing_labels($view);
+            if (!empty($labels)) {
                 return sprintf(
-                    self::line('The Tolka package was saved, but %d sections were skipped. Review the errors before using it. Existing Polylang data was not changed.'),
-                    $skipped
+                    self::line('The Tolka package was saved, but %s could not be read. Existing Polylang data was not changed.'),
+                    self::join_clauses($labels)
                 );
             }
             return self::line('The Tolka package was saved, but the migration is incomplete. Review the errors before using it. Existing Polylang data was not changed.');
@@ -538,6 +539,21 @@ class Migration_Runner
             return self::line('The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.');
         }
         return self::line('The migration did not run. Nothing was written, and existing Polylang data was not changed.');
+    }
+
+    /**
+     * @param array $view
+     * @return string[]
+     */
+    private static function missing_labels($view)
+    {
+        $labels = array();
+        foreach (self::section_keys() as $section) {
+            if ($view['sections'][$section]['status'] === 'missing') {
+                $labels[] = $view['sections'][$section]['label'];
+            }
+        }
+        return $labels;
     }
 
     /**
@@ -1159,6 +1175,9 @@ class Migration_Runner
         if ($count === 1) {
             return $parts[0];
         }
+        if ($count === 2) {
+            return $parts[0] . ' and ' . $parts[1];
+        }
         $last = array_pop($parts);
         return implode(', ', $parts) . ', and ' . $last;
     }
@@ -1194,6 +1213,8 @@ class Migration_Runner
                 'threw' => 'Languages could not be read (%s).',
                 'undisplayable' => 'Languages reported an error that could not be displayed.',
                 'review' => 'Languages could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 language was still found.',
+                'found_many' => '%d languages were still found.',
                 'empty' => 'No languages were found.',
                 'one' => '1 language is ready to migrate.',
                 'many' => '%d languages are ready to migrate.',
@@ -1210,6 +1231,8 @@ class Migration_Runner
                 'threw' => 'Posts could not be read (%s).',
                 'undisplayable' => 'Posts reported an error that could not be displayed.',
                 'review' => 'Posts could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 post was still found.',
+                'found_many' => '%d posts were still found.',
                 'empty' => 'No posts were found.',
                 'one' => '1 post is ready to migrate.',
                 'many' => '%d posts are ready to migrate.',
@@ -1226,6 +1249,8 @@ class Migration_Runner
                 'threw' => 'Terms could not be read (%s).',
                 'undisplayable' => 'Terms reported an error that could not be displayed.',
                 'review' => 'Terms could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 term was still found.',
+                'found_many' => '%d terms were still found.',
                 'empty' => 'No terms were found.',
                 'one' => '1 term is ready to migrate.',
                 'many' => '%d terms are ready to migrate.',
@@ -1242,6 +1267,8 @@ class Migration_Runner
                 'threw' => 'Strings could not be read (%s).',
                 'undisplayable' => 'Strings reported an error that could not be displayed.',
                 'review' => 'Strings could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 string was still found.',
+                'found_many' => '%d strings were still found.',
                 'empty' => 'No strings were found.',
                 'one' => '1 string is ready to migrate.',
                 'many' => '%d strings are ready to migrate.',
@@ -1258,6 +1285,8 @@ class Migration_Runner
                 'threw' => 'Menus could not be read (%s).',
                 'undisplayable' => 'Menus reported an error that could not be displayed.',
                 'review' => 'Menus could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 menu was still found.',
+                'found_many' => '%d menus were still found.',
                 'empty' => 'No menus were found.',
                 'one' => '1 menu is ready to migrate.',
                 'many' => '%d menus are ready to migrate.',
@@ -1274,6 +1303,8 @@ class Migration_Runner
                 'threw' => 'Media items could not be read (%s).',
                 'undisplayable' => 'Media items reported an error that could not be displayed.',
                 'review' => 'Media items could not be fully read. Review the errors before migrating.',
+                'found_one' => '1 media item was still found.',
+                'found_many' => '%d media items were still found.',
                 'empty' => 'No media items were found.',
                 'one' => '1 media item is ready to migrate.',
                 'many' => '%d media items are ready to migrate.',

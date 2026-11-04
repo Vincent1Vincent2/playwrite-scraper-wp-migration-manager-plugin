@@ -323,6 +323,7 @@ namespace {
                 $this->assertSame(array(), $preview['sample'][$section]);
                 $this->assertSame(array(), $preview['sections'][$section]['labels']);
                 $this->assertSame(0, $preview['sections'][$section]['more']);
+                $this->assertSame(0, $preview['sections'][$section]['error_count']);
                 $this->assertSame($message, $preview['sections'][$section]['message']);
             }
             $this->assertSame(array(), $preview['errors']);
@@ -543,6 +544,11 @@ namespace {
                 array_slice($preview['errors'], 0, 2)
             );
             $this->assertSame('error', $preview['sections']['languages']['status']);
+            $this->assertSame(2, $preview['sections']['languages']['error_count']);
+            $this->assertSame(
+                'Languages could not be fully read. Review the errors before migrating. 1 language was still found.',
+                $preview['sections']['languages']['message']
+            );
             $this->assertSame('error', $preview['state']);
             $this->assertSame(
                 'The preview finished with errors. Review them before migrating. Existing Polylang data was not changed.',
@@ -628,8 +634,9 @@ namespace {
                 $preview['sections']['terms']['message']
             );
             $this->assertSame('incomplete', $preview['state']);
+            $this->assertSame(1, $preview['sections']['terms']['error_count']);
             $this->assertSame(
-                'The preview is incomplete because some exporters are not available. Existing Polylang data was not changed.',
+                'The preview is incomplete because Terms could not be read. Existing Polylang data was not changed.',
                 $preview['message']
             );
 
@@ -637,7 +644,7 @@ namespace {
             $this->assertFalse($run['ok']);
             $this->assertSame('partial', $run['state']);
             $this->assertSame(
-                'The Tolka package was saved, but 1 section was skipped. Review the errors before using it. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Terms could not be read. Existing Polylang data was not changed.',
                 $run['message']
             );
             $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['terms']['items']);
@@ -655,7 +662,7 @@ namespace {
             $run = Migration_Runner_Test_Double::run();
             $this->assertSame('partial', $run['state']);
             $this->assertSame(
-                'The Tolka package was saved, but 2 sections were skipped. Review the errors before using it. Existing Polylang data was not changed.',
+                'The Tolka package was saved, but Terms and Media could not be read. Existing Polylang data was not changed.',
                 $run['message']
             );
             $this->assertSame(
