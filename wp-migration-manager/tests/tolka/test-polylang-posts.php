@@ -870,6 +870,30 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_incomplete_api_map_still_keeps_the_stored_draft()
+    {
+        $exporter = new Polylang_Posts_Api_Fixture();
+        $exporter->rows = array(
+            array(
+                'term_taxonomy_id' => 1,
+                'description' => array('en' => 1, 'de' => 2),
+            ),
+        );
+        $exporter->api_maps = array(
+            1 => array('en' => 1),
+        );
+        $exporter->posts = array(
+            1 => $this->record(1, 'post', 'Hello', 'hello', 'publish'),
+            2 => $this->record(2, 'post', 'Hallo', 'hallo', 'draft', '', 'Entwurf'),
+        );
+
+        $result = $exporter->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:1', $result['items'][0]['group']);
+        $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
+        $this->assertSame('Entwurf', $result['items'][0]['translations']['de']['content']);
+    }
+
     public function test_empty_api_map_keeps_the_stored_description()
     {
         $exporter = new Polylang_Posts_Api_Fixture();

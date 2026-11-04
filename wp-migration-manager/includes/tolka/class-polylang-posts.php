@@ -227,7 +227,8 @@ class Polylang_Posts
                         continue;
                     }
                     if (!empty($from_api)) {
-                        $maps[] = $from_api;
+                        // Keep a stored draft when the API answer is only a subset.
+                        $maps[] = $this->union_maps($decoded, $from_api);
                         continue;
                     }
                 }
@@ -913,6 +914,22 @@ class Polylang_Posts
             }
         }
         return $languages;
+    }
+
+    /**
+     * API languages win. Languages the API did not mention stay, so a draft is not dropped.
+     *
+     * @param array<string, int> $stored
+     * @param array<string, int> $from_api
+     * @return array<string, int>
+     */
+    private function union_maps(array $stored, array $from_api)
+    {
+        $union = $stored;
+        foreach ($from_api as $lang => $post_id) {
+            $union[$lang] = (int) $post_id;
+        }
+        return $union;
     }
 
     /**
