@@ -40,8 +40,10 @@ class Speed_Metrics
      * browser would load. HTML comments are ignored, as are the contents of
      * script, style, template, textarea, title, iframe, and noscript elements.
      * An unclosed one of those hides the rest of the body, which is what a
-     * cut-off page looks like. Switcher markers are read from the whole HTML
-     * string.
+     * cut-off page looks like. Switcher markers are read from that same HTML
+     * with comments removed, so a marker that only appears inside a comment
+     * does not count. Markers in the live markup, including a script URL,
+     * still count.
      *
      * @param array $measurement Result from Speed_Loader::measure.
      * @return array{
@@ -66,9 +68,10 @@ class Speed_Metrics
         }
 
         $lower = self::ascii_lower($html);
-        $visible = self::visible_markup($lower);
+        $without_comments = self::without_comments($lower);
+        $visible = self::visible_markup($without_comments);
         $hreflang_count = self::unique_hreflang_count($visible['markup']);
-        $has_switcher = self::has_polylang_switcher($lower);
+        $has_switcher = self::has_polylang_switcher($without_comments);
 
         if ($hreflang_count > 0) {
             $language_count = $hreflang_count;
@@ -171,6 +174,109 @@ class Speed_Metrics
         }
 
         return null;
+    }
+
+    /**
+     * HTML with comments removed and script or style elements left intact.
+     *
+     * An unclosed comment consumes the rest of the string. Markers inside a
+     * script stay, so a Polylang script URL still counts. A comment is not
+     * recognized once a script or style element has started.
+     *
+     * @param string $lower_html Lowercased HTML.
+     * @return string
+     */
+    private static function without_comments($lower_html)
+    {
+        $length = strlen($lower_html);
+        $chunks = array();
+        $i = 0;
+
+        while ($i < $length) {
+            $next = strpos($lower_html, '<', $i);
+
+            if ($next === false) {
+                $chunks[] = substr($lower_html, $i);
+                break;
+            }
+
+            if ($next > $i) {
+                $chunks[] = substr($lower_html, $i, $next - $i);
+            }
+
+            if (substr($lower_html, $next, 4) === '<!--') {
+                $end = strpos($lower_html, '-->', $next + 4);
+
+                if ($end === false) {
+                    break;
+                }
+
+                $i = $end + 3;
+                continue;
+            }
+
+            $copied = false;
+
+            foreach (self::raw_text_elements() as $name) {
+                if (!self::opens_element($lower_html, $next, $name)) {
+                    continue;
+                }
+
+                $end = self::skip_element($lower_html, $next, $name);
+                $chunks[] = self::strip_comment_spans(substr($lower_html, $next, $end - $next));
+                $i = $end;
+                $copied = true;
+                break;
+            }
+
+            if ($copied) {
+                continue;
+            }
+
+            $chunks[] = '<';
+            $i = $next + 1;
+        }
+
+        return implode('', $chunks);
+    }
+
+    /**
+     * Remove comment spans without reading past the end of this fragment.
+     *
+     * Used inside a script or style element. An unclosed comment stops at the
+     * end of the fragment, so a live switcher after the element still counts.
+     *
+     * @param string $html Fragment.
+     * @return string
+     */
+    private static function strip_comment_spans($html)
+    {
+        $length = strlen($html);
+        $chunks = array();
+        $i = 0;
+
+        while ($i < $length) {
+            $next = strpos($html, '<!--', $i);
+
+            if ($next === false) {
+                $chunks[] = substr($html, $i);
+                break;
+            }
+
+            if ($next > $i) {
+                $chunks[] = substr($html, $i, $next - $i);
+            }
+
+            $end = strpos($html, '-->', $next + 4);
+
+            if ($end === false) {
+                break;
+            }
+
+            $i = $end + 3;
+        }
+
+        return implode('', $chunks);
     }
 
     /**
@@ -564,7 +670,8 @@ class Speed_Metrics
      * Whether the HTML contains a Polylang switcher marker.
      *
      * Markers, matched case-insensitively, are polylang, pll-switcher,
-     * lang-item, and pll-parent-menu-item.
+     * lang-item, and pll-parent-menu-item. The caller removes HTML comments
+     * before this search.
      *
      * @param string $lower_html Lowercased HTML.
      * @return bool

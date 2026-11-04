@@ -51,6 +51,28 @@ class Speed_Metrics_Test extends TestCase
         $this->assertFalse($result['truncated']);
     }
 
+    public function test_measurement_that_is_not_ok()
+    {
+        $result = $this->analyze_measurement(array(
+            'ok' => false,
+            'url' => 'https://example.com/',
+            'status_code' => 500,
+            'total_ms' => 1500,
+            'ttfb_ms' => null,
+            'html_bytes' => 0,
+            'html' => '',
+            'error' => 'Polylang blocked the request. The lang-item pll-switcher was not read.',
+        ));
+
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(0, $result['script_count']);
+        $this->assertSame(0, $result['stylesheet_count']);
+        $this->assertSame(0, $result['image_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertFalse($result['truncated']);
+    }
+
     public function test_failed_measurement_with_empty_html_stays_empty()
     {
         $result = $this->analyze_measurement(array(
@@ -210,6 +232,24 @@ HTML;
         $this->assertSame(0, $result['hreflang_count']);
         $this->assertTrue($result['has_polylang_switcher']);
         $this->assertSame(2, $result['language_count']);
+    }
+
+    public function test_duplicate_hreflang_values_that_differ_only_by_case_count_once()
+    {
+        $html = <<<'HTML'
+<link rel="alternate" href="https://example.com/" hreflang="en" />
+<link rel="alternate" href="https://example.com/en/" hreflang="EN" />
+<link rel="alternate" href="https://example.com/en-2/" hreflang="En" />
+<link rel="alternate" href="https://example.com/us/" hreflang="en-US" />
+<link rel="alternate" href="https://example.com/us-2/" hreflang="EN-us" />
+<link rel="alternate" href="https://example.com/sv/" hreflang="sv" />
+HTML;
+
+        $result = $this->analyze($html);
+
+        $this->assertSame(3, $result['hreflang_count']);
+        $this->assertSame(3, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
     }
 
     public function test_hreflang_values_are_unique_and_skip_x_default()
@@ -561,14 +601,46 @@ HTML;
         $this->assertFalse($result['has_polylang_switcher']);
     }
 
-    public function test_commented_switcher_marker_still_matches_the_html_string()
+    public function test_switcher_marker_inside_an_html_comment_does_not_count()
     {
-        $result = $this->analyze('<!-- <ul class="lang-item"></ul> -->');
+        $markers = array(
+            'polylang',
+            'pll-switcher',
+            'lang-item',
+            'pll-parent-menu-item',
+        );
 
-        $this->assertTrue($result['has_polylang_switcher']);
-        $this->assertSame(0, $result['hreflang_count']);
-        $this->assertSame(2, $result['language_count']);
-        $this->assertSame(0, $result['script_count']);
+        foreach ($markers as $marker) {
+            $html = "<!--\n<div class=\"" . strtoupper($marker) . "\"></div>\n-->";
+            $result = $this->analyze($html);
+
+            $this->assertFalse($result['has_polylang_switcher'], $marker);
+            $this->assertSame(0, $result['hreflang_count'], $marker);
+            $this->assertSame(1, $result['language_count'], $marker);
+        }
+
+        $commented_only = $this->analyze('<!-- /wp-content/plugins/polylang/js/frontend.js --><script src="/theme.js"></script>');
+        $this->assertFalse($commented_only['has_polylang_switcher']);
+        $this->assertSame(1, $commented_only['language_count']);
+        $this->assertSame(1, $commented_only['script_count']);
+
+        $live_after_comment = $this->analyze('<!-- <ul class="lang-item"></ul> --><nav class="pll-switcher"></nav>');
+        $this->assertTrue($live_after_comment['has_polylang_switcher']);
+        $this->assertSame(2, $live_after_comment['language_count']);
+
+        $cut_off_comment = $this->analyze('<!-- <nav class="pll-switcher">');
+        $this->assertFalse($cut_off_comment['has_polylang_switcher']);
+        $this->assertSame(1, $cut_off_comment['language_count']);
+
+        $inside_script = $this->analyze('<script>var note = "<!-- lang-item -->";</script><nav class="pll-switcher"></nav>');
+        $this->assertTrue($inside_script['has_polylang_switcher']);
+        $this->assertSame(1, $inside_script['script_count']);
+        $this->assertSame(2, $inside_script['language_count']);
+
+        $only_inside_script = $this->analyze('<script>var note = "<!-- pll-parent-menu-item -->";</script>');
+        $this->assertFalse($only_inside_script['has_polylang_switcher']);
+        $this->assertSame(1, $only_inside_script['language_count']);
+        $this->assertSame(1, $only_inside_script['script_count']);
     }
 
     public function test_unclosed_script_hides_the_rest_of_a_cut_body()
@@ -806,6 +878,37 @@ HTML;
 
         $this->assertSame(2, $previous['language_count']);
         $this->assertSame(2, $previous['hreflang_count']);
+    }
+
+    public function test_corrupt_html_does_not_fatal()
+    {
+        $state = 20261104;
+
+        for ($n = 0; $n < 80; $n++) {
+            $length = $state % 240;
+            $html = '';
+
+            for ($i = 0; $i < $length; $i++) {
+                $state = (int) (($state * 1103515245 + 12345) & 0x7fffffff);
+                $html .= chr($state % 256);
+            }
+
+            $state = (int) (($state * 1103515245 + 12345) & 0x7fffffff);
+            $result = $this->analyze_measurement(array(
+                'html' => $html,
+                'html_bytes' => ($state % 400) - 5,
+                'truncated' => ($state % 5 === 0) ? 'false' : ($state % 2 === 0),
+                'error' => 'The response was cut off.',
+            ));
+
+            if ($result['hreflang_count'] > 0) {
+                $this->assertSame($result['hreflang_count'], $result['language_count'], 'case ' . $n);
+            } elseif ($result['has_polylang_switcher']) {
+                $this->assertSame(2, $result['language_count'], 'case ' . $n);
+            } else {
+                $this->assertSame(1, $result['language_count'], 'case ' . $n);
+            }
+        }
     }
 
     public function test_result_repeats_for_the_same_measurement()
