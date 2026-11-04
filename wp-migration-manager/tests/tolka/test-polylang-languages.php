@@ -930,6 +930,24 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_a_default_saved_as_pll_sv_marks_sv()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+            $this->language_term(8, 'Svenska', 'sv', 'sv_SE', 'se', 1, 0),
+            $this->language_term(41, 'pll_sv', 'pll_sv', 'sv_SE', 'se', 2, 0),
+        ), 'pll_sv');
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+    }
+
     public function test_polylang_internal_pll_rows_are_not_languages()
     {
         $db = $this->database_with_languages(array(

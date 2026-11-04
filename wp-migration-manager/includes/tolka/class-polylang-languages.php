@@ -834,16 +834,35 @@ class Polylang_Languages
                 $slug = '';
             }
             if (is_string($slug) && trim($slug) !== '') {
-                return trim($slug);
+                return $this->public_language_slug(trim($slug));
             }
         }
 
         $options = $this->polylang_options();
         if (isset($options['default_lang']) && is_string($options['default_lang'])) {
-            return trim($options['default_lang']);
+            return $this->public_language_slug(trim($options['default_lang']));
         }
 
         return '';
+    }
+
+    /**
+     * Language slug a site owner chose.
+     *
+     * pll_sv is the internal twin of sv, so the saved default pll_sv still
+     * marks sv.
+     *
+     * @param string $slug Raw slug.
+     * @return string
+     */
+    private function public_language_slug($slug)
+    {
+        $slug = $this->normalized_slug($slug);
+        if ($this->is_internal_language_slug($slug)) {
+            $slug = substr($slug, 4);
+        }
+
+        return $slug;
     }
 
     /**
