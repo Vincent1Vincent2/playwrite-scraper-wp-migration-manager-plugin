@@ -950,6 +950,189 @@ class Polylang_Media
             }
         }
 
+        return $this->sort_items($this->merge_items_that_share_a_file($items, $default_lang));
+    }
+
+    /**
+     * Two attachment posts that store the same file are one media item.
+     *
+     * @param array $items
+     * @param string $default_lang
+     * @return array
+     */
+    private function merge_items_that_share_a_file($items, $default_lang)
+    {
+        $merged = array();
+        $files = array();
+        $buckets = array();
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $file = isset($item['file']) ? (string) $item['file'] : '';
+            $match = -1;
+            if ($file !== '') {
+                $bucket = $this->file_bucket($file);
+                if (isset($buckets[$bucket])) {
+                    foreach ($buckets[$bucket] as $index) {
+                        if (isset($files[$index]) && $this->same_media_file($files[$index], $file)) {
+                            $match = $index;
+                            break;
+                        }
+                    }
+                }
+            }
+            if ($match < 0) {
+                $merged[] = $item;
+                $index = count($merged) - 1;
+                $files[$index] = $file;
+                if ($file !== '') {
+                    $buckets[$this->file_bucket($file)][] = $index;
+                }
+                continue;
+            }
+
+            $merged[$match] = $this->combine_shared_items($merged[$match], $item, $default_lang);
+            $files[$match] = isset($merged[$match]['file']) ? (string) $merged[$match]['file'] : $file;
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param array $left
+     * @param array $right
+     * @param string $default_lang
+     * @return array
+     */
+    private function combine_shared_items($left, $right, $default_lang)
+    {
+        $lead_left = $this->item_should_lead($left, $right, $default_lang);
+        $primary = $lead_left ? $left : $right;
+        $secondary = $lead_left ? $right : $left;
+        $primary_alt = (isset($primary['alt']) && is_array($primary['alt'])) ? $primary['alt'] : array();
+        $secondary_alt = (isset($secondary['alt']) && is_array($secondary['alt'])) ? $secondary['alt'] : array();
+        $primary_title = (isset($primary['title']) && is_array($primary['title'])) ? $primary['title'] : array();
+        $secondary_title = (isset($secondary['title']) && is_array($secondary['title'])) ? $secondary['title'] : array();
+
+        return $this->finalize_item(
+            isset($primary['attachment_id']) ? $primary['attachment_id'] : 0,
+            $this->preferred_shared_file(
+                isset($primary['file']) ? $primary['file'] : '',
+                isset($secondary['file']) ? $secondary['file'] : ''
+            ),
+            $this->merge_string_maps($primary_alt, $secondary_alt),
+            $this->merge_string_maps($primary_title, $secondary_title)
+        );
+    }
+
+    /**
+     * @param array $left
+     * @param array $right
+     * @param string $default_lang
+     * @return bool
+     */
+    private function item_should_lead($left, $right, $default_lang)
+    {
+        $left_default = $this->item_has_language($left, $default_lang);
+        $right_default = $this->item_has_language($right, $default_lang);
+        if ($left_default !== $right_default) {
+            return $left_default;
+        }
+
+        $left_id = isset($left['attachment_id']) ? (int) $left['attachment_id'] : 0;
+        $right_id = isset($right['attachment_id']) ? (int) $right['attachment_id'] : 0;
+        return $left_id <= $right_id;
+    }
+
+    /**
+     * @param array $item
+     * @param string $default_lang
+     * @return bool
+     */
+    private function item_has_language($item, $default_lang)
+    {
+        $maps = array();
+        if (isset($item['alt']) && is_array($item['alt'])) {
+            $maps[] = $item['alt'];
+        }
+        if (isset($item['title']) && is_array($item['title'])) {
+            $maps[] = $item['title'];
+        }
+        foreach ($maps as $map) {
+            foreach (array_keys($map) as $lang) {
+                if ($this->same_language($lang, $default_lang)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param array $primary
+     * @param array $secondary
+     * @return array
+     */
+    private function merge_string_maps($primary, $secondary)
+    {
+        $merged = array();
+        $keys = array();
+        foreach (array_keys($primary) as $key) {
+            $keys[$key] = true;
+        }
+        foreach (array_keys($secondary) as $key) {
+            $keys[$key] = true;
+        }
+        foreach (array_keys($keys) as $key) {
+            $first = array_key_exists($key, $primary) ? $this->string_value($primary[$key]) : '';
+            $second = array_key_exists($key, $secondary) ? $this->string_value($secondary[$key]) : '';
+            $merged[$key] = ($first !== '') ? $first : $second;
+        }
+        return $merged;
+    }
+
+    /**
+     * @param string $primary
+     * @param string $secondary
+     * @return string
+     */
+    private function preferred_shared_file($primary, $secondary)
+    {
+        $primary = $this->portable_file($primary);
+        $secondary = $this->portable_file($secondary);
+        if ($primary === '') {
+            return $secondary;
+        }
+        if ($secondary === '') {
+            return $primary;
+        }
+        if ($this->is_server_path($primary) && !$this->is_server_path($secondary) && $this->same_media_file($primary, $secondary)) {
+            return $secondary;
+        }
+        return $primary;
+    }
+
+    /**
+     * @param string $file
+     * @return string
+     */
+    private function file_bucket($file)
+    {
+        $base = basename(str_replace('\\', '/', $file));
+        if ($base === '' || $base === '.' || $base === '..') {
+            return strtolower($file);
+        }
+        return strtolower($base);
+    }
+
+    /**
+     * @param array $items
+     * @return array
+     */
+    private function sort_items($items)
+    {
         usort($items, function ($left, $right) {
             $left_id = isset($left['attachment_id']) ? (int) $left['attachment_id'] : 0;
             $right_id = isset($right['attachment_id']) ? (int) $right['attachment_id'] : 0;
@@ -1224,10 +1407,18 @@ class Polylang_Media
         if ($left === $right) {
             return true;
         }
+        $left_server = $this->is_server_path($left);
+        $right_server = $this->is_server_path($right);
+        if ($left_server === $right_server) {
+            return false;
+        }
         if (basename($left) === '' || basename($left) !== basename($right)) {
             return false;
         }
-        return $this->path_ends_with($left, $right) || $this->path_ends_with($right, $left);
+        if ($left_server) {
+            return $this->path_ends_with($left, $right);
+        }
+        return $this->path_ends_with($right, $left);
     }
 
     /**
