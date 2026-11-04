@@ -1317,6 +1317,7 @@ echo json_encode($report);
 
         $this->assertFalse($report['ok']);
         $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
         $this->assertNotSame('The migration is complete.', $report['title']);
         $this->assertStringNotContainsString('The migration is complete', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
@@ -1336,6 +1337,7 @@ echo json_encode($report);
         ));
         $this->assertTrue($clean['ok']);
         $this->assertSame('The migration is complete.', $clean['title']);
+        $this->assertSame('The migration is complete.', $this->line($clean, 'Outcome'));
         $this->assertNotSame('The migration finished with problems.', $clean['title']);
         $this->assert_section_order($clean);
     }
