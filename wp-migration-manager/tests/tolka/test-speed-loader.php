@@ -206,6 +206,36 @@ class Speed_Loader_Timeout_Code
 }
 
 /**
+ * Transport failure that only records cURL error 28 in the error data.
+ */
+class Speed_Loader_Curl_Data_Timeout
+{
+    /**
+     * @return string
+     */
+    public function get_error_code()
+    {
+        return 'http_request_failed';
+    }
+
+    /**
+     * @return string
+     */
+    public function get_error_message()
+    {
+        return 'cURL request failed';
+    }
+
+    /**
+     * @return array
+     */
+    public function get_error_data()
+    {
+        return array('curl_error_code' => 28);
+    }
+}
+
+/**
  * Transport failure whose message getter throws a timeout exception.
  */
 class Speed_Loader_Throwing_Timeout
@@ -851,6 +881,17 @@ class Speed_Loader_Test extends TestCase
         Speed_Loader_Harness::$response = new Speed_Loader_Timeout_Code();
 
         $result = $this->measureWithoutThrowing('http://1.1.1.1/');
+
+        $this->assertTimeoutResult($result);
+    }
+
+    public function test_curl_error_number_in_error_data_is_a_timeout()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = new Speed_Loader_Curl_Data_Timeout();
+
+        $result = $this->measureWithoutThrowing('https://example.com/');
 
         $this->assertTimeoutResult($result);
     }
