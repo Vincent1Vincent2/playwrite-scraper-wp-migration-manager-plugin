@@ -375,7 +375,7 @@ PHP
     public function test_upper_and_lower_case_slugs_are_one_language()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
-            $this->language_term(4, 'English', 'EN', 'en_US', 'us', 0, 1),
+            $this->language_term(4, 'EN', 'EN', 'en_US', 'us', 0, 1),
             $this->language_term(9, 'English', 'en', 'en_GB', 'gb', 1, 0),
         ), 'EN');
 
