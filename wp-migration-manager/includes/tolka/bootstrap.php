@@ -492,7 +492,15 @@ function wmm_tolka_posted_url()
         return '';
     }
 
-    return esc_url_raw(wp_unslash($_POST['url']));
+    $url = trim(wp_unslash($_POST['url']));
+
+    if ($url === '') {
+        return '';
+    }
+
+    $url = esc_url_raw($url);
+
+    return is_string($url) ? $url : '';
 }
 
 /**
@@ -512,7 +520,14 @@ function wmm_tolka_ajax_measure()
         return;
     }
 
-    $measured = wmm_tolka_invoke(\WMM\Tolka\Speed_Loader::class, 'measure', array(wmm_tolka_posted_url()));
+    $url = wmm_tolka_posted_url();
+
+    if ($url === '') {
+        wmm_tolka_json_error(__('Enter a public site URL to measure. Nothing was changed.', 'migration-manager'));
+        return;
+    }
+
+    $measured = wmm_tolka_invoke(\WMM\Tolka\Speed_Loader::class, 'measure', array($url));
 
     if (!$measured['called'] || !is_array($measured['value'])) {
         wmm_tolka_json_error(__('The speed check could not measure that URL. Nothing was changed.', 'migration-manager'));
@@ -823,6 +838,62 @@ function wmm_tolka_html_has_id($html, $id)
     }
 
     return strpos($html, 'id="' . $id . '"') !== false || strpos($html, "id='" . $id . "'") !== false;
+}
+
+/**
+ * Element ids the fallback speed panel must expose.
+ *
+ * @return string[]
+ */
+function wmm_tolka_speed_field_ids()
+{
+    return array(
+        'wmm-tolka-current-load',
+        'wmm-tolka-tolka-load',
+        'wmm-tolka-faster',
+        'wmm-tolka-basis',
+        'wmm-tolka-provenance-note',
+    );
+}
+
+/**
+ * Whether markup already contains every speed field.
+ *
+ * @param string $html Markup.
+ * @return bool
+ */
+function wmm_tolka_html_has_speed_fields($html)
+{
+    foreach (wmm_tolka_speed_field_ids() as $id) {
+        if (!wmm_tolka_html_has_id($html, $id)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Measured load, Tolka estimate, difference, basis, and provenance.
+ *
+ * @param string $current Current load text.
+ * @param string $tolka   Estimated Tolka load text.
+ * @param string $faster  Difference text.
+ * @param string $basis   Basis sentence.
+ * @param string $note    Provenance note.
+ */
+function wmm_tolka_render_speed_fields($current, $tolka, $faster, $basis, $note)
+{
+    echo '<dl class="wmm-tolka-speed-fields">';
+    echo '<dt>' . esc_html__('Measured load', 'migration-manager') . '</dt>';
+    echo '<dd id="wmm-tolka-current-load">' . esc_html($current) . '</dd>';
+    echo '<dt>' . esc_html__('Estimated on Tolka', 'migration-manager') . '</dt>';
+    echo '<dd id="wmm-tolka-tolka-load">' . esc_html($tolka) . '</dd>';
+    echo '<dt>' . esc_html__('Difference', 'migration-manager') . '</dt>';
+    echo '<dd id="wmm-tolka-faster">' . esc_html($faster) . '</dd>';
+    echo '</dl>';
+    echo '<p id="wmm-tolka-basis">' . esc_html($basis) . '</p>';
+    echo '<p id="wmm-tolka-provenance-note">' . esc_html($note) . '</p>';
 }
 
 /**
@@ -1195,14 +1266,39 @@ function wmm_tolka_render_fallback_wizard()
     echo '<div id="wmm-tolka-speed" class="wmm-tolka-panel" aria-live="polite">';
     if ($speed_html !== '') {
         echo $speed_html;
-    } elseif (isset($gaps['measure'])) {
-        echo '<p class="wmm-tolka-empty" id="wmm-tolka-measure-note">';
-        echo esc_html($gaps['measure'] . ' ' . __('Nothing was changed.', 'migration-manager'));
-        echo '</p>';
-    } else {
-        echo '<p class="wmm-tolka-empty" id="wmm-tolka-measure-note">';
-        echo esc_html__('No measurement yet. Enter the public site URL, then choose Measure speed. If the check fails, this screen shows an error and does not invent a percent.', 'migration-manager');
-        echo '</p>';
+    }
+    if (!wmm_tolka_html_has_speed_fields($speed_html)) {
+        if (isset($gaps['measure'])) {
+            echo '<p class="wmm-tolka-empty" id="wmm-tolka-measure-note">';
+            echo esc_html($gaps['measure'] . ' ' . __('Nothing was changed.', 'migration-manager'));
+            echo '</p>';
+            wmm_tolka_render_speed_fields(
+                __('Not available', 'migration-manager'),
+                __('Not available', 'migration-manager'),
+                __('Not available', 'migration-manager'),
+                $gaps['measure'] . ' ' . __('Nothing was changed.', 'migration-manager'),
+                ''
+            );
+        } elseif ($speed_html === '') {
+            echo '<p class="wmm-tolka-empty" id="wmm-tolka-measure-note">';
+            echo esc_html__('No measurement yet. Enter the public site URL, then choose Measure speed. If the check fails, this screen shows an error and does not invent a percent.', 'migration-manager');
+            echo '</p>';
+            wmm_tolka_render_speed_fields(
+                __('Not measured yet', 'migration-manager'),
+                __('Not measured yet', 'migration-manager'),
+                __('Not measured yet', 'migration-manager'),
+                __('No measurement yet. Enter the public site URL, then choose Measure speed. If the check fails, this screen shows an error and does not invent a percent.', 'migration-manager'),
+                ''
+            );
+        } else {
+            wmm_tolka_render_speed_fields(
+                __('Not measured yet', 'migration-manager'),
+                __('Not measured yet', 'migration-manager'),
+                __('Not measured yet', 'migration-manager'),
+                '',
+                ''
+            );
+        }
     }
     echo '</div></section>';
 
@@ -1282,6 +1378,8 @@ function wmm_tolka_render_fallback_css()
     echo '#wmm-tolka-wizard .wmm-tolka-basis{margin:12px 0 0}';
     echo '#wmm-tolka-wizard .wmm-tolka-placeholder{margin-top:12px;background:#fcf9e8;padding:8px 12px}';
     echo '#wmm-tolka-wizard .wmm-tolka-lines{display:grid;grid-template-columns:minmax(8rem,14rem) 1fr;gap:4px 16px;margin:12px 0 0}';
+    echo '#wmm-tolka-wizard .wmm-tolka-speed-fields{display:grid;grid-template-columns:minmax(8rem,14rem) 1fr;gap:4px 16px;margin:12px 0}';
+    echo '#wmm-tolka-wizard .wmm-tolka-speed-fields dt,#wmm-tolka-wizard .wmm-tolka-speed-fields dd{margin:0}';
     echo '#wmm-tolka-wizard .wmm-tolka-lines dt,#wmm-tolka-wizard .wmm-tolka-lines dd{margin:0}';
     echo '#wmm-tolka-wizard .wmm-tolka-sample{margin:0 0 12px 1.2em}';
     echo '#wmm-tolka-wizard .wmm-tolka-is-busy,#wmm-tolka-wizard.wmm-tolka-is-busy{cursor:progress}';
@@ -1563,12 +1661,18 @@ function wmm_tolka_fallback_script()
         if (!node) {
             return;
         }
+        var notice = message || text("failed", "The request failed. Nothing was changed.");
+        if (node.id === "wmm-tolka-speed" && fillSpeedFields(null, notice)) {
+            node.classList.add("wmm-tolka-panel-error");
+            focusPanel(node);
+            return;
+        }
         clear(node);
         node.classList.add("wmm-tolka-panel-error");
         var paragraph = document.createElement("p");
         paragraph.className = "wmm-tolka-error";
         paragraph.setAttribute("role", "alert");
-        paragraph.textContent = message || text("failed", "The request failed. Nothing was changed.");
+        paragraph.textContent = notice;
         node.appendChild(paragraph);
         focusPanel(node);
     }
@@ -1614,19 +1718,66 @@ function wmm_tolka_fallback_script()
         return text("measuredUrl", "Address checked") + ": " + url;
     }
 
-    function renderSpeed(target, data) {
-        clear(target);
-        target.classList.remove("wmm-tolka-panel-error");
-        var estimate = data.estimate || {};
-        var metrics = data.metrics || {};
-        var address = checkedAddress();
-        if (estimate.ok !== true && estimate.ok !== 1) {
-            showError(target, estimate.error || text("noEstimate", "No speed estimate is available for this URL."));
-            if (address) {
-                addParagraph(target, "wmm-tolka-measured-url", address);
+    function fillSpeedFields(estimate, errorMessage) {
+        var current = document.getElementById("wmm-tolka-current-load");
+        var tolka = document.getElementById("wmm-tolka-tolka-load");
+        var faster = document.getElementById("wmm-tolka-faster");
+        var basis = document.getElementById("wmm-tolka-basis");
+        var note = document.getElementById("wmm-tolka-provenance-note");
+        if (!current || !tolka || !faster || !basis || !note) {
+            return false;
+        }
+        var unavailable = text("notAvailable", "Not available");
+        if (errorMessage) {
+            current.textContent = unavailable;
+            tolka.textContent = unavailable;
+            faster.textContent = unavailable;
+            basis.textContent = errorMessage;
+            note.textContent = "";
+            return true;
+        }
+        estimate = estimate || {};
+        current.textContent = formatMs(estimate.current_ms);
+        tolka.textContent = formatMs(estimate.tolka_ms);
+        var difference = estimate.faster_label;
+        if (typeof difference !== "string" || difference === "") {
+            if (typeof estimate.faster_percent === "number") {
+                difference = String(estimate.faster_percent) + "% faster";
+            } else {
+                difference = unavailable;
             }
+        }
+        faster.textContent = difference;
+        basis.textContent = typeof estimate.basis === "string" ? estimate.basis : "";
+        if (estimate.provenance === "placeholder" && typeof estimate.provenance_note === "string") {
+            note.textContent = estimate.provenance_note;
+        } else {
+            note.textContent = "";
+        }
+        return true;
+    }
+
+    function renderSpeed(target, data) {
+        var estimate = data.estimate || {};
+        if (estimate.ok !== true && estimate.ok !== 1) {
+            var message = estimate.error || text("noEstimate", "No speed estimate is available for this URL.");
+            if (fillSpeedFields(estimate, message)) {
+                target.classList.add("wmm-tolka-panel-error");
+                focusPanel(target);
+                return;
+            }
+            showError(target, message);
             return;
         }
+        if (fillSpeedFields(estimate, "")) {
+            target.classList.remove("wmm-tolka-panel-error");
+            focusPanel(target);
+            return;
+        }
+        clear(target);
+        target.classList.remove("wmm-tolka-panel-error");
+        var metrics = data.metrics || {};
+        var address = checkedAddress();
         if (address) {
             addParagraph(target, "wmm-tolka-measured-url", address);
         }
