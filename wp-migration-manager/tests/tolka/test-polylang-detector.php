@@ -155,6 +155,11 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
         {
             return is_array(self::$directories) ? self::$directories : array();
         }
+
+        public static function expose_warnings(): array
+        {
+            return static::raised_warnings();
+        }
     }
 
     class Polylang_Detector_Read_Throws_Fixture extends Polylang_Detector_Api_Fixture
@@ -203,6 +208,8 @@ class Polylang_Detector_Test extends TestCase
     const ACTIVE_HEADER = 'Polylang is active, but its plugin file has no readable Version header. You can continue. The migration uses the Polylang data already loaded on this site.';
 
     const ACTIVE_MISSING = 'Polylang is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.';
+
+    const ACTIVE_NOT_FOUND = 'Polylang is active, but no Polylang plugin file was found.';
 
     const CHECK_FAILED = 'Polylang could not be checked on this site. Reload Migrate to Tolka and try again.';
 
@@ -401,7 +408,7 @@ class Polylang_Detector_Test extends TestCase
             array(
                 'active' => true,
                 'version' => '',
-                'errors' => array(self::ACTIVE_MISSING),
+                'errors' => array(self::ACTIVE_NOT_FOUND),
             ),
             Polylang_Detector_Fixture::status()
         );
@@ -1403,6 +1410,83 @@ class Polylang_Detector_Test extends TestCase
      * @runInSeparateProcess
      * @preserveGlobalState disabled
      */
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_no_plugin_file_when_pll_languages_list_exists(): void
+    {
+        require_once $this->polylang_api_stub();
+
+        Polylang_Detector_Reflect_Fixture::$directories = array($this->temp_dir());
+        $status = Polylang_Detector_Reflect_Fixture::status();
+
+        $this->assertTrue(function_exists('pll_languages_list'));
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '',
+                'errors' => array(self::ACTIVE_NOT_FOUND),
+            ),
+            $status
+        );
+        $this->assertCount(1, $status['errors']);
+        $this->assertMatchesRegularExpression('/^[^.]*\.$/', $status['errors'][0]);
+        $this->assertSame(array(), Polylang_Detector_Reflect_Fixture::expose_warnings());
+        $this->assertSame($status, Polylang_Detector_Reflect_Fixture::status());
+
+        $populated = $this->temp_dir();
+        $this->write_plugin($populated, 'hello.php', $this->wordpress_header('Hello Dolly', '1.7.2'));
+        $this->write_plugin($populated, 'akismet/akismet.php', "<?php\n");
+        Polylang_Detector_Reflect_Fixture::$directories = array($populated);
+        $unrelated = Polylang_Detector_Reflect_Fixture::status();
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '',
+                'errors' => array(self::ACTIVE_NOT_FOUND),
+            ),
+            $unrelated
+        );
+        $this->assertSame(array(), Polylang_Detector_Reflect_Fixture::expose_warnings());
+
+        Polylang_Detector_Reflect_Fixture::$directories = array('/tmp/wmm-tolka-missing-' . uniqid('', true));
+        $missing_directory = Polylang_Detector_Reflect_Fixture::status();
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '',
+                'errors' => array(self::ACTIVE_NOT_FOUND),
+            ),
+            $missing_directory
+        );
+        $this->assertSame(array(), Polylang_Detector_Reflect_Fixture::expose_warnings());
+
+        $real = WMM\Tolka\Polylang_Detector::status();
+        $this->assertTrue($real['active']);
+        $this->assertIsString($real['version']);
+        $this->assertSame(array(), Polylang_Detector_Api_Fixture::expose_warnings());
+        if ($real['version'] === '') {
+            $this->assertCount(1, $real['errors']);
+            $this->assertSame(self::ACTIVE_NOT_FOUND, $real['errors'][0]);
+            $this->assertMatchesRegularExpression('/^[^.]*\.$/', $real['errors'][0]);
+        }
+        foreach ($real['errors'] as $error) {
+            $this->assertIsString($error);
+            $this->assertNotSame('', $error);
+        }
+
+        $probe = static function () {
+            return true;
+        };
+        $before = set_error_handler($probe);
+        restore_error_handler();
+        Polylang_Detector_Reflect_Fixture::status();
+        $after = set_error_handler($probe);
+        restore_error_handler();
+        $this->assertSame($before, $after);
+    }
+
     public function test_pll_languages_list_stays_active_when_the_header_cannot_be_read(): void
     {
         require_once $this->polylang_api_stub();
@@ -1415,10 +1499,12 @@ class Polylang_Detector_Test extends TestCase
             array(
                 'active' => true,
                 'version' => '',
-                'errors' => array(self::ACTIVE_MISSING),
+                'errors' => array(self::ACTIVE_NOT_FOUND),
             ),
             $status
         );
+        $this->assertSame(array(), Polylang_Detector_Api_Fixture::expose_warnings());
+        $this->assertCount(1, $status['errors']);
 
         $plain = $this->temp_dir();
         $this->write_plugin($plain, 'polylang/polylang.php', $this->header_without_version('Polylang'));
@@ -1486,10 +1572,11 @@ class Polylang_Detector_Test extends TestCase
             array(
                 'active' => true,
                 'version' => '',
-                'errors' => array(self::ACTIVE_MISSING),
+                'errors' => array(self::ACTIVE_NOT_FOUND),
             ),
             $status
         );
+        $this->assertSame(array(), Polylang_Detector_Api_Fixture::expose_warnings());
     }
 
     /**

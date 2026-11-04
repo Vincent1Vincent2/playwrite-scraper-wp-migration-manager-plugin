@@ -20,6 +20,13 @@ namespace WMM\Tolka;
 class Polylang_Detector
 {
     /**
+     * Warnings raised while status() is running. Cleared at the start of each call.
+     *
+     * @var string[]
+     */
+    private static $raised_warnings = array();
+
+    /**
      * Active flag, header version, and customer-facing errors.
      *
      * Active when pll_languages_list() exists or the PLL or Polylang class
@@ -30,9 +37,15 @@ class Polylang_Detector
      */
     public static function status(): array
     {
-        // Warnings from plugin files or autoloaders must not print on the screen.
+        self::$raised_warnings = array();
+        // Warnings must not print on the Migrate to Tolka screen. The handler
+        // is always removed before status() returns.
         set_error_handler(
-            static function () {
+            static function ($severity, $message) {
+                if (is_string($message) && $message !== '') {
+                    self::$raised_warnings[] = $message;
+                }
+
                 return true;
             }
         );
@@ -42,6 +55,16 @@ class Polylang_Detector
         } finally {
             restore_error_handler();
         }
+    }
+
+    /**
+     * Warnings produced by the most recent status() call.
+     *
+     * @return string[]
+     */
+    protected static function raised_warnings(): array
+    {
+        return self::$raised_warnings;
     }
 
     /**
@@ -66,6 +89,7 @@ class Polylang_Detector
                 'header_found' => false,
                 'version_missing' => false,
                 'listed_active' => false,
+                'read_failed' => true,
             );
         }
 
@@ -655,12 +679,14 @@ class Polylang_Detector
                     ? 'Polylang Pro is active, but its plugin file has no readable Version header. You can continue. The migration uses the Polylang data already loaded on this site.'
                     : 'Polylang is active, but its plugin file has no readable Version header. You can continue. The migration uses the Polylang data already loaded on this site.'
             );
-        } elseif ($version === '') {
+        } elseif ($version === '' && !empty($inspection['read_failed'])) {
             $errors[] = self::translate(
                 $pro
                     ? 'Polylang Pro is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.'
                     : 'Polylang is active, but its plugin header could not be read. You can continue. The migration uses the Polylang data already loaded on this site.'
             );
+        } elseif ($version === '') {
+            $errors[] = self::translate('Polylang is active, but no Polylang plugin file was found.');
         }
 
         if ($situation !== '') {
