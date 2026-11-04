@@ -177,6 +177,21 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
             return true;
         }
     }
+
+    class Polylang_Detector_Running_Versus_Listed_Fixture extends Polylang_Detector_Reflect_Fixture
+    {
+        public static $listed = array();
+
+        protected static function use_plugin_list(): bool
+        {
+            return true;
+        }
+
+        protected static function raw_active_plugins(): array
+        {
+            return is_array(self::$listed) ? self::$listed : array();
+        }
+    }
 }
 
 class Polylang_Detector_Test extends TestCase
@@ -1786,6 +1801,81 @@ class Polylang_Detector_Test extends TestCase
      * @runInSeparateProcess
      * @preserveGlobalState disabled
      */
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_running_plugin_file_wins_over_listed_copy_9_9_9(): void
+    {
+        $running = $this->temp_dir();
+        $api = $running . '/include/api.php';
+        mkdir(dirname($api), 0777, true);
+        file_put_contents(
+            $api,
+            "<?php\nfunction pll_languages_list()\n{\n    throw new RuntimeException('pll_languages_list must not be called');\n}\n"
+        );
+        $header = "<?php\r\n/**\r\n * Plugin Name: Polylang\r\n * Version: 3.9.1 \r\n * Requires PHP: 7.2\r\n */\r\n";
+        $this->write_plugin($running, 'polylang.php', $header);
+        require_once $api;
+
+        $other = $this->temp_dir();
+        $this->write_plugin($other, 'polylang/polylang.php', $this->wordpress_header('Polylang', '9.9.9'));
+        Polylang_Detector_Running_Versus_Listed_Fixture::$directories = array($other);
+        Polylang_Detector_Running_Versus_Listed_Fixture::$listed = array('polylang/polylang.php');
+
+        $first = Polylang_Detector_Running_Versus_Listed_Fixture::status();
+        $second = Polylang_Detector_Running_Versus_Listed_Fixture::status();
+
+        $this->assertTrue($first['active']);
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertSame(5, strlen($first['version']));
+        $this->assertNotSame('9.9.9', $first['version']);
+        $this->assertSame(array(), $first['errors']);
+        $this->assertStringNotContainsString('not installed', implode("\n", $second['errors']));
+        $this->assertStringNotContainsString('9.9.9', implode("\n", $second['errors']));
+        $this->assertSame($first, $second);
+        $this->assertSame($second['errors'], array_values(array_unique($second['errors'])));
+        $this->assertSame(array(), Polylang_Detector_Running_Versus_Listed_Fixture::expose_warnings());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_running_pro_plugin_file_keeps_version_3_9_1_over_9_9_9(): void
+    {
+        $running = $this->temp_dir();
+        $api = $running . '/polylang-pro/include/api.php';
+        mkdir(dirname($api), 0777, true);
+        file_put_contents(
+            $api,
+            "<?php\nfunction pll_languages_list()\n{\n    throw new RuntimeException('pll_languages_list must not be called');\n}\n"
+        );
+        $header = "<?php\r\n/**\r\n * Plugin Name: Polylang Pro\r\n * Version: 3.9.1 \r\n */\r\n";
+        $this->write_plugin($running, 'polylang-pro/polylang.php', $header);
+        require_once $api;
+
+        $other = $this->temp_dir();
+        $this->write_plugin($other, 'polylang/polylang.php', $this->wordpress_header('Polylang', '9.9.9'));
+        Polylang_Detector_Running_Versus_Listed_Fixture::$directories = array($other);
+        Polylang_Detector_Running_Versus_Listed_Fixture::$listed = array('polylang/polylang.php');
+
+        $first = Polylang_Detector_Running_Versus_Listed_Fixture::status();
+        $second = Polylang_Detector_Running_Versus_Listed_Fixture::status();
+
+        $this->assertTrue($first['active']);
+        $this->assertSame('3.9.1', $first['version']);
+        $this->assertNotSame('9.9.9', $first['version']);
+        $this->assertSame(array(), $first['errors']);
+        $this->assertStringNotContainsString('not installed', implode("\n", $second['errors']));
+        $this->assertSame($first, $second);
+        $this->assertSame(array(), Polylang_Detector_Running_Versus_Listed_Fixture::expose_warnings());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_running_polylang_file_reports_version_3_9_1(): void
     {
         $running = $this->temp_dir();
@@ -1813,6 +1903,10 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame(array(), Polylang_Detector_Reflect_Fixture::expose_warnings());
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_pll_languages_list_stays_active_when_the_header_cannot_be_read(): void
     {
         require_once $this->polylang_api_stub();
@@ -1997,6 +2091,11 @@ class Polylang_Detector_Test extends TestCase
         if (class_exists('Polylang_Detector_Api_Fixture')) {
             Polylang_Detector_Api_Fixture::$directories = array();
             Polylang_Detector_Api_Fixture::$unreadable = array();
+        }
+        if (class_exists('Polylang_Detector_Running_Versus_Listed_Fixture')) {
+            Polylang_Detector_Running_Versus_Listed_Fixture::$directories = array();
+            Polylang_Detector_Running_Versus_Listed_Fixture::$listed = array();
+            Polylang_Detector_Running_Versus_Listed_Fixture::$unreadable = array();
         }
         if (class_exists('Polylang_Detector_Fixture')) {
             Polylang_Detector_Fixture::$unreadable = array();
