@@ -337,6 +337,11 @@ class Polylang_Posts
                 $known[(int) $post_id] = true;
             }
         }
+        foreach ($this->collapsed_languages as $row) {
+            if (isset($row['dropped'])) {
+                $known[(int) $row['dropped']] = true;
+            }
+        }
 
         $singletons = $this->singleton_maps($known, $errors);
         if (is_array($singletons)) {
@@ -1268,7 +1273,7 @@ class Polylang_Posts
             return $map;
         }
         foreach ($missing as $post_id) {
-            if (!isset($languages[$post_id]) || $languages[$post_id] === '') {
+            if (!isset($languages[$post_id]) || $languages[$post_id] === '' || $this->dropped_language_post($post_id)) {
                 continue;
             }
             $lang = $languages[$post_id];
@@ -1349,6 +1354,24 @@ class Polylang_Posts
             $used[$post_id] = true;
         }
         return $clean;
+    }
+
+    /**
+     * A later post for a language already produced its sentence. Do not also
+     * describe that post as missing from the stored description.
+     *
+     * @param int $post_id
+     * @return bool
+     */
+    private function dropped_language_post($post_id)
+    {
+        $post_id = (int) $post_id;
+        foreach ($this->collapsed_languages as $row) {
+            if (isset($row['dropped']) && (int) $row['dropped'] === $post_id) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1582,19 +1605,15 @@ class Polylang_Posts
         if (!is_array($languages)) {
             return array();
         }
-        $map = array();
+        $pairs = array();
         foreach ($object_ids as $object_id) {
             $object_id = (int) $object_id;
-            if ($object_id <= 0 || !isset($languages[$object_id])) {
+            if ($object_id <= 0 || !isset($languages[$object_id]) || $languages[$object_id] === '') {
                 continue;
             }
-            $lang = $languages[$object_id];
-            if ($lang === '' || isset($map[$lang])) {
-                continue;
-            }
-            $map[$lang] = $object_id;
+            $pairs[] = array($languages[$object_id], $object_id);
         }
-        return $map;
+        return $this->normalize_pairs($pairs);
     }
 
     /**
