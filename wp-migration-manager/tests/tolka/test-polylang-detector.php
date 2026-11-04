@@ -1108,6 +1108,21 @@ class Polylang_Detector_Test extends TestCase
             $with_header
         );
 
+        $both = $this->temp_dir();
+        $this->write_plugin($both, 'polylang/polylang.php', $this->wordpress_header('Polylang', '3.6.4'));
+        $this->write_plugin($both, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '3.7.1'));
+        Polylang_Detector_Api_Fixture::$directories = array($both);
+        $both_status = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '3.6.4',
+                'errors' => array(),
+            ),
+            $both_status
+        );
+
         $thrown = Polylang_Detector_Read_Throws_Fixture::status();
         $this->assertTrue($thrown['active']);
         $this->assertSame('', $thrown['version']);
@@ -1132,6 +1147,31 @@ class Polylang_Detector_Test extends TestCase
                 'active' => true,
                 'version' => '',
                 'errors' => array(self::ACTIVE_MISSING),
+            ),
+            $status
+        );
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_polylang_class_stays_active_when_the_header_cannot_be_read(): void
+    {
+        require_once $this->polylang_class_stub();
+
+        $plain = $this->temp_dir();
+        $this->write_plugin($plain, 'polylang/polylang.php', $this->header_without_version('Polylang'));
+        Polylang_Detector_Api_Fixture::$directories = array($plain);
+        $status = Polylang_Detector_Api_Fixture::status();
+
+        $this->assertTrue(class_exists('Polylang', false));
+        $this->assertFalse(function_exists('pll_languages_list'));
+        $this->assertSame(
+            array(
+                'active' => true,
+                'version' => '',
+                'errors' => array(self::ACTIVE_HEADER),
             ),
             $status
         );
@@ -1215,6 +1255,14 @@ class Polylang_Detector_Test extends TestCase
     {
         $path = $this->temp_dir() . '/pll-class-stub.php';
         file_put_contents($path, "<?php\nclass PLL\n{\n}\n");
+
+        return $path;
+    }
+
+    private function polylang_class_stub(): string
+    {
+        $path = $this->temp_dir() . '/polylang-class-stub.php';
+        file_put_contents($path, "<?php\nclass Polylang\n{\n}\n");
 
         return $path;
     }

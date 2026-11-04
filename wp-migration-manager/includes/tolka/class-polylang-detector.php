@@ -85,6 +85,7 @@ class Polylang_Detector
      */
     protected static function is_active(): bool
     {
+        // Presence only. Calling pll_languages_list() can fatal on a partial load.
         if (function_exists('pll_languages_list')) {
             return true;
         }
