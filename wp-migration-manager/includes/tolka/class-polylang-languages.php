@@ -258,8 +258,8 @@ class Polylang_Languages
             $this->add_item($items, $this->item_from_language_term($term, $default));
         }
 
-        // term_language mirrors each language. Use it only to fill a language
-        // whose language-taxonomy row is missing.
+        // term_language mirrors each language. Polylang 3.9 stores those
+        // slugs as pll_en, not en. pll_ rows are internal and are not exported.
         foreach ($this->terms_for_taxonomy('term_language') as $term) {
             $this->add_item($items, $this->item_from_language_term($term, $default));
         }
@@ -946,6 +946,9 @@ class Polylang_Languages
     private function make_item($slug, $name, $locale, $is_default, $term_id, $flag)
     {
         $slug = $this->normalized_slug($slug);
+        if ($this->is_internal_language_slug($slug)) {
+            $slug = '';
+        }
         $name = $this->plain_name($name);
         if ($name === '') {
             $name = $slug;
@@ -1206,7 +1209,22 @@ class Polylang_Languages
      */
     private function is_language_slug($slug)
     {
-        return is_string($slug) && preg_match('/^[A-Za-z][A-Za-z0-9_-]{0,199}$/', $slug) === 1;
+        if (!is_string($slug) || preg_match('/^[A-Za-z][A-Za-z0-9_-]{0,199}$/', $slug) !== 1) {
+            return false;
+        }
+
+        return !$this->is_internal_language_slug(strtolower($slug));
+    }
+
+    /**
+     * Polylang term_language slugs look like pll_en. They are not languages.
+     *
+     * @param string $slug Normalized slug.
+     * @return bool
+     */
+    private function is_internal_language_slug($slug)
+    {
+        return is_string($slug) && strpos($slug, 'pll_') === 0;
     }
 
     /**

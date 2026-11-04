@@ -839,6 +839,121 @@ PHP
         $this->assertSame(9, $by_slug['no']['term_id']);
     }
 
+    public function test_polylang_internal_pll_rows_are_not_languages()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 3),
+            $this->language_term(8, 'Svenska', 'sv', 'sv_SE', 'se', 1, 0),
+            $this->language_term(40, 'pll_en', 'pll_en', 'en_US', 'us', 2, 0),
+            $this->language_term(41, 'pll_sv', 'PLL_SV', 'sv_SE', 'se', 3, 0),
+        ), 'sv');
+        $db->term_language_rows = array(
+            $this->language_term(50, 'English', 'pll_en', 'en_US', 'us', 0, 0),
+            $this->language_term(51, 'Svenska', 'pll_sv', 'sv_SE', 'se', 0, 0),
+        );
+        $db->post_translation_rows = array(
+            (object) array(
+                'description' => serialize(array(
+                    'en' => 10,
+                    'sv' => 11,
+                    'pll_en' => 12,
+                    'pll_de' => 13,
+                )),
+            ),
+        );
+        $GLOBALS['wpdb'] = $db;
+
+        $result = Polylang_Languages::export();
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertSame('Svenska', $by_slug['sv']['name']);
+        $this->assertSame('sv_SE', $by_slug['sv']['locale']);
+        $this->assertSame(8, $by_slug['sv']['term_id']);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertSame('English', $by_slug['en']['name']);
+        $this->assertSame(4, $by_slug['en']['term_id']);
+        $this->assertFalse($by_slug['en']['is_default']);
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+        $this->assertArrayNotHasKey('pll_de', $by_slug);
+    }
+
+    public function test_only_internal_pll_rows_leave_the_language_list_empty()
+    {
+        $db = $this->database_with_languages(array(
+            $this->language_term(40, 'pll_en', 'pll_en', 'en_US', 'us', 0, 1),
+            $this->language_term(41, 'pll_sv', 'pll_sv', 'sv_SE', 'se', 1, 0),
+        ), 'en');
+
+        $GLOBALS['wpdb'] = $db;
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertStringNotContainsString('pll_', $result['errors'][0]);
+    }
+
+    public function test_the_api_does_not_export_internal_pll_languages()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'en',
+            'name' => 'English',
+            'locale' => 'en_US',
+            'term_id' => 4,
+            'flag_code' => 'us',
+            'is_default' => false,
+        ),
+        (object) array(
+            'slug' => 'pll_en',
+            'name' => 'pll_en',
+            'locale' => 'en_US',
+            'term_id' => 40,
+            'flag_code' => 'us',
+            'is_default' => false,
+        ),
+        (object) array(
+            'slug' => 'sv',
+            'name' => 'Svenska',
+            'locale' => 'sv_SE',
+            'term_id' => 8,
+            'flag_code' => 'se',
+            'is_default' => true,
+        ),
+        (object) array(
+            'slug' => 'pll_sv',
+            'name' => 'pll_sv',
+            'locale' => 'sv_SE',
+            'term_id' => 41,
+            'flag_code' => 'se',
+            'is_default' => false,
+        ),
+    );
+}
+
+function pll_default_language($field = 'slug')
+{
+    return 'sv';
+}
+PHP
+        );
+
+        $by_slug = $this->index_by_slug($result['items']);
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(array('sv', 'en'), array_keys($by_slug));
+        $this->assertArrayNotHasKey('pll_en', $by_slug);
+        $this->assertArrayNotHasKey('pll_sv', $by_slug);
+        $this->assertTrue($by_slug['sv']['is_default']);
+        $this->assertSame(8, $by_slug['sv']['term_id']);
+        $this->assertSame(4, $by_slug['en']['term_id']);
+    }
+
     public function test_a_language_term_wins_over_its_twin_row()
     {
         $db = $this->database_with_languages(array(
