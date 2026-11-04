@@ -521,6 +521,113 @@ class Polylang_Terms_Test extends TestCase
         $this->assertNotContains('Polylang is not active. Term translations were not exported.', $result['errors']);
     }
 
+    public function test_a_term_with_no_translation_is_exported_on_its_own(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->languages = array(
+            array('slug' => 'en', 'term_group' => 0),
+            array('slug' => 'sv', 'term_group' => 1),
+        );
+        $database->descriptions = array();
+        $database->catalog = array(
+            $this->term(8, 'Solo', 'solo', 'category', 'en', 0, 'Only in English'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $item = $this->itemByGroup($result['items'], 'term:8');
+
+        $this->assertSame(array('term:8'), $this->groupIds($result['items']));
+        $this->assertSame('category', $item['taxonomy']);
+        $this->assertSame(array('en'), array_keys($item['translations']));
+        $this->assertSame(array(
+            'id' => 8,
+            'name' => 'Solo',
+            'slug' => 'solo',
+            'description' => 'Only in English',
+            'parent' => 0,
+        ), $item['translations']['en']);
+        $this->assertArrayNotHasKey('sv', $item['translations']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
+    public function test_polylang_inactive_exports_nothing_even_when_categories_exist(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = false;
+        $database->languages = array();
+        $database->descriptions = array();
+        $database->catalog = array(
+            $this->term(1, 'Uncategorized', 'uncategorized', 'category', ''),
+            $this->term(2, 'News', 'news', 'category', ''),
+            $this->term(70, 'Main', 'main', 'nav_menu', 'en'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            array('Polylang is not active. Term translations were not exported.'),
+            $result['errors']
+        );
+        $this->assertStringNotContainsString('Uncategorized', implode(' ', $this->groupIds($result['items'])));
+        $encoded = json_encode($result['items']);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Uncategorized', $encoded);
+        $this->assertStringNotContainsString('News', $encoded);
+    }
+
+    public function test_a_nav_menu_term_is_left_out_of_the_term_export(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->languages = array(
+            array('slug' => 'en', 'term_group' => 0),
+        );
+        $database->descriptions = array(
+            serialize(array('en' => 8, 'fr' => 70)),
+            serialize(array('en' => 71)),
+        );
+        $database->catalog = array(
+            $this->term(8, 'News', 'news', 'category', 'en'),
+            $this->term(9, 'Solo', 'solo', 'category', 'en'),
+            $this->term(70, 'Main', 'main', 'nav_menu', 'en'),
+            $this->term(71, 'Footer', 'footer', 'nav_menu', 'fr'),
+            $this->term(72, 'Social', 'social', 'nav_menu', ''),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $groups = $this->groupIds($result['items']);
+
+        $this->assertContains('term:8', $groups);
+        $this->assertContains('term:9', $groups);
+        $this->assertNotContains('term:70', $groups);
+        $this->assertNotContains('term:71', $groups);
+        $this->assertNotContains('term:72', $groups);
+        foreach ($result['items'] as $item) {
+            $this->assertNotSame('nav_menu', $item['taxonomy']);
+            $this->assertStringNotContainsString('main', $item['translations'][array_key_first($item['translations'])]['slug']);
+        }
+        $news = $this->itemByGroup($result['items'], 'term:8');
+        $this->assertSame(array('en'), array_keys($news['translations']));
+        $this->assertArrayNotHasKey('fr', $news['translations']);
+    }
+
     public function test_language_rows_count_as_polylang_when_no_groups_exist_yet(): void
     {
         if (!$this->canUseDatabaseStub()) {
