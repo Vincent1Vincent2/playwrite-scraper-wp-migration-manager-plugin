@@ -120,11 +120,11 @@ class Polylang_Terms
 
         $default = '';
         if (isset($snapshot['default_lang']) && is_string($snapshot['default_lang'])) {
-            $default = trim($snapshot['default_lang']);
+            $default = strtolower(trim($snapshot['default_lang']));
         }
         $fallback = '';
         if (isset($snapshot['fallback_lang']) && is_string($snapshot['fallback_lang'])) {
-            $fallback = trim($snapshot['fallback_lang']);
+            $fallback = strtolower(trim($snapshot['fallback_lang']));
         }
         $assignLanguage = $default !== '' ? $default : $fallback;
         $assignKind = $default !== '' ? 'default' : ($fallback !== '' ? 'stored' : '');
@@ -137,11 +137,12 @@ class Polylang_Terms
         $items = array();
         $used = array();
         $duplicateIds = array();
+        $caseNotes = array();
         $unassigned = 0;
         $groups = isset($snapshot['groups']) && is_array($snapshot['groups']) ? $snapshot['groups'] : array();
 
         foreach ($groups as $group) {
-            $item = $this->itemFromGroup($group, $default, $used, $duplicateIds);
+            $item = $this->itemFromGroup($group, $default, $used, $duplicateIds, $caseNotes);
             if ($item === null) {
                 continue;
             }
@@ -172,6 +173,7 @@ class Polylang_Terms
             );
         }
         $this->appendCapped($errors, $duplicateSentences);
+        $this->appendCapped($errors, $this->languageCaseSentences($caseNotes));
         if ($unassigned > 0 && $assignKind === 'default') {
             $errors[] = $this->unassignedSentence($unassigned, $assignLanguage, 'default');
         } elseif ($unassigned > 0 && $assignKind === 'stored') {
@@ -239,7 +241,7 @@ class Polylang_Terms
      * @param bool $duplicate
      * @return array<string, mixed>|null
      */
-    private function itemFromGroup($group, $default, array &$used, array &$duplicateIds)
+    private function itemFromGroup($group, $default, array &$used, array &$duplicateIds, array &$caseNotes)
     {
         if (!is_array($group)) {
             return null;
@@ -260,7 +262,26 @@ class Polylang_Terms
             if ($key === null || $normalized === null) {
                 continue;
             }
-            if (isset($translations[$key]) || isset($used[$normalized['id']]) || isset($seenHere[$normalized['id']])) {
+            if (isset($translations[$key])) {
+                $existingId = (int) $translations[$key]['id'];
+                $newId = (int) $normalized['id'];
+                if ($existingId === $newId) {
+                    continue;
+                }
+                $original = is_string($lang) ? trim($lang) : '';
+                $incomingLower = ($original === $key);
+                if ($incomingLower) {
+                    $caseNotes[] = array('kept' => $newId, 'dropped' => $existingId, 'lang' => $key);
+                    $used[$existingId] = true;
+                    $seenHere[$newId] = true;
+                    $translations[$key] = $normalized;
+                } else {
+                    $caseNotes[] = array('kept' => $existingId, 'dropped' => $newId, 'lang' => $key);
+                    $used[$newId] = true;
+                }
+                continue;
+            }
+            if (isset($used[$normalized['id']]) || isset($seenHere[$normalized['id']])) {
                 $duplicateIds[$normalized['id']] = (int) $normalized['id'];
                 continue;
             }
@@ -309,7 +330,7 @@ class Polylang_Terms
 
         $lang = '';
         if (isset($term['lang']) && is_string($term['lang'])) {
-            $lang = trim($term['lang']);
+            $lang = strtolower(trim($term['lang']));
         }
         if ($lang === '') {
             $unassigned++;
@@ -360,6 +381,7 @@ class Polylang_Terms
         $apiFailures = 0;
         $missing = array();
         $mismatched = array();
+        $caseNotes = array();
 
         foreach ($listed['terms'] as $term) {
             $termId = (int) $term['id'];
@@ -376,14 +398,13 @@ class Polylang_Terms
                 continue;
             }
 
-            $clean = array();
-            foreach ($map as $lang => $translatedId) {
-                $key = $this->languageKey($lang);
-                $translatedId = (int) $translatedId;
-                if ($key === null || $translatedId <= 0) {
-                    continue;
-                }
-                $clean[$key] = $translatedId;
+            $folded = $this->foldLanguageIds($map);
+            $clean = $folded['map'];
+            foreach ($folded['dropped'] as $droppedId) {
+                $groupedIds[(int) $droppedId] = true;
+            }
+            foreach ($folded['notes'] as $note) {
+                $caseNotes[] = $note;
             }
             if ($clean === array()) {
                 continue;
@@ -409,6 +430,7 @@ class Polylang_Terms
         }
 
         $this->appendTermProblems($errors, $missing, $mismatched);
+        $this->appendCapped($errors, $this->languageCaseSentences($caseNotes));
         if ($apiFailures > 0) {
             $errors[] = $this->countSentence(
                 $apiFailures,
@@ -549,20 +571,17 @@ class Polylang_Terms
                 continue;
             }
 
-            $clean = array();
-            foreach ($map as $lang => $id) {
-                $key = $this->languageKey($lang);
-                $id = (int) $id;
-                if ($key === null || $id <= 0) {
-                    continue;
-                }
-                $clean[$key] = $id;
-                $neededIds[$id] = $id;
+            $folded = $this->foldLanguageIds($map);
+            $clean = $folded['map'];
+            foreach ($clean as $id) {
+                $neededIds[(int) $id] = (int) $id;
             }
             $termTaxonomyId = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
             if ($clean !== array() || $termTaxonomyId > 0) {
                 $decodedGroups[] = array(
                     'map' => $clean,
+                    'dropped' => $folded['dropped'],
+                    'notes' => $folded['notes'],
                     'term_taxonomy_id' => $termTaxonomyId,
                 );
             }
@@ -632,8 +651,19 @@ class Polylang_Terms
         $groupedIds = array();
         $missing = array();
         $mismatched = array();
+        $caseNotes = array();
         foreach ($decodedGroups as $group) {
             $clean = isset($group['map']) && is_array($group['map']) ? $group['map'] : array();
+            if (isset($group['dropped']) && is_array($group['dropped'])) {
+                foreach ($group['dropped'] as $droppedId) {
+                    $groupedIds[(int) $droppedId] = true;
+                }
+            }
+            if (isset($group['notes']) && is_array($group['notes'])) {
+                foreach ($group['notes'] as $note) {
+                    $caseNotes[] = $note;
+                }
+            }
             if ($clean === array()) {
                 continue;
             }
@@ -647,6 +677,7 @@ class Polylang_Terms
             $taxonomies[$built['group']['taxonomy']] = $built['group']['taxonomy'];
         }
         $this->appendTermProblems($errors, $missing, $mismatched);
+        $this->appendCapped($errors, $this->languageCaseSentences($caseNotes));
 
         $notes = array();
         $groups = $this->applyActualLanguages($groups, $languageMap, $notes);
@@ -975,7 +1006,7 @@ class Polylang_Terms
         if (!is_string($value)) {
             return '';
         }
-        return trim($value);
+        return strtolower(trim($value));
     }
 
     /**
@@ -990,7 +1021,7 @@ class Polylang_Terms
                 $slug = '';
             }
             if (is_string($slug) && trim($slug) !== '') {
-                return trim($slug);
+                return strtolower(trim($slug));
             }
             try {
                 $slug = pll_default_language();
@@ -998,7 +1029,7 @@ class Polylang_Terms
                 $slug = '';
             }
             if (is_string($slug) && trim($slug) !== '') {
-                return trim($slug);
+                return strtolower(trim($slug));
             }
         }
 
@@ -1009,7 +1040,7 @@ class Polylang_Terms
         if (!is_array($options) || !isset($options['default_lang']) || !is_string($options['default_lang'])) {
             return '';
         }
-        return trim($options['default_lang']);
+        return strtolower(trim($options['default_lang']));
     }
 
     /**
@@ -1606,11 +1637,82 @@ class Polylang_Terms
         if (!is_string($lang)) {
             return null;
         }
-        $lang = trim($lang);
+        $lang = strtolower(trim($lang));
         if ($lang === '') {
             return null;
         }
         return $lang;
+    }
+
+    /**
+     * Fold SV and sv onto one lowercase key. The lowercase spelling wins.
+     *
+     * @param array<mixed, mixed> $map
+     * @return array{map: array<string, int>, dropped: array<int, int>, notes: array<int, array<string, mixed>>}
+     */
+    private function foldLanguageIds(array $map)
+    {
+        $clean = array();
+        $wasLower = array();
+        $dropped = array();
+        $notes = array();
+
+        foreach ($map as $lang => $id) {
+            $key = $this->languageKey($lang);
+            $id = (int) $id;
+            if ($key === null || $id <= 0) {
+                continue;
+            }
+            $original = is_string($lang) ? trim($lang) : (string) $lang;
+            $incomingLower = ($original === $key);
+            if (!isset($clean[$key])) {
+                $clean[$key] = $id;
+                $wasLower[$key] = $incomingLower;
+                continue;
+            }
+            if ((int) $clean[$key] === $id) {
+                if ($incomingLower) {
+                    $wasLower[$key] = true;
+                }
+                continue;
+            }
+            if ($incomingLower && empty($wasLower[$key])) {
+                $dropped[(int) $clean[$key]] = (int) $clean[$key];
+                $notes[] = array('kept' => $id, 'dropped' => (int) $clean[$key], 'lang' => $key);
+                $clean[$key] = $id;
+                $wasLower[$key] = true;
+                continue;
+            }
+            $dropped[$id] = $id;
+            $notes[] = array('kept' => (int) $clean[$key], 'dropped' => $id, 'lang' => $key);
+        }
+
+        return array(
+            'map' => $clean,
+            'dropped' => array_values($dropped),
+            'notes' => $notes,
+        );
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $notes
+     * @return array<int, string>
+     */
+    private function languageCaseSentences(array $notes)
+    {
+        $sentences = array();
+        foreach ($notes as $note) {
+            if (!is_array($note) || empty($note['kept']) || empty($note['dropped']) || empty($note['lang'])) {
+                continue;
+            }
+            $sentences[] = sprintf(
+                $this->text('Term %1$d and term %2$d were both listed for the language %3$s. They share one key, and term %1$d was kept.'),
+                (int) $note['kept'],
+                (int) $note['dropped'],
+                $note['lang']
+            );
+        }
+        return $sentences;
     }
 
     /**
@@ -1619,9 +1721,9 @@ class Polylang_Terms
      */
     private function languageFromRelationshipSlug($slug)
     {
-        $slug = $this->stringValue($slug);
+        $slug = strtolower($this->stringValue($slug));
         if (strpos($slug, 'pll_') === 0) {
-            return substr($slug, 4);
+            $slug = substr($slug, 4);
         }
         return $slug;
     }
@@ -1968,7 +2070,7 @@ class Polylang_Terms
         }
         foreach ($list as $slug) {
             if (is_string($slug) && trim($slug) !== '') {
-                return trim($slug);
+                return strtolower(trim($slug));
             }
         }
         return '';
