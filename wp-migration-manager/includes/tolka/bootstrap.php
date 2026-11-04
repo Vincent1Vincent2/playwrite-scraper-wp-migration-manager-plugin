@@ -599,6 +599,23 @@ function wmm_tolka_url_is_blocked_scheme($url)
 }
 
 /**
+ * Whether a URL names a scheme other than http or https.
+ *
+ * @param string $url URL to inspect.
+ * @return bool
+ */
+function wmm_tolka_url_is_non_http_scheme($url)
+{
+    $scheme = wmm_tolka_url_scheme($url);
+
+    if ($scheme === '') {
+        return false;
+    }
+
+    return $scheme !== 'http' && $scheme !== 'https';
+}
+
+/**
  * Host from a measure URL, without brackets or a trailing dot.
  *
  * @param string $url URL to inspect.
@@ -894,13 +911,13 @@ function wmm_tolka_posted_url()
 
     $url = trim(wp_unslash($_POST['url']));
 
-    if ($url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_has_empty_host($url) || wmm_tolka_url_is_local($url)) {
+    if ($url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_non_http_scheme($url) || wmm_tolka_url_has_empty_host($url) || wmm_tolka_url_is_local($url)) {
         return '';
     }
 
     $url = esc_url_raw($url);
 
-    if (!is_string($url) || $url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_blocked_scheme($url) || wmm_tolka_url_has_empty_host($url) || wmm_tolka_url_is_local($url)) {
+    if (!is_string($url) || $url === '' || wmm_tolka_url_is_too_long($url) || wmm_tolka_url_has_userinfo($url) || wmm_tolka_url_is_non_http_scheme($url) || wmm_tolka_url_has_empty_host($url) || wmm_tolka_url_is_local($url)) {
         return '';
     }
 
@@ -942,6 +959,11 @@ function wmm_tolka_ajax_measure()
 
     if ($raw_url !== '' && wmm_tolka_url_is_blocked_scheme($raw_url)) {
         wmm_tolka_json_error(__('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'));
+        return;
+    }
+
+    if ($raw_url !== '' && wmm_tolka_url_is_non_http_scheme($raw_url)) {
+        wmm_tolka_json_error(__('Only a public http or https address can be measured. Nothing was changed.', 'migration-manager'));
         return;
     }
 
@@ -1936,6 +1958,7 @@ function wmm_tolka_fallback_copy()
         'userinfo' => __('That address includes a username or password, so it was not measured. Nothing was changed.', 'migration-manager'),
         'tooLong' => __('That address is longer than 2000 characters, so it was not measured. Nothing was changed.', 'migration-manager'),
         'blockedScheme' => __('javascript: and data: addresses are not measured. Nothing was changed.', 'migration-manager'),
+        'notHttp' => __('Only a public http or https address can be measured. Nothing was changed.', 'migration-manager'),
         'localAddress' => __('That address is on a local or private network, so it was not measured.', 'migration-manager'),
         'emptyHost' => __('That address has no host, so it was not measured.', 'migration-manager'),
         'timeoutMeasure' => __('The speed check took too long and was stopped. Nothing was changed.', 'migration-manager'),
@@ -2028,6 +2051,7 @@ function wmm_tolka_fallback_script()
         return authority.indexOf("@") !== -1;
     }
 
+    /* wmm-tolka-url-checks:start */
     function blockedMeasureReason(value) {
         if (value.length > 2000) {
             return "tooLong";
@@ -2038,10 +2062,12 @@ function wmm_tolka_fallback_script()
         if (scheme === "javascript" || scheme === "data") {
             return "blockedScheme";
         }
+        if (scheme !== "" && scheme !== "http" && scheme !== "https") {
+            return "notHttp";
+        }
         return "";
     }
 
-    /* wmm-tolka-url-checks:start */
     function ipv4IsLocal(number) {
         if (number < 0 || number > 4294967295) {
             return false;
@@ -2173,8 +2199,12 @@ function wmm_tolka_fallback_script()
                 showError(document.getElementById(job.target), text("tooLong", "That address is longer than 2000 characters, so it was not measured. Nothing was changed."));
                 return;
             }
-            if (blocked) {
+            if (blocked === "blockedScheme") {
                 showError(document.getElementById(job.target), text("blockedScheme", "javascript: and data: addresses are not measured. Nothing was changed."));
+                return;
+            }
+            if (blocked === "notHttp") {
+                showError(document.getElementById(job.target), text("notHttp", "Only a public http or https address can be measured. Nothing was changed."));
                 return;
             }
             if (urlIsLocal(url)) {
