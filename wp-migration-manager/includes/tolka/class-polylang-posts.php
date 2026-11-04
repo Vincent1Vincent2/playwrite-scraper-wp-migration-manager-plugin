@@ -204,7 +204,7 @@ class Polylang_Posts
      */
     private function slug_for_language_key($slug)
     {
-        $slug = is_string($slug) ? trim($slug) : '';
+        $slug = $this->lowercase_slug(is_string($slug) ? $slug : '');
         if ($slug === '') {
             return '';
         }
@@ -217,6 +217,24 @@ class Polylang_Posts
             return $locales[$underscore];
         }
         return $slug;
+    }
+
+    /**
+     * Language slugs are compared and exported in lowercase, so SV and sv are one key.
+     *
+     * @param mixed $slug
+     * @return string
+     */
+    private function lowercase_slug($slug)
+    {
+        $slug = trim((string) $slug);
+        if ($slug === '') {
+            return '';
+        }
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($slug, 'UTF-8');
+        }
+        return strtolower($slug);
     }
 
     /**
@@ -399,8 +417,8 @@ class Polylang_Posts
         if (!is_string($lang) || trim($lang) === '') {
             return $map;
         }
-        $lang = trim($lang);
-        if (!$this->map_contains_id($map, $post_id) && !isset($map[$lang])) {
+        $lang = $this->slug_for_language_key($lang);
+        if ($lang !== '' && !$this->map_contains_id($map, $post_id) && !isset($map[$lang])) {
             $map[$lang] = $post_id;
         }
         return $map;
@@ -442,7 +460,7 @@ class Polylang_Posts
         $pending = array();
         foreach ($rows as $row) {
             $post_id = isset($row['object_id']) ? (int) $row['object_id'] : 0;
-            $lang = isset($row['slug']) ? trim((string) $row['slug']) : '';
+            $lang = isset($row['slug']) ? $this->slug_for_language_key($row['slug']) : '';
             if ($post_id <= 0 || $lang === '' || isset($known[$post_id]) || isset($pending[$post_id])) {
                 continue;
             }
@@ -514,7 +532,7 @@ class Polylang_Posts
             }
         }
 
-        $default_lang = is_string($default_lang) ? trim($default_lang) : '';
+        $default_lang = $this->slug_for_language_key(is_string($default_lang) ? $default_lang : '');
         $single_ids = array();
         foreach ($prepared as $map) {
             if (count($map) === 1) {
@@ -1091,7 +1109,7 @@ class Polylang_Posts
             if (!is_string($lang)) {
                 continue;
             }
-            $lang = trim($lang);
+            $lang = $this->slug_for_language_key($lang);
             $post_id = $this->normalize_post_id($post_id);
             if ($lang === '' || $post_id <= 0) {
                 continue;
@@ -1127,7 +1145,7 @@ class Polylang_Posts
         $rebuilt = array();
         foreach ($map as $stored => $post_id) {
             $lang = $stored;
-            $real = isset($actual[$post_id]) ? trim((string) $actual[$post_id]) : '';
+            $real = isset($actual[$post_id]) ? $this->slug_for_language_key($actual[$post_id]) : '';
             if ($real !== '' && $real !== $stored) {
                 $taken = isset($map[$real]) || isset($rebuilt[$real]);
                 if (!$taken) {
@@ -1170,7 +1188,7 @@ class Polylang_Posts
                     $lang = '';
                 }
                 if (is_string($lang) && trim($lang) !== '') {
-                    $languages[$post_id] = trim($lang);
+                    $languages[$post_id] = $this->slug_for_language_key($lang);
                     continue;
                 }
             }
@@ -1185,7 +1203,7 @@ class Polylang_Posts
         }
         foreach ($from_db as $post_id => $lang) {
             if (!isset($languages[$post_id]) && $lang !== '') {
-                $languages[(int) $post_id] = $lang;
+                $languages[(int) $post_id] = $this->slug_for_language_key($lang);
             }
         }
         return $languages;
@@ -1632,7 +1650,7 @@ class Polylang_Posts
             }
             foreach ($rows as $row) {
                 $object_id = isset($row['object_id']) ? (int) $row['object_id'] : 0;
-                $slug = isset($row['slug']) ? trim((string) $row['slug']) : '';
+                $slug = isset($row['slug']) ? $this->slug_for_language_key($row['slug']) : '';
                 if ($object_id > 0 && $slug !== '' && !isset($languages[$object_id])) {
                     $languages[$object_id] = $slug;
                 }
@@ -1658,7 +1676,7 @@ class Polylang_Posts
         }
         $this->locale_map = array();
         foreach ($rows as $row) {
-            $slug = isset($row['slug']) ? trim((string) $row['slug']) : '';
+            $slug = isset($row['slug']) ? $this->lowercase_slug($row['slug']) : '';
             $raw = '';
             if (isset($row['term_description'])) {
                 $raw = $row['term_description'];
@@ -1669,7 +1687,7 @@ class Polylang_Posts
             if ($slug === '' || !is_array($decoded) || empty($decoded['locale']) || !is_string($decoded['locale'])) {
                 continue;
             }
-            $locale = trim($decoded['locale']);
+            $locale = $this->lowercase_slug($decoded['locale']);
             if ($locale !== '' && $locale !== $slug) {
                 $this->locale_map[$locale] = $slug;
             }
