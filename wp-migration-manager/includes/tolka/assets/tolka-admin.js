@@ -735,7 +735,7 @@
       );
       return;
     }
-    if (estimate.ok !== true) {
+    if (!isAffirmative(estimate.ok)) {
       var message = speedFailureMessage(estimate.error);
       if (!paintSpeedError(container, message, estimate)) {
         showError(container, message);
@@ -1515,16 +1515,17 @@
       if (summary && summary === errors.join(" ")) {
         summary = "";
       }
+      var succeeded = isAffirmative(report.ok);
       var title = text(report.title);
       if (!title) {
-        title = report.ok === true ? "Migration finished." : "Migration did not finish.";
+        title = succeeded ? "Migration finished." : "Migration did not finish.";
       }
       title = finishSentence(title);
 
       clear(container);
       var root = markGenerated(el("div", "wmm-tolka-report-body"));
-      root.setAttribute("data-ok", report.ok === true ? "true" : "false");
-      if (report.ok !== true) {
+      root.setAttribute("data-ok", succeeded ? "true" : "false");
+      if (!succeeded) {
         root.classList.add("wmm-tolka-report-failed");
       }
       root.appendChild(el("h3", "wmm-tolka-report-title", title));
@@ -1566,13 +1567,13 @@
         );
       }
 
-      var closing = reportClosing(report.ok === true, summary);
+      var closing = reportClosing(succeeded, summary);
       if (closing) {
         root.appendChild(el("p", "wmm-tolka-report-note", closing));
       }
 
       container.appendChild(root);
-      container.classList.toggle("wmm-tolka-has-error", report.ok !== true || errors.length > 0);
+      container.classList.toggle("wmm-tolka-has-error", !succeeded || errors.length > 0);
       container.classList.add("wmm-tolka-has-result");
       focusResult(container);
     } catch (err) {
@@ -1630,7 +1631,7 @@
     if (run.write && typeof run.write === "object") {
       errors = errors.concat(stringList(run.write.errors));
     }
-    var ok = run.ok === true && (!run.write || run.write.ok !== false);
+    var ok = isAffirmative(run.ok) && (!run.write || run.write.ok !== false);
     return {
       ok: ok,
       title: ok ? "Migration finished." : "Migration did not finish.",
@@ -1664,7 +1665,10 @@
     if (typeof value === "string") {
       return value;
     }
-    if (typeof value === "number" || typeof value === "boolean") {
+    if (typeof value === "boolean") {
+      return value ? "Yes" : "No";
+    }
+    if (typeof value === "number") {
       return String(value);
     }
     if (Array.isArray(value)) {
@@ -2097,6 +2101,10 @@
 
   function truthyFlag(value) {
     return value === true || value === 1 || value === "1";
+  }
+
+  function isAffirmative(value) {
+    return value === true || value === 1;
   }
 
   function shortFlag(flag) {
