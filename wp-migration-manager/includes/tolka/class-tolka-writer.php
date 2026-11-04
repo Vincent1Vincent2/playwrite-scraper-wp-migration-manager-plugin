@@ -116,6 +116,8 @@ class Tolka_Writer
         $package = self::clean_package($package);
 
         if (!self::store_package($package, $errors, $hidden)) {
+            // Do not tag posts or terms. A failed option write must leave
+            // Tolka meta from an earlier run exactly as it was.
             return self::result($collected['counts'], $errors, $hidden, false);
         }
 
@@ -259,6 +261,11 @@ class Tolka_Writer
                     continue;
                 }
 
+                if (self::explicit_zero($translation)) {
+                    self::add_error($errors, $hidden, $copy['zero_id'], array($lang, $group));
+                    continue;
+                }
+
                 $id = self::entity_id($translation);
                 if ($id < 1) {
                     self::add_error($errors, $hidden, $copy['no_id'], array($lang, $group));
@@ -302,6 +309,7 @@ class Tolka_Writer
                 'bad_lang' => 'A term translation in group "%s" had a language code WordPress cannot store, so Tolka skipped it.',
                 'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
                 'no_id' => 'A term translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
+                'zero_id' => 'Term id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved term.',
                 'conflict' => 'Term %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
                 'lang_failed' => 'Tolka could not save the language "%1$s" on term %2$d.',
                 'group_failed' => 'Tolka could not save the group "%1$s" on term %2$d.',
@@ -317,6 +325,7 @@ class Tolka_Writer
             'bad_lang' => 'A post translation in group "%s" had a language code WordPress cannot store, so Tolka skipped it.',
             'repeat_lang' => 'Translation group "%2$s" lists the language "%1$s" more than once, so Tolka kept the last copy.',
             'no_id' => 'A post translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
+            'zero_id' => 'Post id 0 for language "%1$s" in group "%2$s" was skipped because it is not a saved post.',
             'conflict' => 'Post %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
             'lang_failed' => 'Tolka could not save the language "%1$s" on post %2$d.',
             'group_failed' => 'Tolka could not save the group "%1$s" on post %2$d.',
@@ -410,6 +419,63 @@ class Tolka_Writer
     }
 
     /**
+     * Whether the translation names id 0 rather than omitting the id.
+     *
+     * Post 0 and term 0 are not saved records. They are skipped instead of
+     * written onto the wrong row.
+     *
+     * @param mixed $translation Translation payload.
+     * @return bool
+     */
+    private static function explicit_zero($translation)
+    {
+        if (is_int($translation) || is_string($translation) || is_float($translation)) {
+            return self::is_zero($translation);
+        }
+
+        if (!is_array($translation)) {
+            return false;
+        }
+
+        if (array_key_exists('id', $translation)) {
+            return self::is_zero($translation['id']);
+        }
+
+        if (array_key_exists('ID', $translation)) {
+            return self::is_zero($translation['ID']);
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a raw id value is zero.
+     *
+     * @param mixed $value Candidate id.
+     * @return bool
+     */
+    private static function is_zero($value)
+    {
+        if (is_bool($value)) {
+            return false;
+        }
+
+        if (is_int($value)) {
+            return $value === 0;
+        }
+
+        if (is_float($value)) {
+            return is_finite($value) && $value === 0.0;
+        }
+
+        if (is_string($value)) {
+            return trim($value) === '0';
+        }
+
+        return false;
+    }
+
+    /**
      * Keep one tag per id. The last listing wins, and a disagreement is reported.
      *
      * @param array  $ops    Tag operations.
@@ -480,7 +546,7 @@ class Tolka_Writer
             self::add_error(
                 $errors,
                 $hidden,
-                'WordPress could not save the Tolka migration package because this site cannot store options.'
+                'WordPress could not save the Tolka migration package because this site cannot store options, so existing Tolka language tags were left unchanged.'
             );
             return false;
         }
@@ -738,10 +804,10 @@ class Tolka_Writer
     {
         $bytes = strlen(serialize($package));
         if ($bytes > 900000) {
-            return 'WordPress could not save the Tolka migration package. It is too large for one database option. Ask your host to raise the maximum packet size, then run the migration again.';
+            return 'WordPress could not save the Tolka migration package because it is too large for one database option, so existing Tolka language tags were left unchanged. Ask your host to raise the maximum packet size, then run the migration again.';
         }
 
-        return 'WordPress could not save the Tolka migration package. Run the migration again.';
+        return 'WordPress could not save the Tolka migration package, so existing Tolka language tags were left unchanged. Run the migration again.';
     }
 
     /**
