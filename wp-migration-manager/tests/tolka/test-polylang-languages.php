@@ -218,6 +218,21 @@ PHP
         $this->assertSame(11, $result['items'][2]['term_id']);
     }
 
+    public function test_names_sort_without_caring_about_case()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(2, 'Banana', 'bn', 'en_US', 'us', 0, 1),
+            $this->language_term(3, 'apple', 'ap', 'en_GB', 'gb', 0, 0),
+        ), '');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame('ap', $result['items'][0]['slug']);
+        $this->assertSame('apple', $result['items'][0]['name']);
+        $this->assertSame('bn', $result['items'][1]['slug']);
+        $this->assertSame('Banana', $result['items'][1]['name']);
+    }
+
     public function test_names_are_sorted_after_html_entities_are_decoded()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
