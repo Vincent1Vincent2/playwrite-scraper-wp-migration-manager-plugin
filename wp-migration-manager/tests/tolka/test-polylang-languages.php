@@ -987,6 +987,25 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_internal_rows_stay_out_on_a_second_export()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 2),
+            $this->language_term(8, 'Svenska', 'sv', 'sv_SE', 'se', 1, 0),
+            $this->language_term(40, 'pll_en', 'pll_en', 'en_US', 'us', 2, 0),
+            $this->language_term(41, 'pll_sv', 'pll_sv', 'sv_SE', 'se', 3, 0),
+        ), 'sv');
+
+        $first = Polylang_Languages::export();
+        $second = Polylang_Languages::export();
+
+        $this->assertSame(array('sv', 'en'), array_keys($this->index_by_slug($first['items'])));
+        $this->assertSame($first, $second);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertTrue($second['items'][0]['is_default']);
+        $this->assertSame('sv', $second['items'][0]['slug']);
+    }
+
     public function test_a_bare_pll_prefix_is_not_a_language()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
