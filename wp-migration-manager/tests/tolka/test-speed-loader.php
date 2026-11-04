@@ -189,8 +189,8 @@ class Speed_Loader_Test extends TestCase
 
     public function test_source_matches_the_loader_contract()
     {
-        $file = dirname(__DIR__, 2) . '/includes/tolka/class-speed-loader.php';
-        $source = file_get_contents($file);
+        $file = (new \ReflectionClass(Speed_Loader::class))->getFileName();
+        $source = $file !== false ? file_get_contents($file) : false;
 
         $this->assertIsString($source);
         $this->assertStringNotContainsString('strict_types', $source);
