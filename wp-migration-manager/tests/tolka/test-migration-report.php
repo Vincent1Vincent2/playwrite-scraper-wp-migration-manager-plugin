@@ -149,7 +149,7 @@ class Test_Migration_Report extends TestCase
             'The migration did not finish, so the Tolka package was not saved. Required classes are missing, so those parts were skipped: Polylang_Languages (languages) and Tolka_Writer (saving). Update the plugin, then run the migration again from Migrate to Tolka. Your existing Polylang data was left in place.',
             $report['summary']
         );
-        $this->assertSame('0 languages, not read', $this->line($report, 'Languages'));
+        $this->assertSame('0 languages were not read.', $this->line($report, 'Languages'));
         $this->assertSame('0 posts', $this->line($report, 'Posts'));
         $missing = $this->lines_named($report, 'Missing step');
         $this->assertSame(
@@ -243,7 +243,7 @@ class Test_Migration_Report extends TestCase
             'errors' => array(),
         ));
 
-        $this->assertSame('0 posts, not read', $this->line($report, 'Posts'));
+        $this->assertSame('0 posts were not read.', $this->line($report, 'Posts'));
         $this->assertStringContainsString(
             'A required class is missing, so that part was skipped: Polylang_Posts (posts).',
             $report['summary']
@@ -267,7 +267,7 @@ class Test_Migration_Report extends TestCase
             $partial['summary']
         );
         $this->assertStringNotContainsString('unavailable', $partial['summary']);
-        $this->assertSame('0 posts, not read', $this->line($partial, 'Posts'));
+        $this->assertSame('0 posts were not read.', $this->line($partial, 'Posts'));
     }
 
     public function test_garbage_input_still_returns_a_report()
@@ -440,7 +440,7 @@ class Test_Migration_Report extends TestCase
             'Required classes are missing, so those parts were skipped: Polylang_Menus (menus) and Tolka_Schema (package builder).',
             $missing_only['summary']
         );
-        $this->assertSame('0 menus, not read', $this->line($missing_only, 'Menus'));
+        $this->assertSame('0 menus were not read.', $this->line($missing_only, 'Menus'));
         $this->assertSame('0 languages', $this->line($missing_only, 'Languages'));
         $this->assertSame(
             array(
@@ -449,6 +449,168 @@ class Test_Migration_Report extends TestCase
             ),
             $this->lines_named($missing_only, 'Missing step')
         );
+    }
+
+    public function test_missing_and_errors_can_be_a_single_string()
+    {
+        $report = Migration_Report::format(array(
+            'missing' => 'WMM\\Tolka\\Polylang_Strings',
+            'errors' => 'could not read the screen text',
+        ));
+
+        $this->assertSame('0 strings were not read.', $this->line($report, 'Strings'));
+        $this->assertSame('0 languages', $this->line($report, 'Languages'));
+        $this->assertStringContainsString(
+            'A required class is missing, so that part was skipped: Polylang_Strings (strings).',
+            $report['summary']
+        );
+        $this->assertStringContainsString('Could not read the screen text.', $report['summary']);
+        $this->assertSame(
+            array('Polylang_Strings (strings) is missing, so that part was skipped.'),
+            $this->lines_named($report, 'Missing step')
+        );
+
+        $duplicates = Migration_Report::format(array(
+            'missing' => array(
+                'Polylang_Menus',
+                'WMM\\Tolka\\Polylang_Menus',
+            ),
+        ));
+        $this->assertSame(
+            array('Polylang_Menus (menus) is missing, so that part was skipped.'),
+            $this->lines_named($duplicates, 'Missing step')
+        );
+        $this->assertSame(1, substr_count($duplicates['summary'], 'Polylang_Menus'));
+
+        $noisy = Migration_Report::format(array(
+            'missing' => array(0, '', 'Polylang_Posts'),
+        ));
+        $this->assertSame(
+            array('Polylang_Posts (posts) is missing, so that part was skipped.'),
+            $this->lines_named($noisy, 'Missing step')
+        );
+        $this->assertStringNotContainsString('skipped: 0', $noisy['summary']);
+    }
+
+    public function test_post_sample_uses_the_excerpt_when_the_title_is_empty()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('posts' => 1),
+            'write' => array('ok' => true),
+            'sample' => array(
+                'posts' => array(
+                    array(
+                        'type' => 'page',
+                        'translations' => array(
+                            'en' => array(
+                                'id' => 4,
+                                'title' => '',
+                                'excerpt' => '<p>Summer hours start Monday.</p>',
+                                'content' => 'A much longer page body that should not lead the report.',
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame('Summer hours start Monday (en)', $this->line($report, 'Example post'));
+        $this->assertStringNotContainsString('longer page body', $this->line($report, 'Example post'));
+    }
+
+    public function test_string_sample_shows_the_translated_text()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('strings' => 1),
+            'write' => array('ok' => true),
+            'sample' => array(
+                'strings' => array(
+                    array(
+                        'name' => 'footer-copyright',
+                        'context' => 'footer',
+                        'translations' => array(
+                            'en' => 'All rights reserved',
+                            'sv' => 'Med ensamratt',
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame(
+            'All rights reserved (en), Med ensamratt (sv)',
+            $this->line($report, 'Example string')
+        );
+        $this->assertSame('1 string', $this->line($report, 'Strings'));
+    }
+
+    public function test_section_count_lines_stay_in_contract_order()
+    {
+        $report = Migration_Report::format(array(
+            'counts' => array(
+                'media' => 4,
+                'languages' => 1,
+            ),
+        ));
+
+        $labels = array();
+        foreach ($report['lines'] as $line) {
+            if (in_array($line['label'], array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'), true)) {
+                $labels[] = $line['label'];
+            }
+        }
+
+        $this->assertSame(
+            array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'),
+            $labels
+        );
+        $this->assertSame('1 language', $this->line($report, 'Languages'));
+        $this->assertSame('0 posts', $this->line($report, 'Posts'));
+        $this->assertSame('4 media items', $this->line($report, 'Media'));
+    }
+
+    public function test_menu_and_media_samples_use_visible_names()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'menus' => 1,
+                'media' => 1,
+            ),
+            'write' => array('ok' => true),
+            'sample' => array(
+                'menus' => array(
+                    array(
+                        'location' => 'primary',
+                        'translations' => array(
+                            'en' => array(
+                                'menu_id' => 3,
+                                'items' => array(
+                                    array(
+                                        'title' => 'Contact',
+                                        'url' => '/contact',
+                                        'object' => 'page',
+                                        'object_id' => 9,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                'media' => array(
+                    array(
+                        'attachment_id' => 12,
+                        'title' => array('en' => 'Shop photo'),
+                        'alt' => array('en' => 'Storefront', 'sv' => 'Butik'),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame('Contact', $this->line($report, 'Example menu'));
+        $this->assertSame('Shop photo (en)', $this->line($report, 'Example file'));
     }
 
     public function test_saved_counts_that_differ_are_explained()
