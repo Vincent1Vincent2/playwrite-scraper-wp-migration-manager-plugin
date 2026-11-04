@@ -180,8 +180,9 @@ class Speed_Loader
         }
         $html = self::clip_html($body);
         $result['ok'] = true;
+        $result['status_code'] = $code;
         $result['html'] = $html;
-        // html_bytes is the full response size. html is the kept prefix.
+        // An empty 200 is a successful measurement: html and html_bytes stay empty.
         $result['html_bytes'] = strlen($body);
         $result['error'] = '';
         $result['ttfb_ms'] = null;
@@ -1722,7 +1723,10 @@ class Speed_Loader
             $body = wp_remote_retrieve_body($response);
             return is_string($body) ? $body : '';
         }
-        if (is_array($response) && isset($response['body']) && is_string($response['body'])) {
+        if (!is_array($response) || !array_key_exists('body', $response)) {
+            return '';
+        }
+        if (is_string($response['body'])) {
             return $response['body'];
         }
 
