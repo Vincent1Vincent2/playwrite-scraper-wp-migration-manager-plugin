@@ -2182,18 +2182,32 @@
 
   function termLine(item) {
     var entries = mapEntries(item.translations);
-    var name = firstField(entries, "name") || text(item.name);
     var bits = [];
     if (text(item.taxonomy)) {
       bits.push(text(item.taxonomy));
     }
-    bits.push(clip(name || text(item.group) || "Untitled term", 80));
-    var langs = entries.map(function (entry) {
-      return entry.lang;
+    var named = [];
+    entries.forEach(function (entry) {
+      var name = field(entry.value, "name") || text(item.name);
+      var slug = field(entry.value, "slug") || text(item.slug);
+      var label = "";
+      if (name && slug && slug !== name) {
+        label = name + " (" + slug + ")";
+      } else {
+        label = name || slug;
+      }
+      if (!label) {
+        if (entry.lang) {
+          named.push(entry.lang);
+        }
+        return;
+      }
+      named.push(entry.lang ? entry.lang + ": " + clip(label, 60) : clip(label, 60));
     });
-    if (langs.length) {
-      bits.push(langs.join(", "));
+    if (!named.length) {
+      named.push(clip(text(item.name) || text(item.group) || "Untitled term", 80));
     }
+    bits.push(named.join(", "));
     return bits.join(" · ");
   }
 
