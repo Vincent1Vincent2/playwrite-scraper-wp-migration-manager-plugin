@@ -1343,11 +1343,13 @@ class Polylang_Languages
                 continue;
             }
             $slug = isset($item['slug']) ? $item['slug'] : '';
-            if ($this->is_internal_language_slug($slug)) {
-                $this->saw_internal_language = true;
+            if (!is_string($slug) || $slug === '' || $this->is_internal_language_slug($slug)) {
+                if ($this->is_internal_language_slug($slug)) {
+                    $this->saw_internal_language = true;
+                }
                 continue;
             }
-            if (is_array($item) && isset($item['name']) && $this->is_internal_language_slug($this->normalized_slug($item['name']))) {
+            if (isset($item['name']) && $this->is_internal_language_slug($this->normalized_slug($item['name']))) {
                 $item['name'] = $slug;
             }
             $kept[] = $item;
