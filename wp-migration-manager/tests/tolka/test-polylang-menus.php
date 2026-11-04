@@ -69,6 +69,141 @@ class Polylang_Menus_Test extends TestCase
         );
     }
 
+    public function test_theme_location_with_no_menu(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'languages' => array('en', 'sv'),
+            'default_language' => 'en',
+            'registered' => array(
+                'footer' => 'Footer',
+            ),
+        ));
+
+        $result = $fixture->run();
+        $footer = $this->location($result, 'footer');
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('footer', $footer['location']);
+        $this->assertSame('Footer', $footer['label']);
+        $this->assertSame(array('en', 'sv'), array_keys($footer['translations']));
+        foreach (array('en', 'sv') as $language) {
+            $this->assertSame(0, $footer['translations'][$language]['menu_id']);
+            $this->assertSame('', $footer['translations'][$language]['name']);
+            $this->assertSame(array(), $footer['translations'][$language]['items']);
+            $this->assertSame(0, $footer['translations'][$language]['link_count']);
+        }
+    }
+
+    public function test_nested_menu_item(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(4 => 'Main'),
+            'slugs' => array(4 => 'main'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 4),
+                    ),
+                ),
+            ),
+            'items' => array(
+                4 => array(
+                    array(
+                        'id' => 9,
+                        'parent' => 8,
+                        'title' => 'Child',
+                        'url' => 'https://example.com/child',
+                        'object' => 'custom',
+                        'object_id' => 16,
+                        'position' => 2,
+                    ),
+                    array(
+                        'id' => 8,
+                        'parent' => 0,
+                        'title' => 'Parent',
+                        'url' => 'https://example.com/parent',
+                        'object' => 'page',
+                        'object_id' => 15,
+                        'position' => 1,
+                    ),
+                ),
+            ),
+        ));
+
+        $result = $fixture->run();
+        $items = $this->location($result, 'primary')['translations']['en']['items'];
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $items);
+        $this->assertSame('Parent', $items[0]['title']);
+        $this->assertSame('https://example.com/parent', $items[0]['url']);
+        $this->assertSame('page', $items[0]['object']);
+        $this->assertSame(15, $items[0]['object_id']);
+        $this->assertCount(1, $items[0]['children']);
+
+        $child = $items[0]['children'][0];
+        $this->assertSame('Child', $child['title']);
+        $this->assertSame('https://example.com/child', $child['url']);
+        $this->assertSame('custom', $child['object']);
+        $this->assertSame(16, $child['object_id']);
+        $this->assertSame(8, $child['parent']);
+        $this->assertSame(array(), $child['children']);
+        $this->assertSame(2, $this->location($result, 'primary')['translations']['en']['link_count']);
+    }
+
+    public function test_polylang_inactive(): void
+    {
+        $inactive = $this->fixture(array(
+            'active' => false,
+            'wordpress' => true,
+        ));
+        $empty = $inactive->run();
+
+        $this->assertSame(array(), $empty['items']);
+        $this->assertNotEmpty($empty['errors']);
+        $this->assertIsString($empty['errors'][0]);
+        $this->assertStringContainsString('Polylang is not active', $empty['errors'][0]);
+        $this->assertStringEndsWith('.', $empty['errors'][0]);
+
+        $stored = $this->fixture(array(
+            'active' => false,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(3 => 'Main'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 3),
+                    ),
+                ),
+            ),
+            'items' => array(
+                3 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Home',
+                        'url' => '/',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                    ),
+                ),
+            ),
+        ));
+        $result = $stored->run();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(3, $this->location($result, 'primary')['translations']['en']['menu_id']);
+        $this->assertSame('Home', $this->location($result, 'primary')['translations']['en']['items'][0]['title']);
+        $this->assertSame('/', $this->location($result, 'primary')['translations']['en']['items'][0]['url']);
+        $this->assertSame('custom', $this->location($result, 'primary')['translations']['en']['items'][0]['object']);
+        $this->assertSame(1, $this->location($result, 'primary')['translations']['en']['items'][0]['object_id']);
+    }
+
     public function test_groups_locations_and_nests_items(): void
     {
         $fixture = $this->fixture(array(
