@@ -62,7 +62,8 @@ class Polylang_Languages
      * `errors` is empty when at least one language was read. Otherwise it
      * holds one sentence explaining what the site owner can do next.
      *
-     * Languages that have no posts are included. Nothing is written.
+     * Languages that have no posts are included. The default language is
+     * listed first. Nothing is written.
      *
      * @return array
      */
@@ -495,14 +496,36 @@ class Polylang_Languages
             }
 
             $index = $known[$slug];
-            $current = $this->string_value($this->read_field($primary[$index], 'description'));
-            $incoming = $this->string_value($this->read_field($term, 'description'));
-            if ($current === '' && $incoming !== '') {
+            if (!$this->description_has_language_data($primary[$index]) && $this->description_has_language_data($term)) {
                 $primary[$index] = $term;
             }
         }
 
         return $primary;
+    }
+
+    /**
+     * Whether a term description includes a locale or flag code.
+     *
+     * An empty serialized array does not count. The stored row can replace it.
+     *
+     * @param mixed $term Term row.
+     * @return bool
+     */
+    private function description_has_language_data($term)
+    {
+        $data = $this->decode_stored_array($this->read_field($term, 'description'));
+        if (isset($data['locale']) && is_string($data['locale']) && trim($data['locale']) !== '') {
+            return true;
+        }
+        if (isset($data['flag_code']) && is_string($data['flag_code']) && trim($data['flag_code']) !== '') {
+            return true;
+        }
+        if (isset($data['flag']) && is_string($data['flag']) && $this->is_flag_code($this->normalize_flag($data['flag']))) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -566,8 +589,8 @@ class Polylang_Languages
         }
 
         $by_name = strcmp(
-            $this->string_value($this->read_field($left, 'name')),
-            $this->string_value($this->read_field($right, 'name'))
+            $this->plain_name($this->read_field($left, 'name')),
+            $this->plain_name($this->read_field($right, 'name'))
         );
         if ($by_name !== 0) {
             return $by_name;
@@ -701,12 +724,12 @@ class Polylang_Languages
             foreach ($items as $index => $item) {
                 $items[$index]['is_default'] = ($canonical !== '' && $item['slug'] === $canonical);
             }
-            return array_values($items);
+            return $this->default_first($items);
         }
 
         if (count($items) === 1) {
             $items[0]['is_default'] = true;
-            return array_values($items);
+            return $this->default_first($items);
         }
 
         $seen_default = false;
@@ -718,7 +741,30 @@ class Polylang_Languages
             $items[$index]['is_default'] = false;
         }
 
-        return array_values($items);
+        return $this->default_first($items);
+    }
+
+    /**
+     * Put the default language first so a short preview still shows it.
+     *
+     * The other languages stay in Polylang's order.
+     *
+     * @param array $items Language rows.
+     * @return array
+     */
+    private function default_first($items)
+    {
+        $first = array();
+        $rest = array();
+        foreach ($items as $item) {
+            if ($first === array() && isset($item['is_default']) && $item['is_default'] === true) {
+                $first[] = $item;
+                continue;
+            }
+            $rest[] = $item;
+        }
+
+        return array_merge($first, $rest);
     }
 
     /**
@@ -813,7 +859,7 @@ class Polylang_Languages
     private function make_item($slug, $name, $locale, $is_default, $term_id, $flag)
     {
         $slug = $this->string_value($slug);
-        $name = $this->string_value($name);
+        $name = $this->plain_name($name);
         if ($name === '') {
             $name = $slug;
         }
@@ -960,6 +1006,19 @@ class Polylang_Languages
     }
 
     /**
+     * Language name with entities decoded.
+     *
+     * Sorting uses the same text the preview shows.
+     *
+     * @param mixed $name Raw name.
+     * @return string
+     */
+    private function plain_name($name)
+    {
+        return html_entity_decode($this->string_value($name), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    }
+
+    /**
      * String value with surrounding space removed.
      *
      * @param mixed $value Raw value.
@@ -1077,12 +1136,13 @@ class Polylang_Languages
      */
     private function list_is_records($raw)
     {
-        if ($raw === array()) {
-            return false;
+        foreach ($raw as $row) {
+            if (is_object($row) || is_array($row)) {
+                return true;
+            }
         }
 
-        $first = reset($raw);
-        return is_object($first) || is_array($first);
+        return false;
     }
 
     /**
