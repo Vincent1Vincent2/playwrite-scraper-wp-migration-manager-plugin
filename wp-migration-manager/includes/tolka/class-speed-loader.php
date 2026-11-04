@@ -54,6 +54,16 @@ class Speed_Loader
     private static $pinned_ips = array();
 
     /**
+     * Host name the pinned addresses belong to.
+     *
+     * A later hop, such as an http page redirecting to https, must not reuse
+     * another host's addresses.
+     *
+     * @var string
+     */
+    private static $pinned_host = '';
+
+    /**
      * CURLOPT_RESOLVE entries for the request currently in flight.
      *
      * @var string[]
@@ -70,9 +80,12 @@ class Speed_Loader
      * html_bytes is the full response size; html keeps at most the first
      * 2,000,000 bytes. A status outside 200–299 keeps that status and the
      * elapsed time, with html empty. A redirect is followed only after the
-     * next address is checked. A private next hop is never requested, and
-     * the fourth redirect is not fetched. An address with a username or
-     * password is refused before any request.
+     * next address is checked, including an http address that redirects to a
+     * public https page. That https page is what gets measured. A 3xx response
+     * that names the next page only in a Refresh header is followed the same
+     * way. A private next hop is never requested, and the fourth redirect is
+     * not fetched. An address with a username or password is refused before
+     * any request.
      *
      * @param string $url Public http or https URL.
      * @return array{ok: bool, url: string, status_code: int, total_ms: int, ttfb_ms: null, html_bytes: int, html: string, error: string}
@@ -80,6 +93,7 @@ class Speed_Loader
     public static function measure(string $url): array
     {
         self::$pinned_ips = array();
+        self::$pinned_host = '';
         self::$curl_resolve = array();
         $checked = self::parse_public_url($url);
         $shown = $checked['url'] !== '' ? $checked['url'] : trim($url);
@@ -141,7 +155,21 @@ class Speed_Loader
                 );
             }
 
-            $location = self::response_header($response, 'location');
+            try {
+                $location = self::clean_location(self::response_header($response, 'location'));
+            } catch (\Throwable $e) {
+                $location = '';
+            }
+            if ($location !== '' && preg_match('/[\r\n\x00]/', $location)) {
+                break;
+            }
+            if ($location === '') {
+                try {
+                    $location = self::refresh_target(self::response_header($response, 'refresh'));
+                } catch (\Throwable $e) {
+                    $location = '';
+                }
+            }
             if ($location === '' || preg_match('/[\r\n\x00]/', $location)) {
                 break;
             }
@@ -162,9 +190,15 @@ class Speed_Loader
             if ($reported_checked['error'] !== '') {
                 return self::fail($result, self::redirect_refusal_message($reported_checked['reason']), $code);
             }
-            if ($reported_checked['url'] !== '') {
+            // Hops we fetched ourselves stay on the address we measured, so an
+            // http start is not written back over the public https page.
+            // A transport that already followed the upgrade can still name it.
+            if ($redirects === 0 && $reported_checked['url'] !== '') {
                 $result['url'] = $reported_checked['url'];
             }
+        }
+        if ($redirects > 0) {
+            $result['url'] = $current;
         }
 
         if ($code < 200 || $code > 299) {
@@ -226,7 +260,7 @@ class Speed_Loader
             return null;
         }
 
-        $pinned = self::curl_resolve_entries($url, self::$pinned_ips);
+        $pinned = self::curl_resolve_for_request($url);
         if ($pinned === array() || !function_exists('add_action') || !function_exists('remove_action')) {
             return wp_remote_get($url, self::request_args());
         }
@@ -267,6 +301,54 @@ class Speed_Loader
         }
 
         curl_setopt($handle, CURLOPT_RESOLVE, self::$curl_resolve);
+    }
+
+    /**
+     * Pinned addresses for this request, or none when they belong to another host.
+     *
+     * @param string $url Request URL.
+     * @return string[]
+     */
+    private static function curl_resolve_for_request($url)
+    {
+        if (!self::pin_matches_url($url)) {
+            return array();
+        }
+
+        return self::curl_resolve_entries($url, self::$pinned_ips);
+    }
+
+    /**
+     * True when the pinned addresses were checked for this URL's host.
+     *
+     * @param string $url Request URL.
+     * @return bool
+     */
+    private static function pin_matches_url($url)
+    {
+        if (self::$pinned_host === '' || self::$pinned_ips === array()) {
+            return false;
+        }
+
+        $parts = parse_url((string) $url);
+        if (!is_array($parts) || !isset($parts['host']) || (string) $parts['host'] === '') {
+            return false;
+        }
+
+        $host = (string) $parts['host'];
+        if (strlen($host) >= 2 && $host[0] === '[' && substr($host, -1) === ']') {
+            $host = substr($host, 1, -1);
+        }
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return false;
+        }
+
+        $normalized = self::normalized_host($host);
+        if ($normalized === self::$pinned_host) {
+            return true;
+        }
+
+        return self::ascii_host($normalized) === self::$pinned_host;
     }
 
     /**
@@ -612,6 +694,8 @@ class Speed_Loader
      */
     private static function judge_host($host)
     {
+        self::$pinned_ips = array();
+        self::$pinned_host = '';
         $saw_name = false;
         $saw_invalid = false;
         $name_for_dns = '';
@@ -668,6 +752,7 @@ class Speed_Loader
                 }
             }
             self::$pinned_ips = $safe;
+            self::$pinned_host = $name_for_dns;
             return '';
         }
 
@@ -1823,7 +1908,63 @@ class Speed_Loader
     }
 
     /**
+     * Location value ready to resolve.
+     *
+     * Drops a byte-order mark, wrapping quotes, and angle brackets so an
+     * http response can still name a public https page.
+     *
+     * @param string $location Raw Location value.
+     * @return string
+     */
+    private static function clean_location($location)
+    {
+        $location = self::normalize_typed_url($location);
+        if (strlen($location) < 2) {
+            return $location;
+        }
+
+        $first = $location[0];
+        $last = substr($location, -1);
+        $wrapped = ($first === '<' && $last === '>')
+            || ($first === '"' && $last === '"')
+            || ($first === "'" && $last === "'");
+        if (!$wrapped) {
+            return $location;
+        }
+
+        return self::normalize_typed_url(substr($location, 1, -1));
+    }
+
+    /**
+     * Next page from a Refresh header, or an empty string when it has none.
+     *
+     * Used only when a redirect did not send Location. A normal 200 page is
+     * not passed here, so a Refresh hint on that page is not followed.
+     *
+     * @param string $header Refresh header value.
+     * @return string
+     */
+    private static function refresh_target($header)
+    {
+        $header = self::clean_location($header);
+        if ($header === '' || preg_match('/[\r\n\x00]/', $header)) {
+            return '';
+        }
+        if (preg_match('/\burl\s*=\s*(.*)$/i', $header, $matches)) {
+            return self::clean_location(trim($matches[1]));
+        }
+        if (preg_match('#^https?://#i', $header) || strpos($header, '//') === 0) {
+            return $header;
+        }
+
+        return '';
+    }
+
+    /**
      * Turn a Location value into an absolute URL against the current hop.
+     *
+     * An absolute https address is returned unchanged, so an http page's port
+     * is not copied onto the https hop.
      *
      * @param string $current  URL that returned the redirect.
      * @param string $location Location header.
