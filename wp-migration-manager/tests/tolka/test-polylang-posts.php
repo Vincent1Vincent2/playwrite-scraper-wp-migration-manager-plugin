@@ -805,6 +805,26 @@ class Polylang_Posts_Test extends TestCase
         );
     }
 
+    public function test_a_long_error_list_keeps_the_first_twenty_and_a_count()
+    {
+        $exporter = new Polylang_Posts_Fixture();
+        $maps = array();
+        $posts = array();
+        for ($i = 1; $i <= 22; $i++) {
+            $maps[] = array('en' => $i, 'de' => 1000 + $i);
+            $posts[$i] = $this->record($i, 'post', 'Keep ' . $i, 'keep-' . $i, 'draft');
+        }
+        $exporter->maps = $maps;
+        $exporter->posts = $posts;
+
+        $result = $exporter->export();
+        $this->assertCount(22, $result['items']);
+        $this->assertCount(21, $result['errors']);
+        $this->assertSame('Post 1001 is part of translation group post:1, but that post no longer exists. It was left out of the export.', $result['errors'][0]);
+        $this->assertSame('2 more issues were found and are not listed here.', $result['errors'][20]);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+    }
+
     public function test_repeated_export_is_identical()
     {
         $exporter = new Polylang_Posts_Fixture();

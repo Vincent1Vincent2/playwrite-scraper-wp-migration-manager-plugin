@@ -91,11 +91,37 @@ class Polylang_Posts
                 $clean[] = $error;
             }
         }
+        $clean = $this->limit_errors($clean);
 
         return array(
             'items' => array_values($items),
             'errors' => array_values($clean),
         );
+    }
+
+    /**
+     * Keep the preview readable when a large catalog has many broken rows.
+     *
+     * @param string[] $errors
+     * @return string[]
+     */
+    private function limit_errors(array $errors)
+    {
+        $limit = 20;
+        if (count($errors) <= $limit) {
+            return $errors;
+        }
+        $hidden = count($errors) - $limit;
+        $errors = array_slice($errors, 0, $limit);
+        if ($hidden === 1) {
+            $errors[] = $this->say('1 more issue was found and is not listed here.');
+        } else {
+            $errors[] = $this->say_sprintf(
+                '%d more issues were found and are not listed here.',
+                array($hidden)
+            );
+        }
+        return $errors;
     }
 
     /**
