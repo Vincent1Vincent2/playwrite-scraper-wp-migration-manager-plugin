@@ -174,11 +174,10 @@ if (
 $wmm_tolka_speed_payload = null;
 if (isset($estimate) && is_array($estimate)) {
     $wmm_tolka_speed_payload = $estimate;
+    // A measure response keeps ok on the wrapper and the speed result under estimate.
     if (
         isset($wmm_tolka_speed_payload['estimate'])
         && is_array($wmm_tolka_speed_payload['estimate'])
-        && !array_key_exists('ok', $wmm_tolka_speed_payload)
-        && !array_key_exists('current_ms', $wmm_tolka_speed_payload)
     ) {
         $wmm_tolka_speed_payload = $wmm_tolka_speed_payload['estimate'];
     }
