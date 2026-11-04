@@ -160,11 +160,29 @@ $wmm_tolka_speed_view = array(
     'error' => '',
 );
 
+$wmm_tolka_speed_as_array = static function ($value) {
+    if (is_array($value)) {
+        return $value;
+    }
+
+    if (is_object($value)) {
+        return get_object_vars($value);
+    }
+
+    return null;
+};
+
+$wmm_tolka_speed_record = isset($estimate) ? $wmm_tolka_speed_as_array($estimate) : null;
+$wmm_tolka_speed_metrics = null;
+if (is_array($wmm_tolka_speed_record) && isset($wmm_tolka_speed_record['metrics'])) {
+    $wmm_tolka_speed_metrics = $wmm_tolka_speed_as_array($wmm_tolka_speed_record['metrics']);
+}
+
 $wmm_tolka_speed_truncated_text = '';
 if (
-    isset($estimate) && is_array($estimate)
-    && isset($estimate['metrics']) && is_array($estimate['metrics'])
-    && isset($estimate['metrics']['truncated']) && true === $estimate['metrics']['truncated']
+    is_array($wmm_tolka_speed_metrics)
+    && isset($wmm_tolka_speed_metrics['truncated'])
+    && true === $wmm_tolka_speed_metrics['truncated']
 ) {
     $wmm_tolka_speed_truncated_text = $wmm_tolka_speed_plain(
         __('Only the first part of the page HTML was measured.', 'migration-manager')
@@ -172,15 +190,20 @@ if (
 }
 
 $wmm_tolka_speed_payload = null;
-if (isset($estimate) && is_array($estimate)) {
-    $wmm_tolka_speed_payload = $estimate;
-    // A measure response keeps ok on the wrapper and the speed result under estimate.
-    if (
-        isset($wmm_tolka_speed_payload['estimate'])
-        && is_array($wmm_tolka_speed_payload['estimate'])
-    ) {
-        $wmm_tolka_speed_payload = $wmm_tolka_speed_payload['estimate'];
+if (is_array($wmm_tolka_speed_record)) {
+    $wmm_tolka_speed_payload = $wmm_tolka_speed_record;
+    // A measure response keeps the page HTML on the wrapper and the speed result under estimate.
+    if (isset($wmm_tolka_speed_payload['estimate'])) {
+        $wmm_tolka_speed_nested = $wmm_tolka_speed_as_array($wmm_tolka_speed_payload['estimate']);
+        if (is_array($wmm_tolka_speed_nested)) {
+            $wmm_tolka_speed_payload = $wmm_tolka_speed_nested;
+        }
     }
+    unset(
+        $wmm_tolka_speed_payload['html'],
+        $wmm_tolka_speed_payload['html_bytes'],
+        $wmm_tolka_speed_payload['measurement']
+    );
 } elseif (isset($estimate)) {
     $wmm_tolka_speed_view['state'] = 'error';
 }
@@ -458,5 +481,9 @@ unset(
     $wmm_tolka_speed_classes,
     $wmm_tolka_speed_summary_class,
     $wmm_tolka_speed_described_by,
-    $wmm_tolka_speed_truncated_text
+    $wmm_tolka_speed_truncated_text,
+    $wmm_tolka_speed_as_array,
+    $wmm_tolka_speed_record,
+    $wmm_tolka_speed_metrics,
+    $wmm_tolka_speed_nested
 );
