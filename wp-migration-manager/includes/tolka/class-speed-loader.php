@@ -67,6 +67,7 @@ class Speed_Loader
      * empty, and error is a sentence the admin screen can show. ttfb_ms is
      * always null. total_ms is the wall-clock time of the HTTP request, in
      * milliseconds, and is 0 when the address is rejected before a request.
+     * html_bytes is the full response size; html keeps the first 2,000,000 bytes.
      *
      * @param string $url Public http or https URL.
      * @return array{ok: bool, url: string, status_code: int, total_ms: int, ttfb_ms: null, html_bytes: int, html: string, error: string}
@@ -134,10 +135,15 @@ class Speed_Loader
             return self::fail($result, self::http_status_error($code), $code);
         }
 
-        $html = self::clip_html(self::response_body($response));
+        $body = self::response_body($response);
+        if (!is_string($body)) {
+            $body = '';
+        }
+        $html = self::clip_html($body);
         $result['ok'] = true;
         $result['html'] = $html;
-        $result['html_bytes'] = strlen($html);
+        // html_bytes is the full response size. html is the kept prefix.
+        $result['html_bytes'] = strlen($body);
         $result['error'] = '';
         $result['ttfb_ms'] = null;
 
