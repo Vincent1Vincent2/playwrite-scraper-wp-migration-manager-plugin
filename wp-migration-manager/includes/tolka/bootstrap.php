@@ -1205,7 +1205,56 @@ function wmm_tolka_home_url()
     $home = str_replace("\0", '', $home);
     $stripped = preg_replace('/[\x00-\x1F\x7F]+/', '', $home);
 
-    return is_string($stripped) ? trim($stripped) : '';
+    if (!is_string($stripped)) {
+        return '';
+    }
+
+    return wmm_tolka_url_without_userinfo(trim($stripped));
+}
+
+/**
+ * Public address with any username or password removed.
+ *
+ * @param string $url Address to show or measure.
+ * @return string
+ */
+function wmm_tolka_url_without_userinfo($url)
+{
+    if (!is_string($url) || $url === '' || !wmm_tolka_url_has_userinfo($url)) {
+        return is_string($url) ? $url : '';
+    }
+
+    $parts = parse_url($url);
+
+    if (!is_array($parts) || !isset($parts['host']) || !is_string($parts['host']) || $parts['host'] === '') {
+        return '';
+    }
+
+    $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : '';
+
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        return '';
+    }
+
+    $rebuilt = $scheme . '://' . $parts['host'];
+
+    if (isset($parts['port']) && is_numeric($parts['port'])) {
+        $rebuilt .= ':' . (int) $parts['port'];
+    }
+
+    if (isset($parts['path']) && is_string($parts['path']) && $parts['path'] !== '') {
+        $rebuilt .= $parts['path'];
+    }
+
+    if (isset($parts['query']) && is_string($parts['query']) && $parts['query'] !== '') {
+        $rebuilt .= '?' . $parts['query'];
+    }
+
+    if (isset($parts['fragment']) && is_string($parts['fragment']) && $parts['fragment'] !== '') {
+        $rebuilt .= '#' . $parts['fragment'];
+    }
+
+    return $rebuilt;
 }
 
 /**

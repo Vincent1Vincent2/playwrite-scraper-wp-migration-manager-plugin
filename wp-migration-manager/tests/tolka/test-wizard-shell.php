@@ -1327,6 +1327,22 @@ namespace WMM\Tolka {
             $this->assertStringNotContainsString("\n", $input);
         }
 
+        public function test_home_url_drops_a_username_and_password()
+        {
+            $this->requireStubs();
+            $GLOBALS['wmm_tolka_test_home'] = 'https://migrator:secret-pass@public.example.test:8443/blog?lang=sv#top';
+
+            $html = $this->render();
+            $this->assertStringContainsString('value="https://public.example.test:8443/blog?lang=sv#top"', $html);
+            $this->assertStringNotContainsString('secret-pass', $html);
+            $this->assertStringNotContainsString('migrator', $html);
+
+            $GLOBALS['wmm_tolka_test_home'] = 'https://secret-pass@public.example.test/news';
+            $html = $this->render();
+            $this->assertStringContainsString('value="https://public.example.test/news"', $html);
+            $this->assertStringNotContainsString('secret-pass', $html);
+        }
+
         public function test_empty_screen_url_is_filled_from_the_home_address()
         {
             $this->requireStubs();
