@@ -91,7 +91,7 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('Run the migration after you have read the preview. The plugin stores a Tolka package on this site. That package is a snapshot of the languages, posts, terms, strings, menus, and media.', 'migration-manager'); ?>
             </p>
             <p>
-                <?php esc_html_e('The plugin also records a language field and a group field on each translated post and term.', 'migration-manager'); ?>
+                <?php esc_html_e('The plugin also records a language field and a group field on each translated post and term. The group field ties those translations together.', 'migration-manager'); ?>
             </p>
             <p>
                 <?php esc_html_e('Polylang data stays in place. The plugin does not delete other custom fields, and it does not delete Polylang content, options, or terms.', 'migration-manager'); ?>
