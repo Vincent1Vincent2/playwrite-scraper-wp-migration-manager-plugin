@@ -185,9 +185,14 @@
             cfg.actionMeasure,
             { url: url },
             40000,
-            "The speed check took too long and was stopped. Try the public URL again."
+            "The speed check took too long, so try the public URL again.",
+            "The speed check could not be completed, so try again."
           ).then(function (result) {
             if (!result.ok) {
+              if (result.transport) {
+                showTransportFailure(els.speed, result.error);
+                return;
+              }
               showError(els.speed, result.error);
               return;
             }
@@ -229,9 +234,14 @@
             cfg.actionPreview,
             {},
             120000,
-            "The preview took too long and was stopped. Nothing was written."
+            "The preview took too long, so nothing was written.",
+            "The preview could not be completed, so nothing was written."
           ).then(function (result) {
             if (!result.ok) {
+              if (result.transport) {
+                showTransportFailure(els.previewResult, result.error);
+                return;
+              }
               showError(els.previewResult, result.error);
               return;
             }
@@ -266,9 +276,14 @@
             cfg.actionRun,
             {},
             300000,
-            "The migration did not answer in time. Reload the page before running it again. Polylang data was not removed."
+            "The migration did not answer in time, so try again before reloading.",
+            "The migration could not be completed, and Polylang data was not removed."
           ).then(function (result) {
             if (!result.ok) {
+              if (result.transport) {
+                showTransportFailure(els.report, result.error);
+                return;
+              }
               showError(els.report, failureWithKeptData(result.error));
               return;
             }
@@ -318,11 +333,9 @@
         function () {},
         function (err) {
           try {
-            showError(
+            showTransportFailure(
               container,
-              err && err.message
-                ? err.message
-                : "The request failed. Try again."
+              "The request could not be completed, so try again."
             );
           } catch (ignore) {
             /* The buttons still have to accept another click. */
@@ -469,22 +482,33 @@
     });
   }
 
-  function post(action, fields, timeoutMs, timeoutMessage) {
+  function post(action, fields, timeoutMs, timeoutMessage, networkMessage) {
     var body = encodeForm(formFields(action, fields));
-    return send(body, timeoutMs, timeoutMessage).then(
+    var sent;
+    try {
+      sent = send(body, timeoutMs, timeoutMessage, networkMessage);
+    } catch (err) {
+      return Promise.resolve(transportResult(err, networkMessage));
+    }
+    return sent.then(
       function (response) {
         return parseAjax(response.status, response.text);
       },
       function (err) {
-        return {
-          ok: false,
-          error:
-            err && err.message
-              ? err.message
-              : "The request could not be completed. Check your connection and try again.",
-        };
+        return transportResult(err, networkMessage);
       }
     );
+  }
+
+  function transportResult(err, fallback) {
+    var sentence = err && err.wmmTolkaSentence ? err.wmmTolkaSentence : fallback;
+    return {
+      ok: false,
+      transport: true,
+      error: finishSentence(
+        sentence || "The request could not be completed, so try again."
+      ),
+    };
   }
 
   function formFields(action, fields) {
@@ -520,26 +544,34 @@
       .join("&");
   }
 
-  function send(body, timeoutMs, timeoutMessage) {
+  function send(body, timeoutMs, timeoutMessage, networkMessage) {
     if (typeof window.fetch === "function") {
-      return sendFetch(body, timeoutMs, timeoutMessage);
+      return sendFetch(body, timeoutMs, timeoutMessage, networkMessage);
     }
-    return sendXhr(body, timeoutMs, timeoutMessage);
+    return sendXhr(body, timeoutMs, timeoutMessage, networkMessage);
   }
 
   function timeoutError(timeoutMessage) {
-    return new Error(
-      timeoutMessage || "The request took too long and was stopped. Try again."
+    var sentence = finishSentence(
+      timeoutMessage || "The request took too long, so try again."
     );
+    var err = new Error(sentence);
+    err.wmmTolkaSentence = sentence;
+    err.wmmTolkaTransport = true;
+    return err;
   }
 
-  function networkError() {
-    return new Error(
-      "The request could not be completed. Check your connection and try again."
+  function networkError(networkMessage) {
+    var sentence = finishSentence(
+      networkMessage || "The request could not be completed, so try again."
     );
+    var err = new Error(sentence);
+    err.wmmTolkaSentence = sentence;
+    err.wmmTolkaTransport = true;
+    return err;
   }
 
-  function sendFetch(body, timeoutMs, timeoutMessage) {
+  function sendFetch(body, timeoutMs, timeoutMessage, networkMessage) {
     var controller =
       typeof AbortController === "function" ? new AbortController() : null;
     var timer = null;
@@ -561,15 +593,20 @@
       })
       .then(
         function (response) {
-          return response.text().then(function (text) {
-            return { status: response.status, text: text };
-          });
+          return response.text().then(
+            function (text) {
+              return { status: response.status, text: text };
+            },
+            function () {
+              throw networkError(networkMessage);
+            }
+          );
         },
         function (err) {
           if (err && err.name === "AbortError") {
             throw timeoutError(timeoutMessage);
           }
-          throw networkError();
+          throw networkError(networkMessage);
         }
       )
       .then(
@@ -588,7 +625,7 @@
       );
   }
 
-  function sendXhr(body, timeoutMs, timeoutMessage) {
+  function sendXhr(body, timeoutMs, timeoutMessage, networkMessage) {
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
       xhr.open("POST", cfg.ajaxUrl, true);
@@ -604,7 +641,7 @@
         resolve({ status: xhr.status, text: xhr.responseText });
       };
       xhr.onerror = function () {
-        reject(networkError());
+        reject(networkError(networkMessage));
       };
       xhr.ontimeout = function () {
         reject(timeoutError(timeoutMessage));
@@ -1245,17 +1282,12 @@
     }
     removeGenerated(container);
     hideSpeedError(slots);
-    if (slots.summary) {
-      setText(slots.summary, text);
-      reveal(slots.summary);
+    var status = markGenerated(el("p", "wmm-tolka-status", text));
+    status.setAttribute("role", "status");
+    if (container.firstChild) {
+      container.insertBefore(status, container.firstChild);
     } else {
-      var status = markGenerated(el("p", "wmm-tolka-status", text));
-      status.setAttribute("role", "status");
-      if (container.firstChild) {
-        container.insertBefore(status, container.firstChild);
-      } else {
-        container.appendChild(status);
-      }
+      container.appendChild(status);
     }
     if (slots.panel) {
       slots.panel.classList.add("wmm-tolka-is-busy");
@@ -1630,19 +1662,9 @@
       return false;
     }
     removeGenerated(container);
-    var lead = container.querySelector(".wmm-tolka-empty-lead");
-    if (lead) {
-      lead.textContent = text;
-    } else {
-      var note = container.querySelector(".wmm-tolka-notice p");
-      if (note) {
-        note.textContent = text;
-      }
-    }
-    var busyValue = container.id === "wmm-tolka-report" ? "Running…" : "Loading…";
-    Array.prototype.forEach.call(table.querySelectorAll("tbody tr"), function (row) {
-      setRowValue(row, busyValue);
-    });
+    var status = markGenerated(el("p", "wmm-tolka-status", text));
+    status.setAttribute("role", "status");
+    container.insertBefore(status, container.firstChild);
     return true;
   }
 
@@ -2242,6 +2264,43 @@
     container.appendChild(status);
     container.classList.remove("wmm-tolka-has-error");
     container.classList.remove("wmm-tolka-has-result");
+  }
+
+  function showTransportFailure(container, sentence) {
+    var text = finishSentence(
+      sentence || "The request could not be completed, so try again."
+    );
+    if (!container) {
+      return;
+    }
+    removeGenerated(container);
+    if (container.id === "wmm-tolka-speed") {
+      var slots = collectSpeedSlots(container);
+      if (slots.panel) {
+        slots.panel.classList.remove("wmm-tolka-is-busy");
+      }
+      if (slots.error) {
+        setPlainText(slots.error, text);
+        var errorBox = errorWrapper(slots.error);
+        reveal(errorBox);
+        errorBox.setAttribute("role", "alert");
+        errorBox.classList.add("notice", "notice-error");
+        container.classList.add("wmm-tolka-has-error");
+        return;
+      }
+    }
+    var previous = container.querySelector(".wmm-tolka-transport-error");
+    if (previous && previous.parentNode) {
+      previous.parentNode.removeChild(previous);
+    }
+    var paragraph = el("p", "wmm-tolka-error wmm-tolka-transport-error", text);
+    paragraph.setAttribute("role", "alert");
+    if (container.firstChild) {
+      container.insertBefore(paragraph, container.firstChild);
+    } else {
+      container.appendChild(paragraph);
+    }
+    container.classList.add("wmm-tolka-has-error");
   }
 
   function showMeasureRejection(container, message) {
