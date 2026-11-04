@@ -263,6 +263,9 @@ namespace WMM\Tolka {
             $this->assertContains('wp_ajax_wmm_tolka_measure', $hooks);
             $this->assertContains('wp_ajax_wmm_tolka_preview', $hooks);
             $this->assertContains('wp_ajax_wmm_tolka_run', $hooks);
+            $this->assertContains('wp_ajax_nopriv_wmm_tolka_measure', $hooks);
+            $this->assertContains('wp_ajax_nopriv_wmm_tolka_preview', $hooks);
+            $this->assertContains('wp_ajax_nopriv_wmm_tolka_run', $hooks);
 
             $GLOBALS['wmm_tolka_test_menus'] = array();
             \wmm_tolka_register_menu();

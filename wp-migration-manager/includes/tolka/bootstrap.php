@@ -1815,4 +1815,10 @@ add_action('wp_ajax_wmm_tolka_measure', 'wmm_tolka_ajax_measure');
 add_action('wp_ajax_wmm_tolka_preview', 'wmm_tolka_ajax_preview');
 add_action('wp_ajax_wmm_tolka_run', 'wmm_tolka_ajax_run');
 
+// Logged-out calls still fail the nonce and manage_options checks. These
+// hooks exist so the response is a sentence instead of WordPress's bare 0.
+add_action('wp_ajax_nopriv_wmm_tolka_measure', 'wmm_tolka_ajax_measure');
+add_action('wp_ajax_nopriv_wmm_tolka_preview', 'wmm_tolka_ajax_preview');
+add_action('wp_ajax_nopriv_wmm_tolka_run', 'wmm_tolka_ajax_run');
+
 wmm_tolka_load_classes();
