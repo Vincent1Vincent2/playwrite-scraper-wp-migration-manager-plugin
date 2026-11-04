@@ -203,7 +203,11 @@ class Polylang_Terms
                 }
                 $row['name'] = $this->stringValue(isset($row['name']) ? $row['name'] : '');
                 $row['slug'] = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
-                $row['description'] = $this->stringValue(isset($row['description']) ? $row['description'] : '');
+                $description = array_key_exists('description', $row) ? $row['description'] : '';
+                $row['description'] = $this->stringValue($description);
+                if (!is_string($row['description'])) {
+                    $row['description'] = '';
+                }
                 $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
                 $items[$index]['translations'][$lang] = $row;
             }
@@ -2177,7 +2181,7 @@ class Polylang_Terms
      */
     private function slugValue($value)
     {
-        $slug = $this->stringValue($value);
+        $slug = $this->lowercaseSlug($this->stringValue($value));
         if ($slug === '') {
             return '';
         }
@@ -2186,6 +2190,24 @@ class Polylang_Terms
             return '';
         }
         return $slug;
+    }
+
+    /**
+     * Lowercase a slug without breaking å, ä, or ö.
+     *
+     * @param string $slug
+     * @return string
+     */
+    private function lowercaseSlug($slug)
+    {
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($slug, 'UTF-8');
+        }
+        return strtr(strtolower($slug), array(
+            'Å' => 'å',
+            'Ä' => 'ä',
+            'Ö' => 'ö',
+        ));
     }
 
     /**
