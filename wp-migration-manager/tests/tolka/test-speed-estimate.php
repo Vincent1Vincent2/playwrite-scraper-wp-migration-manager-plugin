@@ -1260,6 +1260,9 @@ class Test_Speed_Estimate extends TestCase
             $infinite,
             'A Tolka speed estimate is not available. The measured load time is not a usable number.'
         );
+        $this->assertSame('', $infinite['faster_label']);
+        $this->assertSame(0.0, $infinite['faster_percent']);
+        $this->assertSame(0, $infinite['current_ms']);
         $this->assertTrue(is_finite($infinite['faster_percent']));
 
         $not_a_number = Speed_Estimate::project(
@@ -1271,6 +1274,9 @@ class Test_Speed_Estimate extends TestCase
             $not_a_number,
             'A Tolka speed estimate is not available. The measured load time is not a usable number.'
         );
+        $this->assertSame('', $not_a_number['faster_label']);
+        $this->assertSame(0.0, $not_a_number['faster_percent']);
+        $this->assertSame(0, $not_a_number['current_ms']);
         $this->assertTrue(is_finite($not_a_number['faster_percent']));
     }
 
@@ -1808,6 +1814,68 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0.7, $restored['max_overhead_ratio']);
     }
 
+    public function test_non_finite_total_ms_does_not_invent_a_percent()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $metrics = array('language_count' => 4, 'has_polylang_switcher' => true, 'script_count' => 8);
+        $message = 'A Tolka speed estimate is not available. The measured load time is not a usable number.';
+
+        foreach (array(INF, NAN, 'INF', 'NAN', 'inf', 'nan', '1e309') as $total) {
+            $estimate = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total, 'html' => '<p>SECRET_PAGE_MARKUP</p>'),
+                $metrics,
+                $benchmarks
+            );
+            $this->assertUnavailable($estimate, $message);
+            $this->assertSame(0, $estimate['current_ms']);
+            $this->assertSame(0, $estimate['tolka_ms']);
+            $this->assertSame(0, $estimate['overhead_ms']);
+            $this->assertSame(0.0, $estimate['faster_percent']);
+            $this->assertSame('', $estimate['faster_label']);
+            $this->assertNotSame(100, $estimate['faster_percent']);
+            $encoded = json_encode($estimate);
+            $this->assertIsString($encoded);
+            $this->assertStringNotContainsString('INF', $encoded);
+            $this->assertStringNotContainsString('NAN', $encoded);
+            $this->assertStringNotContainsString('SECRET_PAGE_MARKUP', $encoded);
+        }
+    }
+
+    public function test_successful_estimate_does_not_exceed_the_measured_page()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $currents = array(0, 1, 10, 333, 700, 1000, 4096);
+        $languages = array(0, 1, 3, 20);
+        $scripts = array(0, 4, 50);
+        $flags = array(false, true);
+
+        foreach ($currents as $current) {
+            foreach ($languages as $language_count) {
+                foreach ($scripts as $script_count) {
+                    foreach ($flags as $switcher) {
+                        $estimate = Speed_Estimate::project(
+                            array('ok' => true, 'total_ms' => $current),
+                            array(
+                                'language_count' => $language_count,
+                                'script_count' => $script_count,
+                                'has_polylang_switcher' => $switcher,
+                            ),
+                            $benchmarks
+                        );
+                        $this->assertTrue($estimate['ok'], 'current ' . $current);
+                        $this->assertLessThanOrEqual($estimate['current_ms'], $estimate['tolka_ms']);
+                        $this->assertLessThanOrEqual(100, $estimate['faster_percent']);
+                        $this->assertGreaterThanOrEqual(0, $estimate['faster_percent']);
+                        $this->assertSame(
+                            number_format($estimate['faster_percent'], 1, '.', '') . '% faster',
+                            $estimate['faster_label']
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     public function test_benchmark_file_failures_return_no_coefficients()
     {
         $method = new \ReflectionMethod(Speed_Estimate::class, 'read_benchmarks');
@@ -1971,6 +2039,7 @@ class Test_Speed_Estimate extends TestCase
         );
         $this->assertMatchesRegularExpression('/^-?\d+\.\d% faster$/', $estimate['faster_label']);
         $this->assertLessThanOrEqual($estimate['current_ms'], $estimate['tolka_ms']);
+        $this->assertLessThanOrEqual(100, $estimate['faster_percent']);
     }
 
     /**
