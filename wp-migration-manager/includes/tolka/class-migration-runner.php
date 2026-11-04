@@ -212,14 +212,16 @@ class Migration_Runner
             ));
         }
 
-        if (!self::can_call($class, 'export', 0)) {
+        $problem = self::export_problem($class);
+        if ($problem !== '') {
+            $template = ($problem === 'missing') ? $meta['no_method'] : $meta['unusable'];
             return self::envelope(array(), array(
-                sprintf(self::line($meta['unusable']), self::short_class($class)),
+                sprintf(self::line($template), self::short_class($class)),
             ));
         }
 
         try {
-            $result = $class::export();
+            $result = self::call_export($class);
         } catch (\Throwable $e) {
             return self::envelope(array(), array(
                 sprintf(self::line($meta['threw']), self::safe_exception($e)),
@@ -914,6 +916,73 @@ class Migration_Runner
     }
 
     /**
+     * '' when export() can be called, 'missing' when it is not defined,
+     * 'unusable' when it cannot be called safely.
+     *
+     * @param string $class
+     * @return string
+     */
+    private static function export_problem($class)
+    {
+        try {
+            if (!\method_exists($class, 'export')) {
+                return 'missing';
+            }
+            $method = new \ReflectionMethod($class, 'export');
+            if (!$method->isPublic() || $method->getNumberOfRequiredParameters() > 0) {
+                return 'unusable';
+            }
+            if (!$method->isStatic() && !self::can_instantiate($class)) {
+                return 'unusable';
+            }
+            return '';
+        } catch (\Throwable $e) {
+            return 'unusable';
+        }
+    }
+
+    /**
+     * Instance export() is called on a new object. Static export() is called
+     * on the class and does not construct it.
+     *
+     * @param string $class
+     * @return mixed
+     */
+    private static function call_export($class)
+    {
+        $method = new \ReflectionMethod($class, 'export');
+        if ($method->isStatic()) {
+            return $method->invoke(null);
+        }
+        $object = (new \ReflectionClass($class))->newInstance();
+        return $method->invoke($object);
+    }
+
+    /**
+     * @param string $class
+     * @return bool
+     */
+    private static function can_instantiate($class)
+    {
+        try {
+            $ref = new \ReflectionClass($class);
+            if (!$ref->isInstantiable()) {
+                return false;
+            }
+            $constructor = $ref->getConstructor();
+            if ($constructor === null) {
+                return true;
+            }
+            if (!$constructor->isPublic() || $constructor->getNumberOfRequiredParameters() > 0) {
+                return false;
+            }
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * @param string $class
      * @param string $method
      * @param int    $passed
@@ -1301,6 +1370,7 @@ class Migration_Runner
             'languages' => array(
                 'label' => 'Languages',
                 'missing' => 'Languages were skipped because %s is not available.',
+                'no_method' => 'Languages could not be read because %s does not define export().',
                 'unusable' => 'Languages could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Languages were skipped because no exporter is registered.',
                 'invalid' => 'Languages could not be read because the exporter returned an unexpected result.',
@@ -1320,6 +1390,7 @@ class Migration_Runner
             'posts' => array(
                 'label' => 'Posts',
                 'missing' => 'Posts were skipped because %s is not available.',
+                'no_method' => 'Posts could not be read because %s does not define export().',
                 'unusable' => 'Posts could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Posts were skipped because no exporter is registered.',
                 'invalid' => 'Posts could not be read because the exporter returned an unexpected result.',
@@ -1339,6 +1410,7 @@ class Migration_Runner
             'terms' => array(
                 'label' => 'Terms',
                 'missing' => 'Terms were skipped because %s is not available.',
+                'no_method' => 'Terms could not be read because %s does not define export().',
                 'unusable' => 'Terms could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Terms were skipped because no exporter is registered.',
                 'invalid' => 'Terms could not be read because the exporter returned an unexpected result.',
@@ -1358,6 +1430,7 @@ class Migration_Runner
             'strings' => array(
                 'label' => 'Strings',
                 'missing' => 'Strings were skipped because %s is not available.',
+                'no_method' => 'Strings could not be read because %s does not define export().',
                 'unusable' => 'Strings could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Strings were skipped because no exporter is registered.',
                 'invalid' => 'Strings could not be read because the exporter returned an unexpected result.',
@@ -1377,6 +1450,7 @@ class Migration_Runner
             'menus' => array(
                 'label' => 'Menus',
                 'missing' => 'Menus were skipped because %s is not available.',
+                'no_method' => 'Menus could not be read because %s does not define export().',
                 'unusable' => 'Menus could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Menus were skipped because no exporter is registered.',
                 'invalid' => 'Menus could not be read because the exporter returned an unexpected result.',
@@ -1396,6 +1470,7 @@ class Migration_Runner
             'media' => array(
                 'label' => 'Media',
                 'missing' => 'Media items were skipped because %s is not available.',
+                'no_method' => 'Media items could not be read because %s does not define export().',
                 'unusable' => 'Media items could not be read because %s::export() cannot be called.',
                 'unregistered' => 'Media items were skipped because no exporter is registered.',
                 'invalid' => 'Media items could not be read because the exporter returned an unexpected result.',

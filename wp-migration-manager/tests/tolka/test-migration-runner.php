@@ -49,12 +49,113 @@ namespace WMM\Tolka\RunnerTest {
         }
     }
 
-    class UnusableExporter
+    class InstanceExporter
+    {
+        public static $calls = 0;
+        public static $items = array();
+        public static $throw = false;
+        public static $constructed = 0;
+
+        public function __construct()
+        {
+            self::$constructed++;
+        }
+
+        public function export()
+        {
+            self::$calls++;
+            if (self::$throw) {
+                throw new \RuntimeException('instance export blew up');
+            }
+            return array(
+                'items' => self::$items,
+                'errors' => array(),
+            );
+        }
+
+        public static function reset()
+        {
+            self::$calls = 0;
+            self::$items = array();
+            self::$throw = false;
+            self::$constructed = 0;
+        }
+    }
+
+    class StaticExporter
+    {
+        public static $calls = 0;
+        public static $constructed = 0;
+
+        public function __construct()
+        {
+            self::$constructed++;
+            throw new \RuntimeException('static exporter must not be constructed');
+        }
+
+        public static function export()
+        {
+            self::$calls++;
+            return array(
+                'items' => array(array('title' => 'From static', 'status' => 'publish')),
+                'errors' => array(),
+            );
+        }
+
+        public static function reset()
+        {
+            self::$calls = 0;
+            self::$constructed = 0;
+        }
+    }
+
+    class NoExport
+    {
+    }
+
+    class PrivateExport
+    {
+        private function export()
+        {
+            return array(
+                'items' => array(array('title' => 'hidden')),
+                'errors' => array(),
+            );
+        }
+    }
+
+    class RequiredArgExport
+    {
+        public function export($required)
+        {
+            return array(
+                'items' => array(array('title' => $required)),
+                'errors' => array(),
+            );
+        }
+    }
+
+    class ConstructedExport
+    {
+        public function __construct($required)
+        {
+        }
+
+        public function export()
+        {
+            return array(
+                'items' => array(array('title' => 'constructed')),
+                'errors' => array(),
+            );
+        }
+    }
+
+    abstract class AbstractExport
     {
         public function export()
         {
             return array(
-                'items' => array(array('title' => 'should not be read')),
+                'items' => array(array('title' => 'abstract')),
                 'errors' => array(),
             );
         }
@@ -196,6 +297,8 @@ namespace {
         private function reset_doubles()
         {
             \WMM\Tolka\RunnerTest\Exporter::reset();
+            \WMM\Tolka\RunnerTest\InstanceExporter::reset();
+            \WMM\Tolka\RunnerTest\StaticExporter::reset();
             \WMM\Tolka\RunnerTest\Schema::reset();
             \WMM\Tolka\RunnerTest\Writer::reset();
             $map = array();
@@ -653,7 +756,7 @@ namespace {
         public function test_throw_invalid_and_unusable_exporters_do_not_fatal()
         {
             $this->reset_doubles();
-            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\UnusableExporter';
+            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\NoExport';
             // Exporter calls skip the unusable posts class: 0 languages, 1 terms, 2 strings, 3 menus, 4 media.
             \WMM\Tolka\RunnerTest\Exporter::$throw_on = 1;
             \WMM\Tolka\RunnerTest\Exporter::$script = array(
@@ -663,11 +766,11 @@ namespace {
 
             $preview = Migration_Runner_Test_Double::preview();
             $this->assertSame(
-                'Posts could not be read because UnusableExporter::export() cannot be called.',
+                'Posts could not be read because NoExport does not define export().',
                 $preview['errors'][0]
             );
             $this->assertContains(
-                'Posts could not be read because UnusableExporter::export() cannot be called.',
+                'Posts could not be read because NoExport does not define export().',
                 $preview['errors']
             );
             $this->assertContains('Terms could not be read (export blew up).', $preview['errors']);
@@ -680,7 +783,7 @@ namespace {
                 $preview['errors']
             );
             $this->assertSame('error', $preview['sections']['posts']['status']);
-            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\UnusableExporter', $preview['missing']);
+            $this->assertNotContains('WMM\\Tolka\\RunnerTest\\NoExport', $preview['missing']);
             $this->assertNotFalse(json_encode($preview));
         }
 
@@ -1327,6 +1430,106 @@ namespace {
                 );
                 $this->assertSame($run['message'], $run['detail']);
                 $this->assertNotContains('WMM\\Tolka\\RunnerTest\\Writer', $run['missing']);
+            }
+        }
+
+        public function test_static_export_is_called_without_constructing()
+        {
+            $this->reset_doubles();
+            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\StaticExporter';
+
+            $preview = Migration_Runner_Test_Double::preview();
+
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\StaticExporter::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\StaticExporter::$constructed);
+            $this->assertSame('From static', $preview['sections']['posts']['labels'][0]);
+            $this->assertSame('ready', $preview['sections']['posts']['status']);
+            $this->assertSame(1, $preview['counts']['posts']);
+            $this->assertSame(5, \WMM\Tolka\RunnerTest\Exporter::$calls);
+
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertTrue($run['ok']);
+            $this->assertSame('From static', \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['title']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\StaticExporter::$constructed);
+        }
+
+        public function test_instance_export_is_called_on_a_new_object()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\InstanceExporter::$items = array(array(
+                'title' => 'From instance',
+                'status' => 'draft',
+            ));
+            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\InstanceExporter';
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+
+            $preview = Migration_Runner_Test_Double::preview();
+
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\InstanceExporter::$calls);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\InstanceExporter::$constructed);
+            $this->assertSame('From instance (draft)', $preview['sections']['posts']['labels'][0]);
+            $this->assertSame('ready', $preview['sections']['posts']['status']);
+            $this->assertSame(1, $preview['counts']['languages']);
+            $this->assertSame(5, \WMM\Tolka\RunnerTest\Exporter::$calls);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            \WMM\Tolka\RunnerTest\InstanceExporter::$calls = 0;
+            \WMM\Tolka\RunnerTest\InstanceExporter::$constructed = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertTrue($run['ok']);
+            $this->assertSame('From instance', \WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['title']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\InstanceExporter::$constructed);
+
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\InstanceExporter::$throw = true;
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array('title' => 'Kept'));
+            Migration_Runner_Test_Double::$map['terms'] = 'WMM\\Tolka\\RunnerTest\\InstanceExporter';
+            $collected = Migration_Runner_Test_Double::collect();
+            $this->assertSame(
+                array('Terms could not be read (instance export blew up).'),
+                $collected['terms']['errors']
+            );
+            $this->assertCount(1, $collected['posts']['items']);
+            $this->assertSame(array(), $collected['terms']['items']);
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\InstanceExporter::$constructed);
+        }
+
+        public function test_missing_export_method_is_a_named_error()
+        {
+            $shapes = array(
+                'WMM\\Tolka\\RunnerTest\\NoExport' => 'Posts could not be read because NoExport does not define export().',
+                'WMM\\Tolka\\RunnerTest\\PrivateExport' => 'Posts could not be read because PrivateExport::export() cannot be called.',
+                'WMM\\Tolka\\RunnerTest\\RequiredArgExport' => 'Posts could not be read because RequiredArgExport::export() cannot be called.',
+                'WMM\\Tolka\\RunnerTest\\ConstructedExport' => 'Posts could not be read because ConstructedExport::export() cannot be called.',
+                'WMM\\Tolka\\RunnerTest\\AbstractExport' => 'Posts could not be read because AbstractExport::export() cannot be called.',
+            );
+
+            foreach ($shapes as $class => $error) {
+                $this->reset_doubles();
+                \WMM\Tolka\RunnerTest\Exporter::$items = array(array('slug' => 'en', 'name' => 'English'));
+                Migration_Runner_Test_Double::$map['posts'] = $class;
+
+                $run = Migration_Runner_Test_Double::run();
+
+                $this->assertFalse($run['ok'], $class);
+                $this->assertContains($error, $run['errors']);
+                $this->assertSame($error, $run['detail']);
+                $this->assertSame(
+                    'Posts could not be read. Review the errors before migrating.',
+                    $run['sections']['posts']['message']
+                );
+                $this->assertSame(
+                    'The Tolka package was saved, but Posts could not be read. Existing Polylang data was not changed.',
+                    $run['message']
+                );
+                $this->assertSame('error', $run['sections']['posts']['status']);
+                $this->assertSame(0, $run['counts']['posts']);
+                $this->assertSame(array(), $run['sample']['posts']);
+                $this->assertSame(1, $run['counts']['languages']);
+                $this->assertCount(1, \WMM\Tolka\RunnerTest\Schema::$parts['languages']['items']);
+                $this->assertSame(array(), \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
+                $this->assertNotContains($class, $run['missing']);
+                $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
             }
         }
     }
