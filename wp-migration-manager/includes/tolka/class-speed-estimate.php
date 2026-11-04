@@ -85,6 +85,8 @@ class Speed_Estimate
      * faster_percent is 0, faster_label is empty, and error is the sentence
      * to show the admin. basis is always the benchmarks.json sentence.
      * benchmarks() returns the five coefficient keys stored in the file.
+     * A total_ms of 0 still estimates from a 1 ms floor and returns a percent.
+     * A language_count of 0 is one language.
      *
      * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
