@@ -1183,7 +1183,7 @@ class Polylang_Languages
     private function plain_locale($locale)
     {
         $locale = str_replace('-', '_', $this->string_value($locale));
-        if ($locale === '') {
+        if ($locale === '' || $this->is_internal_language_slug(strtolower($locale))) {
             return '';
         }
         if (preg_match('/^[A-Za-z]{2,3}(?:_[A-Za-z0-9]+)*$/', $locale) !== 1) {
