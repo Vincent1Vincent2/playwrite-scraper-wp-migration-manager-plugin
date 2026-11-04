@@ -921,6 +921,13 @@ class Harness_Test extends Tolka_Test_Case
         );
 
         $this->assertSame(array('Probe_Test', 'Other_Test'), wmm_tolka_concrete_class_names($file));
+        $this->assertSame(
+            'Estimate_Test',
+            wmm_tolka_primary_test_class(array('Fixture_Builder', 'Estimate_Test', 'Other_Test'))
+        );
+        $this->assertSame('Probe_Test', wmm_tolka_primary_test_class(array('Probe_Test')));
+        $this->assertSame('Helper', wmm_tolka_primary_test_class(array('Helper')));
+        $this->assertSame('', wmm_tolka_primary_test_class(array()));
     }
 
     /**

@@ -296,6 +296,32 @@ if (!function_exists('wmm_tolka_concrete_class_names')) {
     }
 }
 
+if (!function_exists('wmm_tolka_primary_test_class')) {
+    /**
+     * Class PHPUnit 10 and 11 should run from a test file.
+     *
+     * A helper declared above the test case must not steal the file name.
+     * Names ending in Test are preferred. Otherwise the first class is used.
+     *
+     * @param string[] $names Concrete class names, in source order.
+     * @return string
+     */
+    function wmm_tolka_primary_test_class($names)
+    {
+        foreach ($names as $name) {
+            if (strlen($name) >= 4 && substr($name, -4) === 'Test') {
+                return $name;
+            }
+        }
+
+        if (isset($names[0])) {
+            return $names[0];
+        }
+
+        return '';
+    }
+}
+
 if (!function_exists('wmm_tolka_rewire_test_files')) {
     /**
      * Give PHPUnit 10 and 11 a real path whose name matches the test class.
@@ -346,14 +372,31 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
                 continue;
             }
 
-            if (count($names) > 1) {
+            $primary = wmm_tolka_primary_test_class($names);
+            $others = array();
+
+            foreach ($names as $name) {
+                if ($name !== $primary) {
+                    $others[] = $name;
+                }
+            }
+
+            $hidden_tests = array();
+
+            foreach ($others as $name) {
+                if (strlen($name) >= 4 && substr($name, -4) === 'Test') {
+                    $hidden_tests[] = $name;
+                }
+            }
+
+            if (!empty($hidden_tests)) {
                 fwrite(
                     STDERR,
-                    $names[0] . ' is the test class PHPUnit ' . $version . ' will run from ' . basename($file) . '. The other classes in that file are ' . implode(', ', array_slice($names, 1)) . '. Put each of those in its own test file if they should run too.' . PHP_EOL
+                    $primary . ' is the test class PHPUnit ' . $version . ' will run from ' . basename($file) . '. These other test classes in that file will not run: ' . implode(', ', $hidden_tests) . '. Put each of them in its own test file.' . PHP_EOL
                 );
             }
 
-            $target = $temp . '/' . $names[0] . '.php';
+            $target = $temp . '/' . $primary . '.php';
 
             if (!copy($file, $target)) {
                 throw new RuntimeException(
