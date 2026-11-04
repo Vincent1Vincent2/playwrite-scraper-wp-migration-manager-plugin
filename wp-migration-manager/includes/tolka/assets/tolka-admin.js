@@ -1617,14 +1617,7 @@
         );
       }
       if (extras.length) {
-        var list = el("dl", "wmm-tolka-report-lines");
-        extras.forEach(function (pair) {
-          var row = el("div", "wmm-tolka-report-line");
-          row.appendChild(el("dt", "wmm-tolka-report-label", pair.label));
-          row.appendChild(el("dd", "wmm-tolka-report-value", pair.value));
-          list.appendChild(row);
-        });
-        extra.appendChild(list);
+        extra.appendChild(reportLinesList(extras));
       }
       container.appendChild(extra);
     }
@@ -2005,6 +1998,7 @@
       var lines = Array.isArray(report.lines) ? report.lines : [];
 
       if (fillReportTable(container, lines, title, summary, errors, missing, succeeded)) {
+        writeReportLines(container, lines);
         container.classList.toggle("wmm-tolka-has-error", !succeeded || errors.length > 0);
         container.classList.add("wmm-tolka-has-result");
         focusResult(container);
@@ -2035,20 +2029,7 @@
       }
 
       if (lines.length) {
-        var list = el("dl", "wmm-tolka-report-lines");
-        lines.forEach(function (line) {
-          var pair = reportPair(line);
-          if (!pair) {
-            return;
-          }
-          var row = el("div", "wmm-tolka-report-line");
-          row.appendChild(el("dt", "wmm-tolka-report-label", pair.label));
-          row.appendChild(el("dd", "wmm-tolka-report-value", pair.value));
-          list.appendChild(row);
-        });
-        if (list.childNodes.length) {
-          root.appendChild(list);
-        }
+        root.appendChild(reportLinesList(lines));
       } else if (!errors.length) {
         root.appendChild(
           el("p", "wmm-tolka-empty", "There are no details to list.")
@@ -2128,6 +2109,40 @@
       errors: uniqueStrings(errors),
       missing: run.missing,
     };
+  }
+
+  function writeReportLines(container, lines) {
+    if (!container) {
+      return;
+    }
+    var existing = container.querySelector(".wmm-tolka-report-lines");
+    if (existing && existing.parentNode) {
+      existing.parentNode.removeChild(existing);
+    }
+    var list = reportLinesList(lines);
+    if (!list.childNodes.length) {
+      return;
+    }
+    container.appendChild(list);
+  }
+
+  function reportLinesList(lines) {
+    var list = el("dl", "wmm-tolka-report-lines");
+    (lines || []).forEach(function (line) {
+      var pair = reportPair(line);
+      if (!pair) {
+        return;
+      }
+      var row = el("div", "wmm-tolka-report-line");
+      var label = el("dt", "wmm-tolka-report-label");
+      var value = el("dd", "wmm-tolka-report-value");
+      setPlainText(label, pair.label);
+      setPlainText(value, pair.value);
+      row.appendChild(label);
+      row.appendChild(value);
+      list.appendChild(row);
+    });
+    return list;
   }
 
   function reportPair(line) {
@@ -2581,6 +2596,10 @@
       if (!isOwnGenerated(node) || !node.parentNode || isProtectedSpeedNode(node)) {
         return;
       }
+      var preview = previewPanel();
+      if (preview && (node === preview || (node.contains && node.contains(preview)))) {
+        return;
+      }
       node.parentNode.removeChild(node);
     });
   }
@@ -2591,9 +2610,30 @@
   }
 
   function clear(node) {
+    if (!node) {
+      return;
+    }
+    var preview = previewPanel();
+    var restore = false;
+    if (preview && node !== preview && node.contains && node.contains(preview)) {
+      restore = true;
+      if (preview.parentNode) {
+        preview.parentNode.removeChild(preview);
+      }
+    }
     while (node.firstChild) {
       node.removeChild(node.firstChild);
     }
+    if (restore && preview) {
+      node.appendChild(preview);
+    }
+  }
+
+  function previewPanel() {
+    if (typeof document === "undefined" || !document.getElementById) {
+      return null;
+    }
+    return document.getElementById("wmm-tolka-preview-result");
   }
 
   function el(tag, className, text) {
