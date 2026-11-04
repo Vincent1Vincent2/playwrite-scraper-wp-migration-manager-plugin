@@ -16,13 +16,13 @@ if (!defined('ABSPATH')) {
 <section class="wmm-tolka-help" aria-labelledby="wmm-tolka-help-title">
     <h2 id="wmm-tolka-help-title" class="wmm-tolka-help__title"><?php esc_html_e('How this migration works', 'migration-manager'); ?></h2>
     <p class="wmm-tolka-help__intro">
-        <?php esc_html_e('Migrate to Tolka prepares this Polylang site on one screen. You do not need another tool. You check Polylang, estimate the public site, preview the content, and run the migration when you are ready.', 'migration-manager'); ?>
+        <?php esc_html_e('Migrate to Tolka prepares this Polylang site on one screen. You do not need another tool. The screen checks Polylang, estimates the public site, lets you preview the content, and runs the migration when you are ready.', 'migration-manager'); ?>
     </p>
     <p class="wmm-tolka-help__intro">
         <?php esc_html_e('Polylang stays installed. The plugin does not delete Polylang content, options, or terms.', 'migration-manager'); ?>
     </p>
     <p class="wmm-tolka-help__intro">
-        <?php esc_html_e('Until you measure a URL, there is no speed estimate. Until you preview, there is no content list. Until you run the migration, nothing from this screen has been stored.', 'migration-manager'); ?>
+        <?php esc_html_e('Opening the screen does not measure, list, or store anything. A speed estimate appears only after you load a URL. A content list appears only after you preview. A Tolka package is stored only when you run the migration.', 'migration-manager'); ?>
     </p>
     <p class="wmm-tolka-help__intro">
         <?php esc_html_e('The screen shows that a step is working while its request runs. If the request fails, the screen shows the error text.', 'migration-manager'); ?>
@@ -53,7 +53,7 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('The result shows the measured load time, the estimated Tolka load time, the percent faster, and a basis line. The basis line reads:', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__quote">
-                <?php esc_html_e('Measured page load plus coefficients from benchmarks.json.', 'migration-manager'); ?>
+                <?php esc_html_e('Measured page load plus coefficients from benchmarks.json', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__note">
                 <?php esc_html_e('The address must start with http:// or https:// and must be reachable on the public internet. The check refuses an address that only works on this computer or on a private network.', 'migration-manager'); ?>
@@ -70,7 +70,7 @@ if (!defined('ABSPATH')) {
             <ul class="wmm-tolka-help__details">
                 <li><?php esc_html_e('Languages are the languages configured in Polylang, including which one is the default.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Posts are grouped by translation, so one row covers the same post in each language, including the title and the body.', 'migration-manager'); ?></li>
-                <li><?php esc_html_e('Terms are categories, tags, and similar labels, grouped by translation.', 'migration-manager'); ?></li>
+                <li><?php esc_html_e('Terms are categories, tags, and any other labels Polylang translates, grouped by translation.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Strings are the interface phrases Polylang stores, with a translation for each language.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Menus are the theme locations, the translated menu for each language, and the links in those menus.', 'migration-manager'); ?></li>
                 <li><?php esc_html_e('Media lists each attachment file with the alternative text and title in each language. The files stay in the media library.', 'migration-manager'); ?></li>
