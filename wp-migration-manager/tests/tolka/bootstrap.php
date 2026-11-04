@@ -19,10 +19,16 @@
  * temporary path named after its test class, then restored.
  *
  * Including this file a second time returns immediately, so helpers are
- * not declared again.
+ * not declared again. Each include is counted before that return.
  *
  * @package MigrationManager
  */
+
+if (!isset($GLOBALS['wmm_tolka_bootstrap_loads']) || !is_int($GLOBALS['wmm_tolka_bootstrap_loads'])) {
+    $GLOBALS['wmm_tolka_bootstrap_loads'] = 0;
+}
+
+$GLOBALS['wmm_tolka_bootstrap_loads']++;
 
 if (defined('WMM_TOLKA_TEST_BOOTSTRAP')) {
     return;
@@ -208,7 +214,11 @@ if (!function_exists('wmm_tolka_skip_sentence')) {
         $message = preg_replace('# in /[^\\s]+ on line \\d+#', '', $message);
         $message = preg_replace('# in /[^\\s]+:\\d+#', '', $message);
         $message = preg_replace('#phar://\\S+#', '', $message);
+        $message = preg_replace('#file://\\S+#i', '', $message);
         $message = preg_replace('#[A-Za-z]:\\\\[^\\s]+#', '', $message);
+        $message = preg_replace('#(?<![\\w\\\\])\\\\{2}\\S+#', '', $message);
+        $message = preg_replace('#\\S*\\.\\./\\S*#', '', $message);
+        $message = preg_replace('#(?<![\\w./-])/(?:[^/\\s]+/)*[^/\\s]+#', '', $message);
         $message = preg_replace('#/(?:[^\\s/:]+/)+[^\\s/:]+#', '', $message);
         $message = preg_replace('#\\S*wmm-tolka-\\S*#', '', $message);
         $message = preg_replace('/[ \\t]{2,}/', ' ', $message);

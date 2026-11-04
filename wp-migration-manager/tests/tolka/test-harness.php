@@ -240,8 +240,13 @@ abstract class Tolka_Test_Case extends TestCase
         $this->assertStringNotContainsString($temp . '/', $message);
         $this->assertStringNotContainsString('/tmp/', $message);
         $this->assertStringNotContainsString('/var/', $message);
+        $this->assertStringNotContainsString('/etc', $message);
+        $this->assertStringNotContainsString('../', $message);
+        $this->assertStringNotContainsString('file://', strtolower($message));
         $this->assertDoesNotMatchRegularExpression('#/(?:[^\\s/:]+/)+#', $message);
+        $this->assertDoesNotMatchRegularExpression('#(?<![\\w./-])/(?:[^/\\s]+/)*[^/\\s]+#', $message);
         $this->assertDoesNotMatchRegularExpression('#[A-Za-z]:\\\\#', $message);
+        $this->assertDoesNotMatchRegularExpression('#(?<![\\w\\\\])\\\\{2}#', $message);
     }
 }
 
@@ -1283,7 +1288,12 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertStringNotContainsString(rtrim(WMM_TOLKA_PLUGIN_DIR, '/'), $outside);
         $bootstrap = var_export(WMM_TOLKA_TEST_DIR . '/bootstrap.php', true);
         $resolved = var_export(realpath(WMM_TOLKA_TEST_DIR . '/bootstrap.php'), true);
-        $planted = var_export('Could not read ' . $outside, true);
+        $planted = var_export(
+            'Could not read ' . $outside
+            . ' or /etc or ../../outside/secret.php or file:///tmp/leak.php or \\\\server\\share\\secret.php.'
+            . ' The includes/tolka directory is still named.',
+            true
+        );
         $runner = $runner_dir . '/runner.php';
         $script = "<?php\n"
             . "error_reporting(E_ALL);\n"
@@ -1298,7 +1308,7 @@ class Harness_Test extends Tolka_Test_Case
             . "\$cap = (int) floor(100 * 0.7);\n"
             . "\$overhead = (int) min(\$raw, \$cap);\n"
             . "\$tolka = (int) max(1, 100 - \$overhead + min(8 * 6, \$overhead));\n"
-            . "echo 'LOADS=2' . \"\\n\";\n"
+            . "echo 'LOADS=' . (isset(\$GLOBALS['wmm_tolka_bootstrap_loads']) ? (int) \$GLOBALS['wmm_tolka_bootstrap_loads'] : 0) . \"\\n\";\n"
             . "echo 'RAW=' . \$raw . \"\\n\";\n"
             . "echo 'CAP=' . \$cap . \"\\n\";\n"
             . "echo 'TOLKA=' . \$tolka . \"\\n\";\n"
@@ -1347,11 +1357,15 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertNotSame('', $skip);
         $this->assertNotSame('none', $skip);
         $this->assertStringContainsString('WMM\\Tolka\\After_Two_Loads', $skip);
+        $this->assertStringContainsString('includes/tolka', $skip);
         $this->assertStringContainsString('skipped', strtolower($skip));
         $this->assert_finished_sentence($skip, 'after two loads');
         $this->assertStringNotContainsString($outside, $skip);
         $this->assertStringNotContainsString($runner_dir, $skip);
+        $this->assertStringNotContainsString('secret.php', $skip);
+        $this->assertStringNotContainsString('\\\\server', $skip);
         $this->assert_skip_hides_paths_outside_the_plugin($skip);
+        $this->assertLessThan(strpos($text, 'RAW=465'), strpos($text, 'LOADS=2'));
     }
 
     /**
