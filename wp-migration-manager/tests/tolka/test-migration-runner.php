@@ -2013,5 +2013,28 @@ namespace {
             $this->assertCount(47, \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items']);
             $this->assertSame('post:46', \WMM\Tolka\RunnerTest\Schema::$parts['posts']['items'][46]['group']);
         }
+
+        public function test_sample_cap_applies_to_associative_item_lists()
+        {
+            $this->reset_doubles();
+            $items = array();
+            for ($i = 0; $i < 30; $i++) {
+                $items['id-' . $i] = array('title' => 'Mapped ' . $i);
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array('items' => $items, 'errors' => array()),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertIsInt($preview['counts']['posts']);
+            $this->assertSame(30, $preview['counts']['posts']);
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertSame('Mapped 0', $preview['sample']['posts'][0]['title']);
+            $this->assertSame('Mapped 19', $preview['sample']['posts'][19]['title']);
+            $this->assertIsInt($preview['sections']['posts']['more']);
+            $this->assertSame(10, $preview['sections']['posts']['more']);
+            $this->assertSame('10 more are not shown.', $preview['sections']['posts']['more_label']);
+            $this->assertCount(30, $preview['posts']['items']);
+        }
     }
 }
