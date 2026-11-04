@@ -2049,15 +2049,30 @@ class Test_Polylang_Media extends TestCase
                 if (strpos($query, 'AS attachment_id') !== false) {
                     return array(
                         array('attachment_id' => 40, 'language_slug' => 'sv'),
+                        array('attachment_id' => 42, 'language_slug' => 'fr'),
                         array('attachment_id' => 41, 'language_slug' => 'en'),
                     );
                 }
                 if (strpos($query, 'description') !== false) {
-                    return array();
+                    return array(
+                        array(
+                            'term_taxonomy_id' => 9,
+                            'description' => serialize(array('sv' => 40, 'fr' => 42)),
+                            'object_id' => 40,
+                            'language_slug' => 'sv',
+                        ),
+                        array(
+                            'term_taxonomy_id' => 9,
+                            'description' => serialize(array('sv' => 40, 'fr' => 42)),
+                            'object_id' => 42,
+                            'language_slug' => 'fr',
+                        ),
+                    );
                 }
                 if (strpos($query, 'post_title') !== false) {
                     return array(
                         array('ID' => 40, 'post_title' => 'Bröd'),
+                        array('ID' => 42, 'post_title' => 'Café'),
                         array('ID' => 41, 'post_title' => 'Empty'),
                     );
                 }
@@ -2065,6 +2080,8 @@ class Test_Polylang_Media extends TestCase
                     return array(
                         array('post_id' => 40, 'meta_key' => '_wp_attached_file', 'meta_value' => $this->stored_file),
                         array('post_id' => 40, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Bröd'),
+                        array('post_id' => 42, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/café-ÅÄÖ-åäö-ü.jpg'),
+                        array('post_id' => 42, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Café'),
                         array('post_id' => 41, 'meta_key' => '_wp_attached_file', 'meta_value' => "\xA0 \t"),
                         array('post_id' => 41, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Saknas'),
                     );
@@ -2072,12 +2089,14 @@ class Test_Polylang_Media extends TestCase
                 if (strpos($query, 'language_slug') !== false) {
                     return array(
                         array('language_slug' => 'sv'),
+                        array('language_slug' => 'fr'),
                         array('language_slug' => 'en'),
                     );
                 }
                 if (strpos($query, 'post_type') !== false) {
                     return array(
                         array('ID' => 40),
+                        array('ID' => 42),
                         array('ID' => 41),
                     );
                 }
@@ -2095,6 +2114,12 @@ class Test_Polylang_Media extends TestCase
 
         $expected_file = '2024/05/café-ÅÄÖ-åäö-ü.jpg';
         $this->assertSame($first, $second);
+        $this->assertCount(2, $first['items']);
+        $this->assertCount(2, $second['items']);
+        $this->assertSame(40, $second['items'][0]['attachment_id']);
+        $this->assertSame('Bröd', $second['items'][0]['alt']['sv']);
+        $this->assertSame('Café', $second['items'][0]['alt']['fr']);
+        $this->assertSame('Café', $second['items'][0]['title']['fr']);
         $this->assertSame($expected_file, $first['items'][0]['file']);
         $this->assertSame($expected_file, $second['items'][0]['file']);
         $this->assertSame(1, preg_match('//u', $first['items'][0]['file']));
