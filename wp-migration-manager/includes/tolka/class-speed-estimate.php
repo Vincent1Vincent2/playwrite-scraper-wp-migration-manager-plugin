@@ -133,15 +133,6 @@ class Speed_Estimate
             );
         }
 
-        if ($max_ratio < 0 || $max_ratio > 1) {
-            return self::unavailable(
-                $benchmarks,
-                self::unavailable_message(array(
-                    self::translate('The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'),
-                ))
-            );
-        }
-
         $current = self::integer_milliseconds($measurement['total_ms']);
         if ($current === null) {
             return self::unavailable(

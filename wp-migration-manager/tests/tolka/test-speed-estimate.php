@@ -455,6 +455,41 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame($off['tolka_ms'], $forced_off['tolka_ms']);
         $this->assertSame($off['faster_percent'], $forced_off['faster_percent']);
         $this->assertNotSame($on['overhead_ms'], $forced_off['overhead_ms']);
+
+        $measurement_word = $measurement;
+        $measurement_word['has_polylang_switcher'] = 'false';
+        $word_off = Speed_Estimate::project($measurement_word, $on_metrics, $benchmarks);
+        $this->assertSame($off['overhead_ms'], $word_off['overhead_ms']);
+        $this->assertSame($off['tolka_ms'], $word_off['tolka_ms']);
+    }
+
+    public function test_failed_measurement_and_bad_ratio_do_not_invent_a_percent()
+    {
+        $benchmarks = self::contractBenchmarks();
+        $benchmarks['max_overhead_ratio'] = '1.0';
+        $allowed = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 40, 'has_polylang_switcher' => true, 'script_count' => 0),
+            $benchmarks
+        );
+        $this->assertTrue($allowed['ok']);
+        $this->assertSame(1000, $allowed['overhead_ms']);
+        $this->assertSame(76.0, $allowed['faster_percent']);
+
+        $benchmarks['max_overhead_ratio'] = 2;
+        $estimate = Speed_Estimate::project(
+            array('ok' => false, 'total_ms' => 8000, 'has_polylang_switcher' => false),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $benchmarks
+        );
+        $this->assertUnavailable(
+            $estimate,
+            'A Tolka speed estimate is not available. The page could not be measured. The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'
+        );
+        $this->assertSame(0, $estimate['current_ms']);
+        $this->assertSame(0.0, $estimate['faster_percent']);
+        $this->assertSame('', $estimate['faster_label']);
+        $this->assertNotSame(8000, $estimate['current_ms']);
     }
 
     public function test_unused_metrics_do_not_change_the_percent()
