@@ -807,22 +807,27 @@ class Polylang_Posts_Test extends TestCase
 
     public function test_a_long_error_list_keeps_the_first_twenty_and_a_count()
     {
-        $exporter = new Polylang_Posts_Fixture();
-        $maps = array();
-        $posts = array();
-        for ($i = 1; $i <= 22; $i++) {
-            $maps[] = array('en' => $i, 'de' => 1000 + $i);
-            $posts[$i] = $this->record($i, 'post', 'Keep ' . $i, 'keep-' . $i, 'draft');
-        }
-        $exporter->maps = $maps;
-        $exporter->posts = $posts;
-
-        $result = $exporter->export();
+        $result = $this->missing_translation_fixture(22)->export();
         $this->assertCount(22, $result['items']);
         $this->assertCount(21, $result['errors']);
         $this->assertSame('Post 1001 is part of translation group post:1, but that post no longer exists. It was left out of the export.', $result['errors'][0]);
         $this->assertSame('2 more issues were found and are not listed here.', $result['errors'][20]);
         $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+    }
+
+    public function test_twenty_errors_stay_listed_and_one_extra_is_named_in_the_singular()
+    {
+        $exact = $this->missing_translation_fixture(20)->export();
+        $this->assertCount(20, $exact['errors']);
+        $this->assertSame(
+            'Post 1020 is part of translation group post:20, but that post no longer exists. It was left out of the export.',
+            $exact['errors'][19]
+        );
+
+        $one_more = $this->missing_translation_fixture(21)->export();
+        $this->assertCount(21, $one_more['errors']);
+        $this->assertSame('1 more issue was found and is not listed here.', $one_more['errors'][20]);
+        $this->assertSame('draft', $one_more['items'][20]['translations']['en']['status']);
     }
 
     public function test_repeated_export_is_identical()
@@ -892,6 +897,30 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('post:1', $result['items'][0]['group']);
         $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
         $this->assertSame('Entwurf', $result['items'][0]['translations']['de']['content']);
+    }
+
+    public function test_empty_api_id_does_not_erase_a_stored_draft()
+    {
+        $exporter = new Polylang_Posts_Api_Fixture();
+        $exporter->rows = array(
+            array(
+                'term_taxonomy_id' => 1,
+                'description' => array('en' => 1, 'de' => 2),
+            ),
+        );
+        $exporter->api_maps = array(
+            1 => array('en' => 1, 'de' => 0),
+        );
+        $exporter->posts = array(
+            1 => $this->record(1, 'post', 'Hello', 'hello', 'publish'),
+            2 => $this->record(2, 'post', 'Hallo', '', 'draft'),
+        );
+
+        $result = $exporter->export();
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame(2, $result['items'][0]['translations']['de']['id']);
+        $this->assertSame('draft', $result['items'][0]['translations']['de']['status']);
+        $this->assertSame('', $result['items'][0]['translations']['de']['slug']);
     }
 
     public function test_empty_api_map_keeps_the_stored_description()
@@ -1383,6 +1412,71 @@ class Polylang_Posts_Test extends TestCase
         $this->assertSame('Utkast', $result['items'][1]['translations']['sv']['content']);
     }
 
+    public function test_post_objects_from_get_posts_still_export_a_draft()
+    {
+        if (!function_exists('shell_exec')) {
+            $this->markTestSkipped('shell_exec is not available.');
+        }
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-polylang-posts.php';
+        $script = tempnam(sys_get_temp_dir(), 'tolka-objects');
+        $class_export = var_export($class, true);
+        file_put_contents($script, <<<PHP
+<?php
+define('ABSPATH', '/tmp/tolka-posts/');
+function pll_get_post_translations(\$id) {
+    if ((int) \$id === 8) {
+        return array('en' => 8);
+    }
+    return false;
+}
+function pll_get_post_language(\$id, \$field = 'slug') {
+    return false;
+}
+function pll_default_language() {
+    return 'en';
+}
+function get_posts(\$args) {
+    static \$calls = 0;
+    \$calls++;
+    if (\$calls === 1) {
+        return array((object) array('ID' => 8));
+    }
+    return array();
+}
+function get_post(\$id) {
+    if ((int) \$id !== 8) {
+        return null;
+    }
+    return (object) array(
+        'ID' => 8,
+        'post_type' => 'page',
+        'post_title' => 'Draft page',
+        'post_name' => '',
+        'post_status' => 'draft',
+        'post_excerpt' => '',
+        'post_content' => 'Not published',
+    );
+}
+require {$class_export};
+echo '__JSON__' . json_encode((new WMM\\Tolka\\Polylang_Posts())->export());
+PHP
+        );
+        $output = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script));
+        @unlink($script);
+        $json = '';
+        if (is_string($output) && strpos($output, '__JSON__') !== false) {
+            $json = substr($output, strpos($output, '__JSON__') + 8);
+        }
+        $result = json_decode($json, true);
+        $this->assertIsArray($result);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('post:8', $result['items'][0]['group']);
+        $this->assertSame('page', $result['items'][0]['type']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('', $result['items'][0]['translations']['en']['slug']);
+        $this->assertSame('Not published', $result['items'][0]['translations']['en']['content']);
+    }
+
     private function skip_when_wordpress_or_polylang_is_loaded()
     {
         if (function_exists('get_post') || function_exists('get_option') || function_exists('get_posts') || function_exists('pll_get_post_translations') || function_exists('pll_default_language') || class_exists('PLL') || class_exists('Polylang')) {
@@ -1421,6 +1515,20 @@ class Polylang_Posts_Test extends TestCase
             'post_excerpt' => $excerpt,
             'post_content' => $content,
         );
+    }
+
+    private function missing_translation_fixture($count)
+    {
+        $exporter = new Polylang_Posts_Fixture();
+        $maps = array();
+        $posts = array();
+        for ($i = 1; $i <= $count; $i++) {
+            $maps[] = array('en' => $i, 'de' => 1000 + $i);
+            $posts[$i] = $this->record($i, 'post', 'Keep ' . $i, 'keep-' . $i, 'draft');
+        }
+        $exporter->maps = $maps;
+        $exporter->posts = $posts;
+        return $exporter;
     }
 
     private function groups(array $result)
