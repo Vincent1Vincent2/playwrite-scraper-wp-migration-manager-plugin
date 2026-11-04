@@ -502,6 +502,25 @@ class Test_Migration_Report extends TestCase
         );
     }
 
+    public function test_only_non_string_errors_do_not_invent_a_problem()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('posts' => 1),
+            'errors' => 7,
+            'write' => array(
+                'ok' => false,
+                'errors' => array(false, array('hidden'), '   '),
+            ),
+        ));
+
+        $this->assertSame('The migration did not finish.', $report['title']);
+        $this->assertSame(array(), $this->lines_named($report, 'Problem'));
+        $this->assertStringNotContainsString('hidden', $report['summary']);
+        $this->assertStringNotContainsString('more problem', $report['summary']);
+        $this->assertStringContainsString('was not saved into a Tolka package.', $report['summary']);
+    }
+
     public function test_html_in_an_error_is_not_left_in_the_summary()
     {
         $report = Migration_Report::format(array(
