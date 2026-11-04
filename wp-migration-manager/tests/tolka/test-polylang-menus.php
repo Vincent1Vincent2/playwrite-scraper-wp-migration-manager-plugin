@@ -991,7 +991,7 @@ class Polylang_Menus_Test extends TestCase
     public function test_block_navigation_is_nested_by_language(): void
     {
         $english = <<<'HTML'
-<!-- wp:navigation-link {"label":"Home","type":"page","id":2,"url":"https://example.com/","kind":"post-type"} /-->
+<!-- wp:navigation-link {"label":"Home","type":"page","id":2,"url":"https://example.com/","kind":"post-type","opensInNewTab":true,"rel":"nofollow","className":"featured external"} /-->
 <!-- wp:navigation-submenu {"label":"About","type":"page","id":3,"url":"https://example.com/about/","kind":"post-type"} -->
 <!-- wp:navigation-link {"label":"Team","type":"page","id":4,"url":"https://example.com/team/","kind":"post-type"} /-->
 <!-- /wp:navigation-submenu -->
@@ -1036,9 +1036,13 @@ HTML;
         $this->assertSame('Home', $navigation['translations']['en']['items'][0]['title']);
         $this->assertSame(2, $navigation['translations']['en']['items'][0]['object_id']);
         $this->assertSame('page', $navigation['translations']['en']['items'][0]['object']);
+        $this->assertSame('_blank', $navigation['translations']['en']['items'][0]['target']);
+        $this->assertSame('nofollow', $navigation['translations']['en']['items'][0]['xfn']);
+        $this->assertSame(array('featured', 'external'), $navigation['translations']['en']['items'][0]['classes']);
         $this->assertSame('About', $navigation['translations']['en']['items'][1]['title']);
         $this->assertSame('Team', $navigation['translations']['en']['items'][1]['children'][0]['title']);
         $this->assertSame(4, $navigation['translations']['en']['items'][1]['children'][0]['object_id']);
+        $this->assertSame($navigation['translations']['en']['items'][1]['id'], $navigation['translations']['en']['items'][1]['children'][0]['parent']);
         $this->assertTrue($navigation['translations']['en']['items'][2]['switcher']);
         $this->assertSame('Languages', $navigation['translations']['en']['items'][2]['title']);
         $this->assertSame('#pll_switcher', $navigation['translations']['en']['items'][2]['url']);
