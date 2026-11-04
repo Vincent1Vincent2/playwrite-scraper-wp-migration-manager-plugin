@@ -1437,6 +1437,28 @@ HTML;
         $this->assertFalse($result['has_polylang_switcher']);
     }
 
+    public function test_markup_inside_an_attribute_is_not_a_real_tag()
+    {
+        $images = $this->analyze('<div data-html="<img src=/fake.png srcset=/a.jpg,/b.jpg,/c.jpg>"><img src="/real.png" srcset="/real.png 1x, /real@2.png 2x"></div>');
+        $this->assertSame(1, $images['image_count']);
+        $this->assertSame(1, $images['language_count']);
+
+        $sheets = $this->analyze('<div data-html="<link rel=stylesheet href=/print.css media=print>"><link rel="stylesheet" href="/screen.css"><link rel="preload" as="style" href="/fonts.css"><link rel="stylesheet" href="/print.css" media="print"></div>');
+        $this->assertSame(2, $sheets['stylesheet_count']);
+
+        $scripts = $this->analyze('<div data-html="<script src=/fake.js></script>"><script src="/theme.js"></script>');
+        $this->assertSame(1, $scripts['script_count']);
+
+        $switcher = $this->analyze('<p data-note="<nav class=lang-item></nav>">Brochure</p>');
+        $this->assertFalse($switcher['has_polylang_switcher']);
+        $this->assertSame(0, $switcher['hreflang_count']);
+        $this->assertSame(1, $switcher['language_count']);
+
+        $live = $this->analyze('<p data-note="<nav class=lang-item></nav>"></p><nav class="pll-switcher"></nav>');
+        $this->assertTrue($live['has_polylang_switcher']);
+        $this->assertSame(2, $live['language_count']);
+    }
+
     public function test_img_with_srcset_counts_as_one_image_not_per_candidate()
     {
         $html = '<img src="/a.jpg" srcset="/a.jpg 1x, /a@2.jpg 2x, /a@3.jpg 3x" alt="">';
