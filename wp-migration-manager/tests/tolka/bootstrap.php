@@ -4,7 +4,8 @@
  * PHPUnit bootstrap for Migrate to Tolka.
  *
  * The suite does not load WordPress. It reads includes/tolka/class-*.php
- * when those files are present, and it leaves the suite up when they are not.
+ * when those files are present. If includes/tolka does not exist, loading
+ * is skipped and tests that need those classes skip. The suite still finishes.
  * A test that needs a class from a slice that has not landed yet should call
  * wmm_tolka_skip_without_class('Speed_Estimate') from the test method.
  * Run it from wp-migration-manager with: phpunit -c phpunit.xml.dist
@@ -258,10 +259,14 @@ if (!function_exists('wmm_tolka_skip_without_class')) {
 
             if ($basename !== '' && isset($undefined[$basename])) {
                 $message = $missing[0] . ' is not defined, so this test was skipped. ' . $undefined[$basename];
+            } elseif (wmm_tolka_class_directory_is_missing() && empty($errors)) {
+                $message = $missing[0] . ' is not loaded, so this test was skipped. The includes/tolka directory is missing, so the suite continues.';
             } else {
                 $message = $missing[0] . ' is not loaded, so this test was skipped. The suite keeps running when that class file is missing.';
                 $note = !empty($errors) ? ' ' . implode(' ', $errors) : '';
             }
+        } elseif (wmm_tolka_class_directory_is_missing() && empty($errors)) {
+            $message = 'These Tolka classes are not loaded, so this test was skipped: ' . implode(', ', $missing) . '. The includes/tolka directory is missing, so the suite continues.';
         } else {
             $message = 'These Tolka classes are not loaded, so this test was skipped: ' . implode(', ', $missing) . '. The suite keeps running when those class files are missing.';
             $note = !empty($errors) ? ' ' . implode(' ', $errors) : '';
@@ -550,6 +555,18 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
     }
 }
 
+if (!function_exists('wmm_tolka_class_directory_is_missing')) {
+    /**
+     * Whether the real includes/tolka directory was absent on the last look.
+     *
+     * @return bool
+     */
+    function wmm_tolka_class_directory_is_missing()
+    {
+        return !empty($GLOBALS['wmm_tolka_class_directory_missing']);
+    }
+}
+
 if (!function_exists('wmm_tolka_load_classes')) {
     /**
      * Require class-*.php files from the Tolka include directory.
@@ -570,12 +587,23 @@ if (!function_exists('wmm_tolka_load_classes')) {
             throw new RuntimeException('The Tolka class directory must be a path.');
         }
 
+        $using_default = false;
+
         if ($directory === null || $directory === '') {
             $directory = wmm_tolka_class_directory();
+            $using_default = true;
         }
 
         if (!is_dir($directory)) {
+            if ($using_default) {
+                $GLOBALS['wmm_tolka_class_directory_missing'] = true;
+            }
+
             return array();
+        }
+
+        if ($using_default) {
+            $GLOBALS['wmm_tolka_class_directory_missing'] = false;
         }
 
         if (!is_readable($directory)) {
