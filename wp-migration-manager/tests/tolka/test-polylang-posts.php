@@ -2548,6 +2548,172 @@ PHP
         $this->assertStringNotContainsString('99', (string) $called);
     }
 
+    public function test_uppercase_language_slug_shares_one_lowercase_key_and_names_the_default_post()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'SV'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 80,
+                'description' => 'a:2:{s:2:"SV";i:50;s:2:"EN";i:8;}',
+            ),
+        );
+        $fake->languages = array(50 => 'SV', 8 => 'EN');
+        $fake->posts_rows = array(
+            50 => $this->db_post(50, 'future', 'Fågel på Åland', 'fågel-öl', 'post', 'Utdrag', '<p>ä ö å</p>'),
+            8 => $this->db_post(8, 'publish', 'Bird', 'bird', 'post', '', 'Live'),
+        );
+        $exporter = new Polylang_Posts();
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame('post:50', $second['items'][0]['group']);
+        $this->assertSame(array('sv', 'en'), array_keys($second['items'][0]['translations']));
+        $this->assertArrayNotHasKey('SV', $second['items'][0]['translations']);
+        $this->assertArrayNotHasKey('EN', $second['items'][0]['translations']);
+        $this->assertSame(50, $second['items'][0]['translations']['sv']['id']);
+        $this->assertSame('future', $second['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Fågel på Åland', $second['items'][0]['translations']['sv']['title']);
+        $this->assertSame('fågel-öl', $second['items'][0]['translations']['sv']['slug']);
+        $this->assertSame('Utdrag', $second['items'][0]['translations']['sv']['excerpt']);
+        $this->assertSame('<p>ä ö å</p>', $second['items'][0]['translations']['sv']['content']);
+        $this->assertSame('publish', $second['items'][0]['translations']['en']['status']);
+        $this->assertSame('Live', $second['items'][0]['translations']['en']['content']);
+    }
+
+    public function test_sv_and_SV_keep_the_first_default_language_post()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'SV'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 81,
+                'description' => 'a:3:{s:2:"SV";i:50;s:2:"en";i:8;s:2:"sv";i:2;}',
+            ),
+        );
+        $fake->languages = array(50 => 'sv', 8 => 'en');
+        $fake->posts_rows = array(
+            50 => $this->db_post(50, 'future', 'Fågel', 'fågel-öl', 'post', '', '<p>ä ö å</p>'),
+            8 => $this->db_post(8, 'publish', 'Bird', 'bird', 'post', '', ''),
+            2 => $this->db_post(2, 'publish', 'Earlier number', 'earlier', 'post', '', 'Not first'),
+        );
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:50', $result['items'][0]['group']);
+        $this->assertSame(array('sv', 'en'), array_keys($result['items'][0]['translations']));
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['translations']);
+        $this->assertSame(50, $result['items'][0]['translations']['sv']['id']);
+        $this->assertSame('future', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Fågel', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('fågel-öl', $result['items'][0]['translations']['sv']['slug']);
+        $this->assertSame('<p>ä ö å</p>', $result['items'][0]['translations']['sv']['content']);
+        $this->assertSame('', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame(
+            array('Language sv is listed more than once in this translation group. Post 50 was kept.'),
+            $result['errors']
+        );
+        $encoded = json_encode($result);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Not first', $encoded);
+    }
+
+    public function test_same_post_listed_as_SV_and_sv_is_not_an_error()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'sv'));
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 82,
+                'description' => 'a:3:{s:2:"SV";i:50;s:2:"sv";i:50;s:2:"en";i:8;}',
+            ),
+        );
+        $fake->languages = array(50 => 'SV', 8 => 'en');
+        $fake->posts_rows = array(
+            50 => $this->db_post(50, 'private', 'Privat', 'privat', 'post', '', 'Hemlig'),
+            8 => $this->db_post(8, 'draft', 'Draft', 'draft', 'post', '', ''),
+        );
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:50', $result['items'][0]['group']);
+        $this->assertSame(array('sv', 'en'), array_keys($result['items'][0]['translations']));
+        $this->assertSame(50, $result['items'][0]['translations']['sv']['id']);
+        $this->assertSame('private', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Hemlig', $result['items'][0]['translations']['sv']['content']);
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+    }
+
+    public function test_singleton_language_slug_is_exported_in_lowercase()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'SV'));
+        $fake->languages = array(12 => 'SV');
+        $fake->posts_rows = array(
+            12 => $this->db_post(12, 'draft', 'Ö', 'fågel-öl', 'page', '', ''),
+        );
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:12', $result['items'][0]['group']);
+        $this->assertSame('page', $result['items'][0]['type']);
+        $this->assertSame(array('sv'), array_keys($result['items'][0]['translations']));
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['translations']);
+        $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('Ö', $result['items'][0]['translations']['sv']['title']);
+        $this->assertSame('fågel-öl', $result['items'][0]['translations']['sv']['slug']);
+        $this->assertSame('', $result['items'][0]['translations']['sv']['content']);
+    }
+
+    public function test_uppercase_locale_still_rewrites_to_the_lowercase_language_slug()
+    {
+        $this->skip_when_wordpress_or_polylang_is_loaded();
+        $fake = $this->use_fake_db();
+        $fake->option_value = serialize(array('default_lang' => 'EN_US'));
+        $fake->language_terms = array(
+            array(
+                'slug' => 'EN',
+                'term_description' => serialize(array('locale' => 'EN_US')),
+            ),
+            array(
+                'slug' => 'SV',
+                'term_description' => serialize(array('locale' => 'SV_SE')),
+            ),
+        );
+        $fake->translation_terms = array(
+            array(
+                'term_taxonomy_id' => 83,
+                'description' => 'a:2:{s:5:"EN-US";i:50;s:5:"sv_SE";i:8;}',
+            ),
+        );
+        $fake->languages = array(50 => 'EN', 8 => 'SV');
+        $fake->posts_rows = array(
+            50 => $this->db_post(50, 'future', 'Bird', 'bird', 'post', '', 'Soon'),
+            8 => $this->db_post(8, 'draft', 'Fågel', 'fagel', 'post', '', ''),
+        );
+        $result = (new Polylang_Posts())->export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('post:50', $result['items'][0]['group']);
+        $this->assertSame(array('en', 'sv'), array_keys($result['items'][0]['translations']));
+        $this->assertArrayNotHasKey('EN', $result['items'][0]['translations']);
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['translations']);
+        $this->assertSame('future', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('Soon', $result['items'][0]['translations']['en']['content']);
+        $this->assertSame('draft', $result['items'][0]['translations']['sv']['status']);
+        $this->assertSame('', $result['items'][0]['translations']['sv']['content']);
+    }
+
     private function skip_when_wordpress_or_polylang_is_loaded()
     {
         if (function_exists('get_post') || function_exists('get_option') || function_exists('get_posts') || function_exists('pll_get_post_translations') || function_exists('pll_default_language') || class_exists('PLL') || class_exists('Polylang')) {
