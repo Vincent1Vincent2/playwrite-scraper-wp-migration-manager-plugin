@@ -482,6 +482,7 @@ class Tolka_Writer
         }
 
         if (is_string($value)) {
+            $value = str_replace("\0", '', $value);
             return trim($value) === '0';
         }
 

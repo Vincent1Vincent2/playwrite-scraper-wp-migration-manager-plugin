@@ -478,6 +478,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                         'sv' => array('id' => '0', 'title' => 'Noll'),
                         'de' => array('ID' => 0.0, 'title' => 'Null'),
                         'fr' => 0,
+                        'it' => "0\0",
                         'es' => array('id' => 12, 'title' => 'Real'),
                     ),
                 ),
@@ -500,6 +501,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                 'Post id 0, titled "Noll", for language "sv" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
                 'Post id 0, titled "Null", for language "de" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
                 'Post id 0 for language "fr" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
+                'Post id 0 for language "it" in group "post:10" was skipped because it is not a saved post. Nothing was deleted, and your Polylang content is still in place.',
                 'Term id 0, named "None", for language "en" in group "term:4" was skipped because it is not a saved term. Nothing was deleted, and your Polylang content is still in place.',
             ),
             $result['errors']
