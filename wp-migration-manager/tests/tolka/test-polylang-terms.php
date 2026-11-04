@@ -689,6 +689,33 @@ class Polylang_Terms_Test extends TestCase
         );
     }
 
+    public function test_a_long_description_is_not_truncated(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $body = str_repeat('<p>Höst åäö</p>', 400);
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(90, 'Lång', 'lång', 'category', 'sv', 0, $body . "\0"),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $result = $exporter->export();
+        $item = $this->itemByGroup($result['items'], 'term:90');
+
+        $this->assertSame($body, $item['translations']['sv']['description']);
+        $this->assertSame(strlen($body), strlen($item['translations']['sv']['description']));
+        $this->assertStringNotContainsString("\0", $item['translations']['sv']['description']);
+        $this->assertSame('Lång', $item['translations']['sv']['name']);
+        $this->assertSame('lång', $item['translations']['sv']['slug']);
+        $this->assertSame(0, $item['translations']['sv']['parent']);
+        $this->assertCount(1, $result['items']);
+    }
+
     public function test_null_bytes_are_removed_from_term_text(): void
     {
         $result = $this->exportSnapshot(array(
