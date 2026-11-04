@@ -458,6 +458,24 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame($status, Polylang_Detector_Api_Fixture::status());
     }
 
+    public function test_unreadable_pro_file_names_polylang_pro(): void
+    {
+        $root = $this->temp_dir();
+        $file = $this->write_plugin($root, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '4.0.0'));
+        Polylang_Detector_Fixture::$directories = array($root);
+        Polylang_Detector_Fixture::$unreadable = array($file);
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertFalse($status['active']);
+        $this->assertSame('', $status['version']);
+        $this->assertSame(
+            array('A Polylang Pro plugin file was found, but it could not be read.'),
+            $status['errors']
+        );
+        $this->assertErrorsAreFinishedSentences($status['errors']);
+    }
+
     public function test_unreadable_copy_does_not_erase_a_readable_version_zero(): void
     {
         $root = $this->temp_dir();
