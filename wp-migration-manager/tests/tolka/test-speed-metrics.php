@@ -540,6 +540,12 @@ HTML;
         $this->assertTrue($live_script['has_polylang_switcher']);
         $this->assertSame(2, $live_script['language_count']);
         $this->assertSame(1, $live_script['script_count']);
+
+        $assets = $this->analyze('<noscript><link href=/style.css rel=stylesheet><img src="/hidden.png"></noscript><link href=/style.css rel=stylesheet><img src="/shown.png">');
+        $this->assertSame(1, $assets['stylesheet_count']);
+        $this->assertSame(1, $assets['image_count']);
+        $this->assertFalse($assets['has_polylang_switcher']);
+        $this->assertSame(1, $assets['language_count']);
     }
 
     public function test_script_inside_noscript_template_or_iframe_does_not_count()
