@@ -617,26 +617,27 @@ class Polylang_Posts
         if (array_key_exists($post_id, $this->record_cache) && is_array($this->record_cache[$post_id])) {
             return (string) $this->record_cache[$post_id]['type'];
         }
-        if (function_exists('get_post')) {
-            $post = get_post($post_id);
-            if (!is_object($post) || !isset($post->post_type)) {
-                return '';
-            }
-            return (string) $post->post_type;
-        }
         global $wpdb;
-        if (!$this->db_ready($wpdb) || !method_exists($wpdb, 'get_var')) {
+        if ($this->db_ready($wpdb) && method_exists($wpdb, 'get_var')) {
+            $type = $wpdb->get_var($wpdb->prepare(
+                "SELECT post_type FROM {$wpdb->posts} WHERE ID = %d",
+                $post_id
+            ));
+            $type = is_string($type) ? $type : '';
+            if ($type !== '') {
+                $this->type_cache[$post_id] = $type;
+                return $type;
+            }
+        }
+        if (!function_exists('get_post')) {
             return '';
         }
-        $type = $wpdb->get_var($wpdb->prepare(
-            "SELECT post_type FROM {$wpdb->posts} WHERE ID = %d",
-            $post_id
-        ));
-        $type = is_string($type) ? $type : '';
-        if ($type !== '') {
-            $this->type_cache[$post_id] = $type;
+        $post = get_post($post_id);
+        if (!is_object($post) || !isset($post->post_type)) {
+            return '';
         }
-        return $type;
+        $this->type_cache[$post_id] = (string) $post->post_type;
+        return $this->type_cache[$post_id];
     }
 
     /**
@@ -654,32 +655,32 @@ class Polylang_Posts
         if (empty($missing)) {
             return;
         }
-        if (function_exists('get_post')) {
-            foreach (array_keys($missing) as $post_id) {
-                $post = get_post($post_id);
-                if (is_object($post) && isset($post->post_type)) {
-                    $this->type_cache[$post_id] = (string) $post->post_type;
-                }
-            }
-            return;
-        }
         global $wpdb;
-        if (!$this->db_ready($wpdb)) {
+        if ($this->db_ready($wpdb)) {
+            foreach (array_chunk(array_keys($missing), $this->page_size()) as $chunk) {
+                $placeholders = implode(', ', array_fill(0, count($chunk), '%d'));
+                $sql = "SELECT ID, post_type FROM {$wpdb->posts} WHERE ID IN ($placeholders)";
+                $prepared = $wpdb->prepare($sql, ...array_map('intval', $chunk));
+                $rows = $this->normalize_rows($wpdb->get_results($prepared, 'ARRAY_A'));
+                if (!is_array($rows)) {
+                    continue;
+                }
+                foreach ($rows as $row) {
+                    $post_id = isset($row['ID']) ? (int) $row['ID'] : 0;
+                    if ($post_id > 0 && isset($row['post_type'])) {
+                        $this->type_cache[$post_id] = (string) $row['post_type'];
+                        unset($missing[$post_id]);
+                    }
+                }
+            }
+        }
+        if (empty($missing) || !function_exists('get_post')) {
             return;
         }
-        foreach (array_chunk(array_keys($missing), $this->page_size()) as $chunk) {
-            $placeholders = implode(', ', array_fill(0, count($chunk), '%d'));
-            $sql = "SELECT ID, post_type FROM {$wpdb->posts} WHERE ID IN ($placeholders)";
-            $prepared = $wpdb->prepare($sql, ...array_map('intval', $chunk));
-            $rows = $this->normalize_rows($wpdb->get_results($prepared, 'ARRAY_A'));
-            if (!is_array($rows)) {
-                continue;
-            }
-            foreach ($rows as $row) {
-                $post_id = isset($row['ID']) ? (int) $row['ID'] : 0;
-                if ($post_id > 0 && isset($row['post_type'])) {
-                    $this->type_cache[$post_id] = (string) $row['post_type'];
-                }
+        foreach (array_keys($missing) as $post_id) {
+            $post = get_post($post_id);
+            if (is_object($post) && isset($post->post_type)) {
+                $this->type_cache[$post_id] = (string) $post->post_type;
             }
         }
     }

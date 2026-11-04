@@ -1477,6 +1477,63 @@ PHP
         $this->assertSame('Not published', $result['items'][0]['translations']['en']['content']);
     }
 
+    public function test_media_type_lookup_does_not_load_attachment_content()
+    {
+        if (!function_exists('shell_exec')) {
+            $this->markTestSkipped('shell_exec is not available.');
+        }
+        $calls = tempnam(sys_get_temp_dir(), 'tolka-calls');
+        file_put_contents($calls, '');
+        $script = tempnam(sys_get_temp_dir(), 'tolka-types');
+        $test_file = var_export(__FILE__, true);
+        $calls_export = var_export($calls, true);
+        file_put_contents($script, <<<PHP
+<?php
+define('ABSPATH', '/tmp/tolka-posts/');
+function get_post(\$id) {
+    file_put_contents({$calls_export}, (int) \$id . "\\n", FILE_APPEND);
+    if ((int) \$id !== 16) {
+        return null;
+    }
+    return (object) array(
+        'ID' => 16,
+        'post_type' => 'post',
+        'post_title' => 'Draft',
+        'post_name' => 'draft',
+        'post_status' => 'draft',
+        'post_excerpt' => '',
+        'post_content' => 'Body',
+    );
+}
+require {$test_file};
+\$fake = new WMM\\Tolka\\Tolka_Posts_Fake_Db();
+\$fake->option_value = serialize(array('default_lang' => 'en'));
+\$fake->languages = array(16 => 'en', 99 => 'en');
+\$fake->posts_rows = array(
+    16 => array('ID' => 16, 'post_type' => 'post', 'post_title' => 'Draft', 'post_name' => 'draft', 'post_status' => 'draft', 'post_excerpt' => '', 'post_content' => 'Body'),
+    99 => array('ID' => 99, 'post_type' => 'attachment', 'post_title' => 'Big', 'post_name' => 'big', 'post_status' => 'inherit', 'post_excerpt' => '', 'post_content' => 'HUGE'),
+);
+\$GLOBALS['wpdb'] = \$fake;
+\$result = (new WMM\\Tolka\\Polylang_Posts())->export();
+echo '__JSON__' . json_encode(\$result);
+PHP
+        );
+        $output = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script));
+        $called = file_get_contents($calls);
+        @unlink($script);
+        @unlink($calls);
+        $json = '';
+        if (is_string($output) && strpos($output, '__JSON__') !== false) {
+            $json = substr($output, strpos($output, '__JSON__') + 8);
+        }
+        $result = json_decode($json, true);
+        $this->assertIsArray($result, is_string($output) ? $output : 'no output');
+        $this->assertSame(array('post:16'), $this->groups($result));
+        $this->assertSame('draft', $result['items'][0]['translations']['en']['status']);
+        $this->assertSame('Body', $result['items'][0]['translations']['en']['content']);
+        $this->assertStringNotContainsString('99', (string) $called);
+    }
+
     private function skip_when_wordpress_or_polylang_is_loaded()
     {
         if (function_exists('get_post') || function_exists('get_option') || function_exists('get_posts') || function_exists('pll_get_post_translations') || function_exists('pll_default_language') || class_exists('PLL') || class_exists('Polylang')) {
