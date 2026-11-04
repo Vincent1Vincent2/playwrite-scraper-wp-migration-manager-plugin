@@ -1359,6 +1359,56 @@ echo json_encode($report);
         $this->assertSame('0', $this->line($report, 'Languages'));
     }
 
+    public function test_zero_counts_are_the_string_zero_not_blank()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array(
+                'languages' => 0,
+                'posts' => 0.0,
+                'terms' => '0',
+                'strings' => '0.0',
+                'menus' => false,
+                'media' => '',
+            ),
+            'write' => array(
+                'ok' => true,
+                'counts' => array(
+                    'languages' => 0,
+                    'posts' => 0.0,
+                    'terms' => '0',
+                    'strings' => '0.0',
+                    'menus' => 0,
+                    'media' => 0,
+                ),
+                'errors' => array(
+                    'posts' => 'A post was skipped',
+                ),
+            ),
+        ));
+
+        $this->assertSame('The migration finished with problems.', $report['title']);
+        $this->assertStringNotContainsString('complete', strtolower($report['title']));
+        $this->assertSame('The migration finished with problems.', $this->line($report, 'Outcome'));
+        $this->assert_section_order($report);
+
+        foreach (array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media') as $label) {
+            $value = $this->line($report, $label);
+            $this->assertSame('0', $value);
+            $this->assertNotSame('', $value);
+            $this->assertIsString($value);
+        }
+
+        $clean = $this->format_run(array(
+            'languages' => 2,
+            'posts' => 0,
+        ));
+        $this->assertSame('The migration is complete.', $clean['title']);
+        $this->assertNotSame('The migration finished with problems.', $clean['title']);
+        $this->assertSame('0', $this->line($clean, 'Posts'));
+        $this->assertNotSame('', $this->line($clean, 'Posts'));
+    }
+
     public function test_section_counts_are_whole_number_strings()
     {
         $report = $this->format_run(array(

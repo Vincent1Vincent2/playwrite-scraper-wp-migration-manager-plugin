@@ -692,7 +692,13 @@ class Migration_Report
      */
     private static function partial_title()
     {
-        return self::text('The migration finished with problems.');
+        $title = 'The migration finished with problems.';
+        $translated = self::text($title);
+        if (!is_string($translated) || stripos($translated, 'complete') !== false) {
+            return $title;
+        }
+
+        return $translated;
     }
 
     /**
@@ -1712,10 +1718,39 @@ class Migration_Report
                 continue;
             }
 
+            $normalized['value'] = self::section_count_value($normalized['label'], $normalized['value']);
             $kept[] = $normalized;
         }
 
         return $kept;
+    }
+
+    /**
+     * Section counts stay the string 0 when the count is zero or blank.
+     *
+     * @param string $label Line label.
+     * @param string $value Line value.
+     * @return string
+     */
+    private static function section_count_value($label, $value)
+    {
+        $is_section = false;
+        foreach (self::section_catalog() as $meta) {
+            if ($label === self::text($meta['label'])) {
+                $is_section = true;
+                break;
+            }
+        }
+
+        if (!$is_section) {
+            return $value;
+        }
+
+        if (!is_string($value) || trim($value) === '') {
+            return '0';
+        }
+
+        return self::whole_number($value);
     }
 
     /**
