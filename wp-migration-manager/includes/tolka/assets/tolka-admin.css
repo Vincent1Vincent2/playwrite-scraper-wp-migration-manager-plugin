@@ -1268,12 +1268,12 @@ ol.wmm-tolka-errors .wmm-tolka-error,
 #wmm-tolka-speed.wmm-tolka-has-result dd.wmm-tolka-speed-faster,
 .wmm-tolka-speed-result > .wmm-tolka-speed-faster {
     margin: 4px 0 0;
-    color: var(--wmm-tolka-win);
+    color: #084e39;
     font-size: clamp(2.6rem, 5vw, 3.75rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums lining-nums;
-    letter-spacing: -0.035em;
-    line-height: 0.95;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
 }
 
 .wmm-tolka-is-ready #wmm-tolka-tolka-load,
@@ -1445,13 +1445,14 @@ p.wmm-tolka-speed-tolka {
     display: block;
     max-width: 100%;
     margin: 4px 0 0;
-    color: var(--wmm-tolka-win);
+    color: #084e39;
     font-size: clamp(2.4rem, 5vw, 3.75rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums lining-nums;
-    letter-spacing: -0.035em;
-    line-height: 1.05;
-    overflow-wrap: break-word;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    overflow-wrap: normal;
+    word-break: normal;
 }
 
 #wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster:not([data-faster-percent]),
@@ -1465,7 +1466,9 @@ p.wmm-tolka-speed-tolka {
 
 #wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster[data-faster-percent]:not([data-faster-percent=""]),
 #wmm-tolka-speed.wmm-tolka-has-result:not(.wmm-tolka-has-error) #wmm-tolka-faster[data-faster-percent]:not([data-faster-percent=""]) {
-    color: var(--wmm-tolka-win);
+    color: #084e39;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
 }
 
 #wmm-tolka-provenance-note[hidden],
@@ -1721,7 +1724,8 @@ dl.wmm-tolka-lines dd,
     #wmm-tolka-wizard button.wmm-tolka-is-busy,
     #wmm-tolka-wizard button.wmm-tolka-button--busy,
     #wmm-tolka-wizard button[aria-busy="true"] {
-        animation: none;
+        animation: none !important;
+        transition: none !important;
         outline: 2px dashed currentColor;
         outline-offset: 2px;
     }
@@ -1730,7 +1734,9 @@ dl.wmm-tolka-lines dd,
     #wmm-tolka-wizard button.wmm-tolka-is-busy::after,
     #wmm-tolka-wizard button.wmm-tolka-button--busy::after,
     #wmm-tolka-wizard button[aria-busy="true"]::after {
-        animation: none;
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
     }
 }
 
@@ -1931,8 +1937,10 @@ dl.wmm-tolka-lines dd,
     .wmm-tolka-is-ready #wmm-tolka-faster,
     #wmm-tolka-speed.wmm-tolka-has-result #wmm-tolka-faster,
     #wmm-tolka-speed #wmm-tolka-faster {
-        font-size: clamp(1.85rem, 8.5vw, 2.35rem);
-        line-height: 1.05;
+        font-size: clamp(2rem, 8.5vw, 2.5rem);
+        line-height: 1.2;
+        overflow-wrap: normal;
+        word-break: normal;
     }
 
     #wmm-tolka-speed .wmm-tolka-speed-figure:not(.wmm-tolka-speed-faster):not(:has(.wmm-tolka-speed-faster, #wmm-tolka-faster)) dd,
@@ -1940,5 +1948,37 @@ dl.wmm-tolka-lines dd,
     #wmm-tolka-speed dd.wmm-tolka-speed-tolka {
         font-size: 1.45rem;
         line-height: 1.15;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wmm-tolka button.wmm-tolka-busy,
+    .wmm-tolka button.wmm-tolka-is-busy,
+    .wmm-tolka button.wmm-tolka-button--busy,
+    .wmm-tolka button[aria-busy="true"],
+    #wmm-tolka-measure[aria-busy="true"],
+    #wmm-tolka-preview[aria-busy="true"],
+    #wmm-tolka-run[aria-busy="true"] {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .wmm-tolka button.wmm-tolka-busy::before,
+    .wmm-tolka button.wmm-tolka-busy::after,
+    .wmm-tolka button.wmm-tolka-is-busy::before,
+    .wmm-tolka button.wmm-tolka-is-busy::after,
+    .wmm-tolka button.wmm-tolka-button--busy::before,
+    .wmm-tolka button.wmm-tolka-button--busy::after,
+    .wmm-tolka button[aria-busy="true"]::before,
+    .wmm-tolka button[aria-busy="true"]::after,
+    #wmm-tolka-measure[aria-busy="true"]::before,
+    #wmm-tolka-measure[aria-busy="true"]::after,
+    #wmm-tolka-preview[aria-busy="true"]::before,
+    #wmm-tolka-preview[aria-busy="true"]::after,
+    #wmm-tolka-run[aria-busy="true"]::before,
+    #wmm-tolka-run[aria-busy="true"]::after {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
     }
 }
