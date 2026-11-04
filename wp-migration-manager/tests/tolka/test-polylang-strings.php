@@ -565,6 +565,52 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     }
 
     /**
+     * The instance export reads stored rows the same way, including markup.
+     *
+     * @return void
+     */
+    public function test_instance_export_keeps_html_and_drops_null_bytes_from_the_database()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => "f\0r"),
+        );
+        $db->option_rows = array(
+            array(
+                'option_name' => 'polylang_wpml_strings',
+                'option_value' => serialize(array(
+                    'greeting' => array(
+                        'name' => '<span>Greeting</span>',
+                        'string' => "<p>Hel\0lo</p>",
+                        'context' => 'theme',
+                    ),
+                )),
+            ),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array("<p>Hel\0lo</p>", "Bon\0jour <em>à</em>"),
+                )),
+            ),
+        );
+        $exporter = $this->probe($db, array(), true);
+        $this->assertTrue(is_callable(array($exporter, 'export')));
+
+        $result = $exporter->export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('<span>Greeting</span>', $result['items'][0]['name']);
+        $this->assertSame('<p>Hello</p>', $result['items'][0]['string']);
+        $this->assertSame('Bonjour <em>à</em>', $result['items'][0]['translations']['fr']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertFalse(strpos(json_encode($result), "\0"));
+    }
+
+    /**
      * @return void
      */
     public function test_export_without_polylang_returns_an_empty_list_and_an_error()
