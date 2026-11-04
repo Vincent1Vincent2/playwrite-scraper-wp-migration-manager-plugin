@@ -156,37 +156,55 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         );
     }
 
-    public function test_truncated_measurement_says_only_part_of_the_page_was_measured()
+    public function test_truncated_page_sentence_is_escaped_and_omitted_when_not_truncated()
     {
         $sentence = 'Only the first part of the page HTML was measured.';
-        $estimate = $this->ready_estimate();
-        $shown = $this->render(true, array(
-            'metrics' => array('truncated' => true),
-            'estimate' => $estimate,
-        ));
-        $hidden = $this->render(true, array(
-            'metrics' => array('truncated' => false),
-            'estimate' => $estimate,
-        ));
-        $loose = $this->render(true, array(
-            'metrics' => array('truncated' => 1),
-            'estimate' => $estimate,
-        ));
-        $empty = $this->render(false);
-
-        $this->assertStringContainsString($sentence, $shown);
-        $this->assertNotNull($this->document($shown)->getElementById('wmm-tolka-speed-truncated'));
-        $this->assertStringNotContainsString($sentence, $hidden);
-        $this->assertStringNotContainsString($sentence, $loose);
-        $this->assertStringNotContainsString($sentence, $empty);
-        foreach (array(
+        $ids = array(
             'wmm-tolka-current-load',
             'wmm-tolka-tolka-load',
             'wmm-tolka-faster',
             'wmm-tolka-basis',
             'wmm-tolka-provenance-note',
-        ) as $id) {
-            $this->assertNotNull($this->document($shown)->getElementById($id), $id);
+        );
+        $estimate = $this->ready_estimate();
+        $shown = $this->render(true, array(
+            'metrics' => array(
+                'truncated' => true,
+                'note' => '<script>alert(1)</script>',
+            ),
+            'estimate' => $estimate,
+        ));
+        $shown_document = $this->document($shown);
+        $truncated = $shown_document->getElementById('wmm-tolka-speed-truncated');
+
+        $this->assertNotNull($truncated);
+        $this->assertSame($sentence, $this->text($shown, 'wmm-tolka-speed-truncated'));
+        $this->assertSame(0, $this->element_child_count($truncated));
+        $this->assertSame(1, substr_count($shown, $sentence));
+        $this->assertStringContainsString(htmlspecialchars($sentence, ENT_QUOTES, 'UTF-8'), $shown);
+        $this->assertStringNotContainsString('<script', $shown);
+        foreach ($ids as $id) {
+            $this->assertNotNull($shown_document->getElementById($id), $id);
+            $this->assertSame(1, substr_count($shown, 'id="' . $id . '"'), $id);
+        }
+
+        $quiet = array(
+            'false' => array('metrics' => array('truncated' => false), 'estimate' => $estimate),
+            'one' => array('metrics' => array('truncated' => 1), 'estimate' => $estimate),
+            'string' => array('metrics' => array('truncated' => '<script>true</script>'), 'estimate' => $estimate),
+            'missing metrics' => $estimate,
+        );
+        $quiet['empty page'] = null;
+
+        foreach ($quiet as $name => $payload) {
+            $html = (null === $payload) ? $this->render(false) : $this->render(true, $payload);
+            $document = $this->document($html);
+            $this->assertStringNotContainsString($sentence, $html, $name);
+            $this->assertNull($document->getElementById('wmm-tolka-speed-truncated'), $name);
+            $this->assertStringNotContainsString('<script', $html, $name);
+            foreach ($ids as $id) {
+                $this->assertNotNull($document->getElementById($id), $name . ' #' . $id);
+            }
         }
     }
 
