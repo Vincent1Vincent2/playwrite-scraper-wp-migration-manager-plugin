@@ -529,7 +529,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(509, $result['items']);
 
         $this->assertContains(
-            'A term translation group could not be read because its stored description is invalid. That group was skipped.',
+            'A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.',
             $result['errors']
         );
         $this->assertContains(
@@ -655,6 +655,36 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_links_rebuild_a_group_when_its_description_is_invalid(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->descriptions = array('not-a-map');
+        $database->links = array(1 => array(10, 11));
+        $database->catalog = array(
+            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(11, 'Nyheter', 'nyheter', 'category', 'sv'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $item = $this->itemByGroup($result['items'], 'term:10');
+
+        $this->assertSame(array('en', 'sv'), array_keys($item['translations']));
+        $this->assertSame('Nyheter', $item['translations']['sv']['name']);
+        $this->assertContains(
+            'A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'Term 10 is linked to a translation group but was missing from its stored description. It was added as en.',
+            $result['errors']
+        );
+    }
+
     public function test_a_linked_term_missing_from_the_description_is_added(): void
     {
         if (!$this->canUseDatabaseStub()) {
@@ -735,7 +765,7 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame(array('term:12'), $this->groupIds($result['items']));
         $this->assertContains(
-            'A term translation group could not be read because its stored description is invalid. That group was skipped.',
+            'A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.',
             $result['errors']
         );
     }

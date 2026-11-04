@@ -503,6 +503,13 @@ class Polylang_Terms
             $map = $this->decodeMap($row['description']);
             if ($map === null) {
                 $corrupt++;
+                $termTaxonomyId = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
+                if ($termTaxonomyId > 0) {
+                    $decodedGroups[] = array(
+                        'map' => array(),
+                        'term_taxonomy_id' => $termTaxonomyId,
+                    );
+                }
                 continue;
             }
 
@@ -526,10 +533,10 @@ class Polylang_Terms
         }
 
         if ($corrupt === 1) {
-            $errors[] = $this->text('A term translation group could not be read because its stored description is invalid. That group was skipped.');
+            $errors[] = $this->text('A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.');
         } elseif ($corrupt > 1) {
             $errors[] = sprintf(
-                $this->text('%d term translation groups could not be read because their stored descriptions are invalid. Those groups were skipped.'),
+                $this->text('%d term translation groups had invalid stored descriptions. Those descriptions were ignored. Terms linked to those groups are still included.'),
                 $corrupt
             );
         }
