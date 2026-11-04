@@ -154,13 +154,13 @@ class Polylang_Terms_Test extends TestCase
                 'taxonomy' => 'category',
                 'group' => 'term:4',
                 'translations' => array(
-                    'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter'),
-                    'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news'),
+                    'sv' => array('id' => 4, 'name' => 'Nyheter', 'slug' => 'nyheter', 'parent' => 0),
+                    'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'parent' => 0),
                 ),
             ),
         ), $result['items']);
         $this->assertSame(array('taxonomy', 'group', 'translations'), array_keys($result['items'][0]));
-        $this->assertSame(array('id', 'name', 'slug'), array_keys($result['items'][0]['translations']['sv']));
+        $this->assertSame(array('id', 'name', 'slug', 'parent'), array_keys($result['items'][0]['translations']['sv']));
     }
 
     public function test_group_without_the_default_language_uses_the_lowest_term_id(): void
@@ -173,7 +173,7 @@ class Polylang_Terms_Test extends TestCase
                     'taxonomy' => 'category',
                     'translations' => array(
                         'de' => 30,
-                        'fr' => array('id' => 12, 'name' => 'Actualités', 'slug' => 'actualites'),
+                        'fr' => array('id' => 12, 'name' => 'Actualités', 'slug' => 'actualites', 'parent' => 9),
                     ),
                 ),
             ),
@@ -181,9 +181,10 @@ class Polylang_Terms_Test extends TestCase
 
         $this->assertSame('term:12', $result['items'][0]['group']);
         $this->assertSame(
-            array('id' => 30, 'name' => '', 'slug' => ''),
+            array('id' => 30, 'name' => '', 'slug' => '', 'parent' => 0),
             $result['items'][0]['translations']['de']
         );
+        $this->assertSame(9, $result['items'][0]['translations']['fr']['parent']);
         $this->assertSame(array('de', 'fr'), array_keys($result['items'][0]['translations']));
     }
 
@@ -411,7 +412,8 @@ class Polylang_Terms_Test extends TestCase
         );
         $database->catalog = array(
             $this->term(10, 'News', 'news', 'category', 'en'),
-            $this->term(11, 'Nachrichten', 'nachrichten', 'category', 'de'),
+            $this->term(11, 'Nachrichten', 'nachrichten', 'category', 'de', 6),
+            $this->term(15, 'Child', 'child', 'category', 'en', 10),
             $this->term(12, 'Actualités', 'actualites', 'product_cat', 'fr'),
             $this->term(13, 'Reports', 'reports', 'product_cat', 'en'),
             $this->term(21, 'Ensam', 'ensam', 'post_tag', 'sv'),
@@ -436,8 +438,8 @@ class Polylang_Terms_Test extends TestCase
         $news = $this->itemByGroup($result['items'], 'term:10');
         $this->assertSame('category', $news['taxonomy']);
         $this->assertSame(array(
-            'de' => array('id' => 11, 'name' => 'Nachrichten', 'slug' => 'nachrichten'),
-            'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news'),
+            'de' => array('id' => 11, 'name' => 'Nachrichten', 'slug' => 'nachrichten', 'parent' => 6),
+            'en' => array('id' => 10, 'name' => 'News', 'slug' => 'news', 'parent' => 0),
         ), $news['translations']);
 
         $product = $this->itemByGroup($result['items'], 'term:12');
@@ -446,7 +448,7 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame('Actualités', $product['translations']['fr']['name']);
 
         $single = $this->itemByGroup($result['items'], 'term:21');
-        $this->assertSame(array('sv' => array('id' => 21, 'name' => 'Ensam', 'slug' => 'ensam')), $single['translations']);
+        $this->assertSame(array('sv' => array('id' => 21, 'name' => 'Ensam', 'slug' => 'ensam', 'parent' => 0)), $single['translations']);
 
         $alpha = $this->itemByGroup($result['items'], 'term:30');
         $this->assertSame(array('en'), array_keys($alpha['translations']));
@@ -470,8 +472,12 @@ class Polylang_Terms_Test extends TestCase
         $postTags = array_values(array_filter($result['items'], function ($item) {
             return $item['taxonomy'] === 'post_tag';
         }));
+        $child = $this->itemByGroup($result['items'], 'term:15');
+        $this->assertSame(10, $child['translations']['en']['parent']);
+        $this->assertSame('Child', $child['translations']['en']['name']);
+
         $this->assertCount(503, $postTags);
-        $this->assertCount(508, $result['items']);
+        $this->assertCount(509, $result['items']);
 
         $this->assertContains('A term translation group could not be read and was skipped.', $result['errors']);
         $this->assertContains('A translated term no longer exists and was skipped.', $result['errors']);
@@ -514,6 +520,112 @@ class Polylang_Terms_Test extends TestCase
         $GLOBALS['wpdb'] = $database;
 
         $result = (new Polylang_Terms())->export();
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertSame(
+            array('Term translations could not be read. Existing Polylang data was left unchanged.'),
+            $result['errors']
+        );
+    }
+
+    public function test_unassigned_term_uses_the_first_stored_language(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->languages = array(
+            array('slug' => 'de', 'term_group' => 2),
+            array('slug' => 'sv', 'term_group' => 0),
+        );
+        $database->catalog = array(
+            $this->term(9, 'Shared', 'shared', 'category', ''),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+
+        $this->assertSame(array('sv'), array_keys($result['items'][0]['translations']));
+        $this->assertSame(9, $result['items'][0]['translations']['sv']['id']);
+        $this->assertSame(
+            array('A term has no Polylang language. It is included under sv, the first language stored by Polylang, so it is not dropped.'),
+            $result['errors']
+        );
+    }
+
+    public function test_polylang_api_exports_groups_untranslated_terms_and_parents(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $api = new Polylang_Terms_ApiDouble();
+        $api->listed = array(
+            'category' => array(
+                array('id' => 10, 'name' => 'News', 'slug' => 'news', 'taxonomy' => 'category', 'parent' => 0),
+                array('id' => 11, 'name' => 'Nachrichten', 'slug' => 'nachrichten', 'taxonomy' => 'category', 'parent' => 6),
+                array('id' => 50, 'name' => 'Shared', 'slug' => 'shared', 'taxonomy' => 'category', 'parent' => 0),
+            ),
+            'post_tag' => array(
+                array('id' => 40, 'name' => 'Solo', 'slug' => 'solo', 'taxonomy' => 'post_tag', 'parent' => 0),
+                array('id' => 60, 'name' => 'Broken', 'slug' => 'broken', 'taxonomy' => 'post_tag', 'parent' => 0),
+            ),
+        );
+        $api->maps = array(
+            10 => array('de' => 11, 'en' => 10),
+            11 => array('en' => 10, 'de' => 11),
+            40 => array(),
+            50 => array(),
+            60 => null,
+        );
+        $api->langs = array(
+            40 => 'sv',
+            50 => '',
+            60 => 'en',
+        );
+        $api->default = 'en';
+
+        $result = $api->export();
+
+        $news = $this->itemByGroup($result['items'], 'term:10');
+        $this->assertSame('category', $news['taxonomy']);
+        $this->assertSame(array('en', 'de'), array_keys($news['translations']));
+        $this->assertSame(6, $news['translations']['de']['parent']);
+        $this->assertSame('Nachrichten', $news['translations']['de']['name']);
+
+        $solo = $this->itemByGroup($result['items'], 'term:40');
+        $this->assertSame('sv', array_key_first($solo['translations']));
+
+        $shared = $this->itemByGroup($result['items'], 'term:50');
+        $this->assertSame('en', array_key_first($shared['translations']));
+
+        $broken = $this->itemByGroup($result['items'], 'term:60');
+        $this->assertSame('Broken', $broken['translations']['en']['name']);
+
+        $this->assertCount(4, $result['items']);
+        $this->assertContains(
+            'Polylang could not return one term translation. The export continued with the terms it could read.',
+            $result['errors']
+        );
+        $this->assertContains(
+            'A term has no Polylang language. It is included under the default language (en) so it is not dropped.',
+            $result['errors']
+        );
+    }
+
+    public function test_api_listing_failure_does_not_claim_polylang_is_inactive(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $api = new Polylang_Terms_ApiDouble();
+        $api->failedLists = array('category', 'post_tag');
+        $api->default = 'en';
+
+        $result = $api->export();
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
@@ -589,7 +701,7 @@ class Polylang_Terms_Test extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function term($id, $name, $slug, $taxonomy, $lang)
+    private function term($id, $name, $slug, $taxonomy, $lang, $parent = 0)
     {
         return array(
             'id' => $id,
@@ -597,6 +709,7 @@ class Polylang_Terms_Test extends TestCase
             'slug' => $slug,
             'taxonomy' => $taxonomy,
             'lang' => $lang,
+            'parent' => $parent,
         );
     }
 
@@ -665,6 +778,13 @@ class Polylang_Terms_Database
      * @var bool
      */
     public $hasLanguages = false;
+
+    /**
+     * Languages stored in the language taxonomy, ordered later by term_group.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public $languages = array();
 
     /**
      * @var bool
@@ -739,8 +859,22 @@ class Polylang_Terms_Database
             }
             return $rows;
         }
+        if (strpos($query, "taxonomy = 'language'") !== false && strpos($query, 'lang.slug') !== false) {
+            $languages = $this->languages;
+            usort($languages, function ($left, $right) {
+                $byGroup = (int) $left['term_group'] <=> (int) $right['term_group'];
+                if ($byGroup !== 0) {
+                    return $byGroup;
+                }
+                return strcmp((string) $left['slug'], (string) $right['slug']);
+            });
+            if ($languages === array()) {
+                return array();
+            }
+            return array(array('slug' => $languages[0]['slug']));
+        }
         if (strpos($query, "taxonomy = 'language'") !== false) {
-            if (!$this->hasLanguages) {
+            if (!$this->hasLanguages && $this->languages === array()) {
                 return array();
             }
             return array(array('term_taxonomy_id' => 1));
@@ -793,6 +927,99 @@ class Polylang_Terms_Database
             'name' => $term['name'],
             'slug' => $term['slug'],
             'taxonomy' => $term['taxonomy'],
+            'parent' => isset($term['parent']) ? (int) $term['parent'] : 0,
         );
+    }
+}
+
+if (!defined('ABSPATH')) {
+    define('ABSPATH', __DIR__);
+}
+if (!class_exists(Polylang_Terms::class, false)) {
+    require_once dirname(__DIR__, 2) . '/includes/tolka/class-polylang-terms.php';
+}
+
+/**
+ * Polylang API stand-in. It does not define global WordPress functions.
+ */
+class Polylang_Terms_ApiDouble extends Polylang_Terms
+{
+    /**
+     * @var array<int, string>
+     */
+    public $taxonomies = array('category', 'post_tag');
+
+    /**
+     * @var array<string, array<int, array<string, mixed>>>
+     */
+    public $listed = array();
+
+    /**
+     * @var array<int, array<string, int>|null>
+     */
+    public $maps = array();
+
+    /**
+     * @var array<int, string>
+     */
+    public $langs = array();
+
+    /**
+     * @var string
+     */
+    public $default = 'en';
+
+    /**
+     * @var array<int, string>
+     */
+    public $failedLists = array();
+
+    protected function apiReady()
+    {
+        return true;
+    }
+
+    protected function databaseReady()
+    {
+        return false;
+    }
+
+    protected function defaultLanguage()
+    {
+        return $this->default;
+    }
+
+    protected function translatedTaxonomies()
+    {
+        return $this->taxonomies;
+    }
+
+    protected function listTaxonomyTerms($taxonomy)
+    {
+        if (in_array($taxonomy, $this->failedLists, true)) {
+            return null;
+        }
+        if (!isset($this->listed[$taxonomy])) {
+            return array();
+        }
+        return $this->listed[$taxonomy];
+    }
+
+    protected function apiTranslationMap($termId)
+    {
+        $termId = (int) $termId;
+        if (!array_key_exists($termId, $this->maps)) {
+            return array();
+        }
+        return $this->maps[$termId];
+    }
+
+    protected function apiTermLanguage($termId)
+    {
+        $termId = (int) $termId;
+        if (!isset($this->langs[$termId])) {
+            return '';
+        }
+        return $this->langs[$termId];
     }
 }

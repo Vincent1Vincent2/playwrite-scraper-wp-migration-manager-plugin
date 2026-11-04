@@ -46,7 +46,8 @@ class Polylang_Terms
      * Export term translation groups and terms Polylang never linked.
      *
      * Each item has taxonomy, group (`term:{id}`), and translations.
-     * A translation is keyed by language slug and has id, name, and slug.
+     * A translation is keyed by language slug and has id, name, slug, and parent.
+     * parent is that language's WordPress parent term id, or 0 when the term has none.
      * The group id is the default-language term when that translation exists,
      * otherwise the lowest term id in the group.
      *
@@ -94,7 +95,7 @@ class Polylang_Terms
                 return $this->emptySnapshot($default, 'failed');
             }
         } elseif (!is_array($api)) {
-            $state = $this->polylangEvidence(array()) ? 'failed' : 'inactive';
+            $state = ($this->apiReady() || $this->polylangEvidence(array())) ? 'failed' : 'inactive';
             return $this->emptySnapshot($default, $state);
         }
 
@@ -116,6 +117,12 @@ class Polylang_Terms
         if (isset($snapshot['default_lang']) && is_string($snapshot['default_lang'])) {
             $default = trim($snapshot['default_lang']);
         }
+        $fallback = '';
+        if (isset($snapshot['fallback_lang']) && is_string($snapshot['fallback_lang'])) {
+            $fallback = trim($snapshot['fallback_lang']);
+        }
+        $assignLanguage = $default !== '' ? $default : $fallback;
+        $assignKind = $default !== '' ? 'default' : ($fallback !== '' ? 'stored' : '');
 
         $state = 'ok';
         if (isset($snapshot['state']) && is_string($snapshot['state']) && $snapshot['state'] !== '') {
@@ -137,7 +144,7 @@ class Polylang_Terms
 
         $loose = isset($snapshot['untranslated']) && is_array($snapshot['untranslated']) ? $snapshot['untranslated'] : array();
         foreach ($loose as $term) {
-            $item = $this->itemFromUntranslated($term, $default, $used, $unassigned);
+            $item = $this->itemFromUntranslated($term, $assignLanguage, $used, $unassigned);
             if ($item !== null) {
                 $items[] = $item;
             }
@@ -146,8 +153,10 @@ class Polylang_Terms
         if ($duplicate) {
             $errors[] = $this->text('A term is listed in more than one translation group. The extra copy was skipped.');
         }
-        if ($unassigned > 0 && $default !== '') {
-            $errors[] = $this->unassignedSentence($unassigned, $default);
+        if ($unassigned > 0 && $assignKind === 'default') {
+            $errors[] = $this->unassignedSentence($unassigned, $assignLanguage, 'default');
+        } elseif ($unassigned > 0 && $assignKind === 'stored') {
+            $errors[] = $this->unassignedSentence($unassigned, $assignLanguage, 'stored');
         } elseif ($unassigned > 0) {
             $errors[] = $this->countSentence(
                 $unassigned,
@@ -266,6 +275,7 @@ class Polylang_Terms
                     'id' => $id,
                     'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
                     'slug' => $this->stringValue(isset($term['slug']) ? $term['slug'] : ''),
+                    'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
                 ),
             ),
         );
@@ -363,8 +373,8 @@ class Polylang_Terms
         if ($apiFailures > 0) {
             $errors[] = $this->countSentence(
                 $apiFailures,
-                'A term translation could not be read and was skipped.',
-                '%d term translations could not be read and were skipped.'
+                'Polylang could not return one term translation. The export continued with the terms it could read.',
+                'Polylang could not return %d term translations. The export continued with the terms it could read.'
             );
         }
 
@@ -389,12 +399,14 @@ class Polylang_Terms
                 'id' => $termId,
                 'name' => $term['name'],
                 'slug' => $term['slug'],
+                'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
             );
         }
 
         return array(
             'state' => 'ok',
             'default_lang' => $default,
+            'fallback_lang' => $default === '' ? $this->fallbackLanguage() : '',
             'groups' => $groups,
             'untranslated' => $untranslated,
             'errors' => $this->uniqueStrings($errors),
@@ -436,6 +448,7 @@ class Polylang_Terms
                 'id' => $translatedId,
                 'name' => $details['name'],
                 'slug' => $details['slug'],
+                'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
             );
         }
 
@@ -581,6 +594,7 @@ class Polylang_Terms
                         'id' => $termId,
                         'name' => $term['name'],
                         'slug' => $term['slug'],
+                        'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
                     );
                 }
             }
@@ -594,6 +608,7 @@ class Polylang_Terms
         return array(
             'state' => $state,
             'default_lang' => $default,
+            'fallback_lang' => $default === '' ? $this->fallbackLanguage() : '',
             'groups' => $groups,
             'untranslated' => $untranslated,
             'errors' => $this->uniqueStrings($errors),
@@ -680,7 +695,7 @@ class Polylang_Terms
     /**
      * @return array<int, array<string, mixed>>|null
      */
-    private function listTaxonomyTerms($taxonomy)
+    protected function listTaxonomyTerms($taxonomy)
     {
         if (function_exists('get_terms')) {
             $listed = $this->listTaxonomyTermsWithApi($taxonomy);
@@ -755,7 +770,7 @@ class Polylang_Terms
     /**
      * @return array<int, string>
      */
-    private function translatedTaxonomies()
+    protected function translatedTaxonomies()
     {
         $fromModel = $this->taxonomiesFromModel();
         if ($fromModel !== array()) {
@@ -838,7 +853,7 @@ class Polylang_Terms
     /**
      * @return array<string, int>|null
      */
-    private function apiTranslationMap($termId)
+    protected function apiTranslationMap($termId)
     {
         if (!function_exists('pll_get_term_translations')) {
             return array();
@@ -860,7 +875,7 @@ class Polylang_Terms
     /**
      * @return string
      */
-    private function apiTermLanguage($termId)
+    protected function apiTermLanguage($termId)
     {
         if (!function_exists('pll_get_term_language')) {
             return '';
@@ -879,7 +894,7 @@ class Polylang_Terms
     /**
      * @return string
      */
-    private function defaultLanguage()
+    protected function defaultLanguage()
     {
         if (function_exists('pll_default_language')) {
             try {
@@ -988,7 +1003,7 @@ class Polylang_Terms
         }
 
         $placeholders = implode(', ', array_fill(0, count($clean), '%d'));
-        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent
             FROM {$terms} AS t
             INNER JOIN {$taxonomy} AS tt ON tt.term_id = t.term_id
             WHERE t.term_id IN ({$placeholders})";
@@ -1014,7 +1029,7 @@ class Polylang_Terms
         $all = array();
         $seen = array();
         $guard = 0;
-        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent
             FROM {$terms} AS t
             INNER JOIN {$taxonomyTable} AS tt ON tt.term_id = t.term_id
             WHERE tt.taxonomy = %s
@@ -1217,6 +1232,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term->name) ? $term->name : '');
             $slug = $this->stringValue(isset($term->slug) ? $term->slug : '');
             $taxonomy = $this->stringValue(isset($term->taxonomy) ? $term->taxonomy : '');
+            $parent = $this->parentId(isset($term->parent) ? $term->parent : 0);
         } elseif (is_array($term)) {
             if (isset($term['term_id'])) {
                 $id = (int) $term['term_id'];
@@ -1228,6 +1244,7 @@ class Polylang_Terms
             $name = $this->stringValue(isset($term['name']) ? $term['name'] : '');
             $slug = $this->stringValue(isset($term['slug']) ? $term['slug'] : '');
             $taxonomy = $this->stringValue(isset($term['taxonomy']) ? $term['taxonomy'] : '');
+            $parent = $this->parentId(isset($term['parent']) ? $term['parent'] : 0);
         } else {
             return null;
         }
@@ -1244,6 +1261,7 @@ class Polylang_Terms
             'name' => $name,
             'slug' => $slug,
             'taxonomy' => $taxonomy,
+            'parent' => $parent,
         );
     }
 
@@ -1257,10 +1275,12 @@ class Polylang_Terms
             $id = isset($row['id']) ? (int) $row['id'] : 0;
             $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
             $slug = $this->stringValue(isset($row['slug']) ? $row['slug'] : '');
+            $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
         } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
             $id = (int) $row;
             $name = '';
             $slug = '';
+            $parent = 0;
         } else {
             return null;
         }
@@ -1271,6 +1291,7 @@ class Polylang_Terms
             'id' => $id,
             'name' => $name,
             'slug' => $slug,
+            'parent' => $parent,
         );
     }
 
@@ -1397,7 +1418,7 @@ class Polylang_Terms
     /**
      * @return bool
      */
-    private function apiReady()
+    protected function apiReady()
     {
         return function_exists('pll_get_term_translations') && function_exists('get_terms');
     }
@@ -1405,7 +1426,7 @@ class Polylang_Terms
     /**
      * @return bool
      */
-    private function databaseReady()
+    protected function databaseReady()
     {
         global $wpdb;
         return is_object($wpdb)
@@ -1459,19 +1480,120 @@ class Polylang_Terms
      * @param int $count
      * @return string
      */
-    private function unassignedSentence($count, $default)
+    private function unassignedSentence($count, $language, $kind)
     {
+        if ($kind === 'stored') {
+            if ((int) $count === 1) {
+                return sprintf(
+                    $this->text('A term has no Polylang language. It is included under %s, the first language stored by Polylang, so it is not dropped.'),
+                    $language
+                );
+            }
+            return sprintf(
+                $this->text('%1$d terms have no Polylang language. They are included under %2$s, the first language stored by Polylang, so they are not dropped.'),
+                (int) $count,
+                $language
+            );
+        }
+
         if ((int) $count === 1) {
             return sprintf(
                 $this->text('A term has no Polylang language. It is included under the default language (%s) so it is not dropped.'),
-                $default
+                $language
             );
         }
         return sprintf(
             $this->text('%1$d terms have no Polylang language. They are included under the default language (%2$s) so they are not dropped.'),
             (int) $count,
-            $default
+            $language
         );
+    }
+
+    /**
+     * Language to use when a term has none and the site has no default.
+     *
+     * @return string
+     */
+    private function fallbackLanguage()
+    {
+        $fromApi = $this->firstApiLanguage();
+        if ($fromApi !== '') {
+            return $fromApi;
+        }
+        return $this->firstStoredLanguage();
+    }
+
+    /**
+     * @return string
+     */
+    private function firstApiLanguage()
+    {
+        if (!function_exists('pll_languages_list')) {
+            return '';
+        }
+        try {
+            $list = pll_languages_list(array('fields' => 'slug'));
+        } catch (\Throwable $e) {
+            return '';
+        }
+        if (!is_array($list)) {
+            return '';
+        }
+        foreach ($list as $slug) {
+            if (is_string($slug) && trim($slug) !== '') {
+                return trim($slug);
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @return string
+     */
+    private function firstStoredLanguage()
+    {
+        if (!$this->databaseReady()) {
+            return '';
+        }
+        $terms = $this->table('terms');
+        $taxonomy = $this->table('term_taxonomy');
+        if ($terms === '' || $taxonomy === '') {
+            return '';
+        }
+        $rows = $this->dbResults(
+            "SELECT lang.slug
+            FROM {$terms} AS lang
+            INNER JOIN {$taxonomy} AS tt ON tt.term_id = lang.term_id
+            WHERE tt.taxonomy = 'language'
+            ORDER BY lang.term_group ASC, lang.slug ASC
+            LIMIT 1"
+        );
+        if (!is_array($rows) || $rows === array() || !isset($rows[0]['slug'])) {
+            return '';
+        }
+        $slug = trim($this->stringValue($rows[0]['slug']));
+        if (strpos($slug, 'pll_') === 0) {
+            $slug = substr($slug, 4);
+        }
+        return $slug;
+    }
+
+    /**
+     * @param mixed $value
+     * @return int
+     */
+    private function parentId($value)
+    {
+        if (is_int($value)) {
+            return $value > 0 ? $value : 0;
+        }
+        if (is_string($value) && preg_match('/^[0-9]+$/', $value)) {
+            return (int) $value;
+        }
+        if (is_float($value) && is_finite($value) && $value > 0 && floor($value) === $value && $value <= PHP_INT_MAX) {
+            return (int) $value;
+        }
+        return 0;
     }
 
     /**
