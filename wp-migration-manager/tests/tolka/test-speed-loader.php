@@ -871,6 +871,10 @@ class Speed_Loader_Test extends TestCase
             'ipv6 link local' => array('http://[fe80::1]/secret'),
             'protocol relative' => array('//127.0.0.1/hidden'),
             'unbracketed ipv6' => array('http://::1/secret'),
+            'unspecified v4' => array('http://0.0.0.0/x'),
+            'unspecified v6' => array('http://[::]/x'),
+            'ten boundary' => array('http://10.255.255.255/'),
+            'lan boundary' => array('http://192.168.255.255/'),
         );
     }
 
@@ -1020,6 +1024,107 @@ class Speed_Loader_Test extends TestCase
             Speed_Loader_Harness::$requested_urls
         );
         $this->assertNotContains('https://example.com/e', Speed_Loader_Harness::$requested_urls);
+    }
+
+    public function test_parent_relative_redirect_stays_on_the_public_host()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$queue = array(
+            $this->http_response(302, '', '../home'),
+            $this->http_response(200, '<html>home</html>'),
+        );
+
+        $result = Speed_Loader_Harness::measure('https://example.com/dir/page');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('https://example.com/home', $result['url']);
+        $this->assertSame(
+            array('https://example.com/dir/page', 'https://example.com/home'),
+            Speed_Loader_Harness::$requested_urls
+        );
+    }
+
+    public function test_query_redirect_keeps_the_public_host()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$queue = array(
+            $this->http_response(302, '', '?lang=en'),
+            $this->http_response(200, '<html>en</html>'),
+        );
+
+        $result = Speed_Loader_Harness::measure('https://example.com/pricing');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('https://example.com/pricing?lang=en', $result['url']);
+        $this->assertSame(
+            array('https://example.com/pricing', 'https://example.com/pricing?lang=en'),
+            Speed_Loader_Harness::$requested_urls
+        );
+    }
+
+    public function test_location_header_list_is_read_before_the_next_hop()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        $redirect = $this->http_response(302, '<html>secret</html>');
+        $redirect['headers']['Location'] = array('http://10.2.2.2/secret', 'https://example.com/later');
+        Speed_Loader_Harness::$queue = array(
+            $redirect,
+            $this->http_response(200, '<html>later</html>'),
+        );
+
+        $result = Speed_Loader_Harness::measure('https://example.com/');
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('', $result['html']);
+        $this->assertSame(302, $result['status_code']);
+        $this->assertSame(array('https://example.com/'), Speed_Loader_Harness::$requested_urls);
+        $this->assertStringNotContainsString('secret', (string) json_encode($result));
+    }
+
+    public function test_redirect_to_an_error_page_drops_that_html()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$delay_us = 80000;
+        Speed_Loader_Harness::$queue = array(
+            $this->http_response(302, '<html>hop</html>', 'https://example.com/missing'),
+            $this->http_response(404, '<html>secret missing</html>'),
+        );
+
+        $result = Speed_Loader_Harness::measure('https://example.com/');
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('', $result['html']);
+        $this->assertSame(0, $result['html_bytes']);
+        $this->assertSame(404, $result['status_code']);
+        $this->assertGreaterThanOrEqual(50, $result['total_ms']);
+        $this->assertSame(
+            array('https://example.com/', 'https://example.com/missing'),
+            Speed_Loader_Harness::$requested_urls
+        );
+        $this->assertStringNotContainsString('secret', (string) json_encode($result));
+    }
+
+    public function test_status_outside_success_range_drops_html()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+
+        foreach (array(100, 199, 300, 600) as $code) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            Speed_Loader_Harness::$response = $this->http_response($code, '<html>secret</html>');
+            $result = Speed_Loader_Harness::measure('https://example.com/');
+
+            $this->assertFalse($result['ok'], (string) $code);
+            $this->assertSame('', $result['html'], (string) $code);
+            $this->assertSame($code, $result['status_code'], (string) $code);
+            $this->assertGreaterThanOrEqual(0, $result['total_ms'], (string) $code);
+            $this->assertStringNotContainsString('secret', (string) json_encode($result));
+        }
     }
 
     public function test_error_status_keeps_timing_and_drops_html()
