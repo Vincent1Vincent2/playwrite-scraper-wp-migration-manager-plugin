@@ -508,6 +508,50 @@ HTML;
         $this->assertSame(2, $result['stylesheet_count']);
     }
 
+    public function test_preload_link_does_not_count_as_a_stylesheet()
+    {
+        $cases = array(
+            '<link rel="preload" as="style" href="/fonts.css">',
+            '<link rel="preload" href="/a.css" as="style" onload="this.rel=\'stylesheet\'">',
+            '<link rel="modulepreload" href="/app.js">',
+            '<link rel="prefetch" as="style" href="/a.css">',
+            '<link rel="preload" as="style" media="print" href="/print.css">',
+            '<link rel=preload as=font href=/font.woff2 crossorigin>',
+            '<link rel="dns-prefetch" href="//fonts.example">',
+            '<link rel="preconnect" href="https://fonts.example" crossorigin>',
+        );
+
+        foreach ($cases as $html) {
+            $result = $this->analyze($html);
+
+            $this->assertSame(0, $result['stylesheet_count'], $html);
+            $this->assertSame(1, $result['language_count'], $html);
+        }
+    }
+
+    public function test_two_stylesheets_one_print_count_as_two()
+    {
+        $html = '<link rel="stylesheet" href="/screen.css"><link rel="preload" as="style" href="/fonts.css"><link rel="stylesheet" href="/print.css" media="print">';
+        $result = $this->analyze($html);
+
+        $this->assertSame(2, $result['stylesheet_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+
+        $unquoted = $this->analyze('<link rel=preload as=font href=/font.woff2 crossorigin><link href=/style.css rel=stylesheet><link rel=stylesheet href=/print.css media=print>');
+        $this->assertSame(2, $unquoted['stylesheet_count']);
+
+        $fallback = $this->analyze('<link rel="stylesheet" href="/screen.css"><link rel="stylesheet" href="/print.css" media="print" onload="this.media=\'all\'"><noscript><link rel="stylesheet" href="/print.css" media="all"></noscript><link rel="preload" as="style" href="/fonts.css">');
+        $this->assertSame(2, $fallback['stylesheet_count']);
+
+        $tag = '<link rel="stylesheet" href="/screen.css"><link rel="preload" as="style" href="/fonts.css"><link rel="stylesheet" href="/print.css" media="print">';
+        $capped = str_repeat(' ', 2000000 - strlen($tag)) . $tag;
+        $this->assertSame(2000000, strlen($capped));
+        $capped_result = $this->analyze($capped);
+        $this->assertTrue($capped_result['truncated']);
+        $this->assertSame(2, $capped_result['stylesheet_count']);
+    }
+
     public function test_stylesheet_link_with_media_print_still_counts()
     {
         $cases = array(
