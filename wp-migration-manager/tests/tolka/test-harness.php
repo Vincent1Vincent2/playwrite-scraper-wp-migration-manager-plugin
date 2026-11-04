@@ -1220,6 +1220,154 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertSame('class-polylang-detector.php', wmm_tolka_class_basename('WMM\\Tolka\\Polylang_Detector'));
         $this->assertSame('class-tolka-schema.php', wmm_tolka_class_basename('\\WMM\\Tolka\\Tolka_Schema'));
         $this->assertSame('', wmm_tolka_class_basename('   '));
+        $this->assertSame('WMM\\Tolka\\Speed_Estimate', wmm_tolka_expected_class('class-speed-estimate.php'));
+        $this->assertSame('WMM\\Tolka\\Polylang_Detector', wmm_tolka_expected_class('class-polylang-detector.php'));
+        $this->assertSame('WMM\\Tolka\\Migration_Runner', wmm_tolka_expected_class('class-migration-runner.php'));
+        $this->assertSame('', wmm_tolka_expected_class('bootstrap.php'));
+    }
+
+    /**
+     * A file that loads under the wrong class name skips instead of failing.
+     */
+    public function test_loaded_file_without_its_class_skips_with_a_finished_sentence()
+    {
+        $directory = $this->make_temp_dir();
+        file_put_contents(
+            $directory . '/class-orphan-shell.php',
+            "<?php\nnamespace WMM\\Tolka;\n\nclass Different_Name\n{\n}\n"
+        );
+        $previous_undefined = wmm_tolka_undefined_classes();
+
+        try {
+            $loaded = wmm_tolka_load_classes($directory);
+            $found = false;
+
+            foreach ($loaded as $path) {
+                if (basename($path) === 'class-orphan-shell.php') {
+                    $found = true;
+                }
+            }
+
+            $this->assertTrue($found);
+            $this->assertTrue(class_exists('WMM\\Tolka\\Different_Name', false));
+            $this->assertFalse(class_exists('WMM\\Tolka\\Orphan_Shell', false));
+
+            try {
+                wmm_tolka_skip_without_class('Orphan_Shell');
+                $this->fail('A file that does not define its class should skip the test.');
+            } catch (Throwable $error) {
+                $this->assertTrue($this->is_skip_exception($error), get_class($error));
+                $this->assertStringContainsString('WMM\\Tolka\\Orphan_Shell', $error->getMessage());
+                $this->assertStringContainsString('class-orphan-shell.php', $error->getMessage());
+                $this->assertStringContainsString('did not define', $error->getMessage());
+                $this->assertStringContainsString('skipped', strtolower($error->getMessage()));
+                $this->assertStringNotContainsString('class file is missing', $error->getMessage());
+                $this->assert_finished_sentence($error->getMessage(), 'orphan shell');
+            }
+        } finally {
+            $GLOBALS['wmm_tolka_undefined_classes'] = $previous_undefined;
+        }
+    }
+
+    /**
+     * An empty class file is an empty state. PHPUnit records a skip, not a failure.
+     */
+    public function test_empty_class_file_is_skipped_instead_of_failed()
+    {
+        $directory = $this->make_temp_dir();
+        file_put_contents($directory . '/class-blank-shell.php', "<?php\n");
+        $previous_undefined = wmm_tolka_undefined_classes();
+
+        try {
+            wmm_tolka_load_classes($directory);
+            $this->assertFalse(class_exists('WMM\\Tolka\\Blank_Shell', false));
+            wmm_tolka_skip_without_class('Blank_Shell');
+        } finally {
+            $GLOBALS['wmm_tolka_undefined_classes'] = $previous_undefined;
+        }
+    }
+
+    /**
+     * The same short name in the global namespace is not the Tolka class.
+     */
+    public function test_global_class_with_the_file_name_still_skips()
+    {
+        $directory = $this->make_temp_dir();
+        file_put_contents(
+            $directory . '/class-global-shell.php',
+            "<?php\nclass Global_Shell\n{\n}\n"
+        );
+        $previous_undefined = wmm_tolka_undefined_classes();
+
+        try {
+            wmm_tolka_load_classes($directory);
+            $this->assertTrue(class_exists('Global_Shell', false));
+            $this->assertFalse(class_exists('WMM\\Tolka\\Global_Shell', false));
+
+            try {
+                wmm_tolka_skip_without_class('Global_Shell');
+                $this->fail('A global class should not satisfy the Tolka namespace.');
+            } catch (Throwable $error) {
+                $this->assertTrue($this->is_skip_exception($error), get_class($error));
+                $this->assertStringContainsString('did not define', $error->getMessage());
+                $this->assertStringContainsString('WMM\\Tolka\\Global_Shell', $error->getMessage());
+                $this->assert_finished_sentence($error->getMessage(), 'global shell');
+            }
+        } finally {
+            $GLOBALS['wmm_tolka_undefined_classes'] = $previous_undefined;
+        }
+    }
+
+    /**
+     * One loaded-but-undefined class skips a list, and loaded classes stay out of the reason.
+     */
+    public function test_a_list_skips_when_one_loaded_file_omits_its_class()
+    {
+        $directory = $this->make_temp_dir();
+        file_put_contents(
+            $directory . '/class-list-shell.php',
+            "<?php\nnamespace WMM\\Tolka;\nclass Not_List_Shell {}\n"
+        );
+        $previous_undefined = wmm_tolka_undefined_classes();
+
+        try {
+            wmm_tolka_load_classes($directory);
+
+            try {
+                wmm_tolka_skip_without_class(array('Harness_Test', 'List_Shell'));
+                $this->fail('A list with one missing class should skip.');
+            } catch (Throwable $error) {
+                $this->assertTrue($this->is_skip_exception($error), get_class($error));
+                $this->assertStringContainsString('WMM\\Tolka\\List_Shell', $error->getMessage());
+                $this->assertStringContainsString('did not define', $error->getMessage());
+                $this->assertStringNotContainsString('Harness_Test', $error->getMessage());
+                $this->assert_finished_sentence($error->getMessage(), 'list shell');
+            }
+        } finally {
+            $GLOBALS['wmm_tolka_undefined_classes'] = $previous_undefined;
+        }
+    }
+
+    /**
+     * A file that defines the class its name promises is not skipped.
+     */
+    public function test_loaded_file_that_defines_its_class_is_not_skipped()
+    {
+        $directory = $this->make_temp_dir();
+        file_put_contents(
+            $directory . '/class-present-shell.php',
+            "<?php\nnamespace WMM\\Tolka;\n\nclass Present_Shell\n{\n    public static function ok()\n    {\n        return true;\n    }\n}\n"
+        );
+        $previous_undefined = wmm_tolka_undefined_classes();
+
+        try {
+            wmm_tolka_load_classes($directory);
+            wmm_tolka_skip_without_class('Present_Shell');
+            $this->assertTrue(\WMM\Tolka\Present_Shell::ok());
+            $this->assertArrayNotHasKey('class-present-shell.php', wmm_tolka_undefined_classes());
+        } finally {
+            $GLOBALS['wmm_tolka_undefined_classes'] = $previous_undefined;
+        }
     }
 
     /**

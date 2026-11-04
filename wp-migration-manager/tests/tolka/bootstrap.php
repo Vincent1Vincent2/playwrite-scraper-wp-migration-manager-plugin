@@ -97,6 +97,67 @@ if (!function_exists('wmm_tolka_class_basename')) {
     }
 }
 
+if (!function_exists('wmm_tolka_expected_class')) {
+    /**
+     * Class name a class-*.php file is expected to define.
+     *
+     * class-speed-estimate.php becomes WMM\Tolka\Speed_Estimate.
+     *
+     * @param string $basename File name.
+     * @return string
+     */
+    function wmm_tolka_expected_class($basename)
+    {
+        $stem = strtolower((string) $basename);
+
+        if (substr($stem, -4) === '.php') {
+            $stem = substr($stem, 0, -4);
+        }
+
+        if (strpos($stem, 'class-') !== 0) {
+            return '';
+        }
+
+        $stem = substr($stem, strlen('class-'));
+
+        if ($stem === '') {
+            return '';
+        }
+
+        $words = array();
+
+        foreach (explode('-', $stem) as $part) {
+            if ($part === '') {
+                continue;
+            }
+
+            $words[] = ucfirst($part);
+        }
+
+        if (empty($words)) {
+            return '';
+        }
+
+        return 'WMM\\Tolka\\' . implode('_', $words);
+    }
+}
+
+if (!function_exists('wmm_tolka_undefined_classes')) {
+    /**
+     * Files that loaded but did not define the class their name promises.
+     *
+     * @return array<string, string>
+     */
+    function wmm_tolka_undefined_classes()
+    {
+        if (!isset($GLOBALS['wmm_tolka_undefined_classes']) || !is_array($GLOBALS['wmm_tolka_undefined_classes'])) {
+            $GLOBALS['wmm_tolka_undefined_classes'] = array();
+        }
+
+        return $GLOBALS['wmm_tolka_undefined_classes'];
+    }
+}
+
 if (!function_exists('wmm_tolka_load_errors')) {
     /**
      * Load failures recorded for class files that exist but did not finish.
@@ -162,8 +223,11 @@ if (!function_exists('wmm_tolka_skip_without_class')) {
             $missing[] = $normalized;
             $basename = wmm_tolka_class_basename($normalized);
             $load_errors = wmm_tolka_load_errors();
+            $undefined = wmm_tolka_undefined_classes();
 
-            if ($basename !== '' && isset($load_errors[$basename])) {
+            if ($basename !== '' && isset($undefined[$basename])) {
+                $errors[] = $undefined[$basename];
+            } elseif ($basename !== '' && isset($load_errors[$basename])) {
                 $errors[] = $load_errors[$basename];
             }
         }
@@ -176,14 +240,25 @@ if (!function_exists('wmm_tolka_skip_without_class')) {
             wmm_tolka_mark_skipped('This test did not name a Tolka class, so it was skipped.');
         }
 
+        $note = '';
+
         if (count($missing) === 1) {
-            $message = $missing[0] . ' is not loaded, so this test was skipped. The suite keeps running when that class file is missing.';
+            $basename = wmm_tolka_class_basename($missing[0]);
+            $undefined = wmm_tolka_undefined_classes();
+
+            if ($basename !== '' && isset($undefined[$basename])) {
+                $message = $missing[0] . ' is not defined, so this test was skipped. ' . $undefined[$basename];
+            } else {
+                $message = $missing[0] . ' is not loaded, so this test was skipped. The suite keeps running when that class file is missing.';
+                $note = !empty($errors) ? ' ' . implode(' ', $errors) : '';
+            }
         } else {
             $message = 'These Tolka classes are not loaded, so this test was skipped: ' . implode(', ', $missing) . '. The suite keeps running when those class files are missing.';
+            $note = !empty($errors) ? ' ' . implode(' ', $errors) : '';
         }
 
-        if (!empty($errors)) {
-            $message .= ' ' . implode(' ', $errors);
+        if ($note !== '') {
+            $message .= $note;
         }
 
         wmm_tolka_mark_skipped($message);
@@ -472,7 +547,9 @@ if (!function_exists('wmm_tolka_load_classes')) {
      * A missing directory is an empty state and loads nothing. A file that
      * exists but cannot be read, or that has a syntax error, stops the suite
      * with a clear message. A file that hits a missing WordPress API while it
-     * is loading is recorded, and tests that need its class can skip.
+     * is loading is recorded, and tests that need its class can skip. A file
+     * that loads but does not define the class its name promises is recorded
+     * the same way, and the suite keeps running.
      *
      * @param string|null $directory Optional directory. Tests pass a temp path.
      * @return string[] Loaded file paths.
@@ -549,6 +626,16 @@ if (!function_exists('wmm_tolka_load_classes')) {
 
                 $GLOBALS['wmm_tolka_load_errors'][basename($file)] = $sentence;
                 continue;
+            }
+
+            $expected = wmm_tolka_expected_class(basename($file));
+
+            if ($expected !== '' && !class_exists($expected, false)) {
+                if (!isset($GLOBALS['wmm_tolka_undefined_classes']) || !is_array($GLOBALS['wmm_tolka_undefined_classes'])) {
+                    $GLOBALS['wmm_tolka_undefined_classes'] = array();
+                }
+
+                $GLOBALS['wmm_tolka_undefined_classes'][basename($file)] = basename($file) . ' loaded, but it did not define ' . $expected . '.';
             }
 
             $loaded[] = $file;
