@@ -215,21 +215,37 @@ class Speed_Metrics
                 continue;
             }
 
-            $copied = false;
+            $next_char = ($next + 1 < $length) ? $lower_html[$next + 1] : '';
 
-            foreach (self::raw_text_elements() as $name) {
-                if (!self::opens_element($lower_html, $next, $name)) {
+            if ($next_char >= 'a' && $next_char <= 'z') {
+                $tag = self::read_tag($lower_html, $next, $length);
+                $name = self::tag_name($tag['html']);
+
+                if (in_array($name, self::raw_text_elements(), true)) {
+                    $chunks[] = $tag['html'];
+                    $close = self::find_close($lower_html, $tag['next'], $name);
+
+                    if ($close === null) {
+                        $chunks[] = self::strip_comment_spans(substr($lower_html, $tag['next']));
+                        break;
+                    }
+
+                    $chunks[] = self::strip_comment_spans(substr(
+                        $lower_html,
+                        $tag['next'],
+                        $close['body_end'] - $tag['next']
+                    ));
+                    $chunks[] = substr(
+                        $lower_html,
+                        $close['body_end'],
+                        $close['next'] - $close['body_end']
+                    );
+                    $i = $close['next'];
                     continue;
                 }
 
-                $end = self::skip_element($lower_html, $next, $name);
-                $chunks[] = self::strip_comment_spans(substr($lower_html, $next, $end - $next));
-                $i = $end;
-                $copied = true;
-                break;
-            }
-
-            if ($copied) {
+                $chunks[] = $tag['html'];
+                $i = $tag['next'] > $next ? $tag['next'] : $next + 1;
                 continue;
             }
 
@@ -277,6 +293,63 @@ class Speed_Metrics
         }
 
         return implode('', $chunks);
+    }
+
+    /**
+     * Lowercased name of one start tag.
+     *
+     * @param string $tag Start tag.
+     * @return string
+     */
+    private static function tag_name($tag)
+    {
+        $length = strlen($tag);
+        $i = 1;
+
+        while ($i < $length && !self::is_ascii_space($tag[$i]) && $tag[$i] !== '>' && $tag[$i] !== '/') {
+            $i++;
+        }
+
+        return substr($tag, 1, $i - 1);
+    }
+
+    /**
+     * Locate the end tag that closes a raw element, or null when it was cut off.
+     *
+     * @param string $html Lowercased HTML.
+     * @param int    $body_start Offset just after the opening tag.
+     * @param string $name Lowercased element name.
+     * @return array{body_end:int,next:int}|null
+     */
+    private static function find_close($html, $body_start, $name)
+    {
+        $length = strlen($html);
+        $close = '</' . $name;
+        $close_length = strlen($close);
+        $pos = $body_start;
+
+        while (($end = strpos($html, $close, $pos)) !== false) {
+            $j = $end + $close_length;
+
+            while ($j < $length && self::is_ascii_space($html[$j])) {
+                $j++;
+            }
+
+            if ($j >= $length) {
+                return null;
+            }
+
+            if ($html[$j] === '>') {
+                return array(
+                    'body_end' => $end,
+                    'next' => $j + 1,
+                );
+            }
+
+            $pos = $end + 1;
+        }
+
+        return null;
     }
 
     /**

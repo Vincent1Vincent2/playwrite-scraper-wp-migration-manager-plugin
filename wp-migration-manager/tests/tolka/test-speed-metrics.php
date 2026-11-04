@@ -73,6 +73,37 @@ class Speed_Metrics_Test extends TestCase
         $this->assertFalse($result['truncated']);
     }
 
+    public function test_the_page_url_is_not_scanned_for_a_switcher()
+    {
+        $html = '<p>One language brochure.</p>';
+        $result = $this->analyze($html, array(
+            'ok' => false,
+            'url' => 'https://example.com/polylang/lang-item/pll-switcher/',
+            'error' => 'pll-parent-menu-item',
+            'html_bytes' => strlen($html),
+        ));
+
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertFalse($result['truncated']);
+    }
+
+    public function test_not_ok_measurement_ignores_a_commented_switcher()
+    {
+        $html = '<!-- lang-item pll-switcher polylang pll-parent-menu-item -->';
+        $result = $this->analyze($html, array(
+            'ok' => false,
+            'error' => 'The site did not respond.',
+            'html_bytes' => strlen($html),
+        ));
+
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertFalse($result['truncated']);
+    }
+
     public function test_failed_measurement_with_empty_html_stays_empty()
     {
         $result = $this->analyze_measurement(array(
@@ -240,6 +271,7 @@ HTML;
 <link rel="alternate" href="https://example.com/" hreflang="en" />
 <link rel="alternate" href="https://example.com/en/" hreflang="EN" />
 <link rel="alternate" href="https://example.com/en-2/" hreflang="En" />
+<link rel="alternate" href="https://example.com/en-3/" hreflang='EN' />
 <link rel="alternate" href="https://example.com/us/" hreflang="en-US" />
 <link rel="alternate" href="https://example.com/us-2/" hreflang="EN-us" />
 <link rel="alternate" href="https://example.com/sv/" hreflang="sv" />
@@ -641,6 +673,73 @@ HTML;
         $this->assertFalse($only_inside_script['has_polylang_switcher']);
         $this->assertSame(1, $only_inside_script['language_count']);
         $this->assertSame(1, $only_inside_script['script_count']);
+    }
+
+    public function test_comment_syntax_inside_an_attribute_is_not_a_switcher()
+    {
+        $html = '<div class="lang<!-- x -->-item"></div><link title="<!-- note -->" rel="stylesheet" href="/theme.css">';
+        $result = $this->analyze($html);
+
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertSame(1, $result['stylesheet_count']);
+
+        $live = $this->analyze('<div class="lang-item"></div>');
+        $this->assertTrue($live['has_polylang_switcher']);
+        $this->assertSame(2, $live['language_count']);
+    }
+
+    public function test_truncated_prefixes_ignore_a_commented_switcher()
+    {
+        $html = <<<'HTML'
+<!-- POLYLANG pll-switcher lang-item pll-parent-menu-item -->
+<link rel="stylesheet" href="/style.css">
+<nav class="pll-switcher"></nav>
+<link rel="alternate" hreflang="EN" href="/" />
+<link rel="alternate" hreflang="en" href="/en/" />
+<link rel="alternate" hreflang="sv" href="/sv/" />
+HTML;
+        $live = strpos($html, 'pll-switcher', strpos($html, '-->') + 3);
+        $live_end = $live + strlen('pll-switcher');
+        $length = strlen($html);
+        $previous = null;
+
+        for ($i = 0; $i <= $length; $i++) {
+            $result = $this->analyze_measurement(array(
+                'html' => substr($html, 0, $i),
+                'html_bytes' => $length,
+            ));
+
+            if ($i === 0 || $i === $length) {
+                $this->assertFalse($result['truncated'], 'byte ' . $i);
+            } else {
+                $this->assertTrue($result['truncated'], 'byte ' . $i);
+            }
+
+            if ($i < $live_end) {
+                $this->assertFalse($result['has_polylang_switcher'], 'byte ' . $i);
+                $this->assertSame(0, $result['hreflang_count'], 'byte ' . $i);
+                $this->assertSame(1, $result['language_count'], 'byte ' . $i);
+            } elseif ($result['hreflang_count'] === 0) {
+                $this->assertTrue($result['has_polylang_switcher'], 'byte ' . $i);
+                $this->assertSame(2, $result['language_count'], 'byte ' . $i);
+            }
+
+            if ($previous !== null) {
+                $this->assertGreaterThanOrEqual($previous['hreflang_count'], $result['hreflang_count'], 'byte ' . $i);
+                $this->assertGreaterThanOrEqual($previous['stylesheet_count'], $result['stylesheet_count'], 'byte ' . $i);
+                if ($previous['has_polylang_switcher']) {
+                    $this->assertTrue($result['has_polylang_switcher'], 'byte ' . $i);
+                }
+            }
+
+            $previous = $result;
+        }
+
+        $this->assertSame(2, $previous['hreflang_count']);
+        $this->assertSame(2, $previous['language_count']);
+        $this->assertTrue($previous['has_polylang_switcher']);
+        $this->assertSame(1, $previous['stylesheet_count']);
     }
 
     public function test_unclosed_script_hides_the_rest_of_a_cut_body()
