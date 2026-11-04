@@ -37,7 +37,11 @@ class Migration_Report
     public static function format(array $run): array
     {
         $report = self::compose($run);
-        self::remember($report);
+        $report['errors'] = array();
+
+        if (self::remember($report) === false) {
+            $report = self::note_save_failure($report);
+        }
 
         return $report;
     }
@@ -92,15 +96,39 @@ class Migration_Report
     /**
      * Store the report for the next time the site owner opens the screen.
      *
+     * Missing update_option is not a failure. A false return means the save
+     * was refused.
+     *
      * @param array $report Formatted report.
+     * @return bool True when there is nothing to do or the option was saved.
      */
     private static function remember(array $report)
     {
         if (!function_exists('update_option')) {
-            return;
+            return true;
         }
 
-        update_option(self::OPTION_LAST_REPORT, $report);
+        return update_option(self::OPTION_LAST_REPORT, $report) !== false;
+    }
+
+    /**
+     * Keep the migration result and record that this report was not stored.
+     *
+     * @param array $report Formatted report.
+     * @return array
+     */
+    private static function note_save_failure(array $report)
+    {
+        $message = self::text('The report could not be saved.');
+        if (!isset($report['errors']) || !is_array($report['errors'])) {
+            $report['errors'] = array();
+        }
+
+        $report['errors'][] = $message;
+        $report['summary'] = trim($report['summary'] . ' ' . $message);
+        $report['lines'][] = self::line(self::text('Report'), $message);
+
+        return $report;
     }
 
     /**

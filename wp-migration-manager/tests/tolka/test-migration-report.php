@@ -629,7 +629,9 @@ class Test_Migration_Report extends TestCase
             $this->assertArrayHasKey('title', $report);
             $this->assertArrayHasKey('summary', $report);
             $this->assertArrayHasKey('lines', $report);
-            $this->assertCount(4, $report);
+            $this->assertArrayHasKey('errors', $report);
+            $this->assertSame(array(), $report['errors']);
+            $this->assertCount(5, $report);
 
             foreach ($report['lines'] as $line) {
                 $this->assertIsString($line['label']);
@@ -1173,6 +1175,92 @@ class Test_Migration_Report extends TestCase
         );
     }
 
+    public function test_missing_update_option_does_not_fatal()
+    {
+        if (function_exists('update_option')) {
+            $this->markTestSkipped('update_option is already loaded.');
+        }
+
+        $report = $this->format_run(array(
+            'languages' => 1,
+            'posts' => 1,
+        ));
+
+        $this->assertSame('The migration is complete.', $report['title']);
+        $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertStringNotContainsString('could not be saved', $report['summary']);
+        $this->assertSame(array(), $report['errors']);
+        $this->assertSame('1 language', $this->line($report, 'Languages'));
+        $this->assertSame('1 post', $this->line($report, 'Posts'));
+    }
+
+    public function test_update_option_false_keeps_a_complete_report()
+    {
+        $class = dirname(__DIR__, 2) . '/includes/tolka/class-migration-report.php';
+        $script = '<?php
+define("ABSPATH", "/tmp/");
+function update_option($option, $value, $autoload = null) {
+    return false;
+}
+require ' . var_export($class, true) . ';
+$clean = \\WMM\\Tolka\\Migration_Report::format(array(
+    "ok" => true,
+    "counts" => array("languages" => 2, "posts" => 3),
+    "write" => array("ok" => true),
+));
+$failed = \\WMM\\Tolka\\Migration_Report::format(array(
+    "ok" => false,
+    "counts" => array("languages" => 1, "menus" => 2),
+    "write" => null,
+    "errors" => array("Polylang is not active"),
+));
+echo json_encode(array("clean" => $clean, "failed" => $failed));
+';
+        $tmp = tempnam(sys_get_temp_dir(), 'wmm-report');
+        file_put_contents($tmp, $script);
+        $output = array();
+        $exit = 0;
+        exec('php ' . escapeshellarg($tmp) . ' 2>&1', $output, $exit);
+        unlink($tmp);
+
+        $this->assertSame(0, $exit, implode("\n", $output));
+        $decoded = json_decode(implode("\n", $output), true);
+        $this->assertIsArray($decoded);
+
+        $clean = $decoded['clean'];
+        $this->assertTrue($clean['ok']);
+        $this->assertSame('The migration is complete.', $clean['title']);
+        $this->assertStringContainsString('2 languages', $clean['summary']);
+        $this->assertStringContainsString('Polylang data was left in place.', $clean['summary']);
+        $this->assertStringContainsString('The report could not be saved.', $clean['summary']);
+        $this->assertSame(array('The report could not be saved.'), $clean['errors']);
+        $this->assert_saved_failure_keeps_sections($clean, array(
+            'Languages' => '2 languages',
+            'Posts' => '3 posts',
+            'Terms' => '0 terms',
+            'Strings' => '0 strings',
+            'Menus' => '0 menus',
+            'Media' => '0 media items',
+        ));
+
+        $failed = $decoded['failed'];
+        $this->assertFalse($failed['ok']);
+        $this->assertSame('The migration did not finish.', $failed['title']);
+        $this->assertStringNotContainsString('The migration is complete', $failed['title']);
+        $this->assertStringNotContainsString('The migration is complete', $failed['summary']);
+        $this->assertStringContainsString('Polylang is not active.', $failed['summary']);
+        $this->assertStringContainsString('The report could not be saved.', $failed['summary']);
+        $this->assertSame(array('The report could not be saved.'), $failed['errors']);
+        $this->assert_saved_failure_keeps_sections($failed, array(
+            'Languages' => '1 language',
+            'Posts' => '0 posts',
+            'Terms' => '0 terms',
+            'Strings' => '0 strings',
+            'Menus' => '2 menus',
+            'Media' => '0 media items',
+        ));
+    }
+
     public function test_stores_the_report_when_wordpress_options_exist()
     {
         if (!function_exists('update_option') || !function_exists('get_option')) {
@@ -1181,6 +1269,30 @@ class Test_Migration_Report extends TestCase
 
         $report = $this->format_run(array('languages' => 1));
         $this->assertSame($report, get_option(Migration_Report::OPTION_LAST_REPORT));
+    }
+
+    /**
+     * @param array                $report   Formatted report.
+     * @param array<string, string> $expected Section label to value.
+     */
+    private function assert_saved_failure_keeps_sections(array $report, array $expected)
+    {
+        $labels = array();
+        foreach ($report['lines'] as $line) {
+            if (isset($expected[$line['label']])) {
+                $labels[] = $line['label'];
+                $this->assertSame($expected[$line['label']], $line['value']);
+            }
+        }
+
+        $this->assertSame(array('Languages', 'Posts', 'Terms', 'Strings', 'Menus', 'Media'), $labels);
+        $values = array();
+        foreach ($report['lines'] as $line) {
+            if ($line['label'] === 'Report') {
+                $values[] = $line['value'];
+            }
+        }
+        $this->assertSame(array('The report could not be saved.'), $values);
     }
 
     /**
