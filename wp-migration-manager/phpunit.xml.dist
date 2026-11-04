@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Tolka migration tests. From wp-migration-manager, run:
+phpunit -c phpunit.xml.dist
+
+The suite scans tests/tolka/test-*.php and does not load WordPress.
+Missing Tolka classes are skipped by the test that needs them.
+-->
+<phpunit bootstrap="tests/tolka/bootstrap.php" colors="true">
+    <testsuites>
+        <testsuite name="tolka">
+            <directory prefix="test-" suffix=".php">tests/tolka</directory>
+            <exclude>tests/tolka/bootstrap.php</exclude>
+        </testsuite>
+    </testsuites>
+</phpunit>
