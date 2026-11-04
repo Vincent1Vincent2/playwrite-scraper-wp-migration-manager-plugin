@@ -189,8 +189,7 @@
             "The speed check could not be completed, so try again."
           ).then(function (result) {
             if (!result.ok) {
-              if (result.transport) {
-                showTransportFailure(els.speed, result.error);
+              if (presentBadResponse(els.speed, result, "The speed check returned a response that could not be read, so try again.")) {
                 return;
               }
               showError(els.speed, result.error);
@@ -200,6 +199,15 @@
           });
         }
       );
+    }
+
+    function presentBadResponse(container, result, fallback) {
+      if (!result || (!result.transport && !result.malformed)) {
+        return false;
+      }
+      showTransportFailure(container, result.error || fallback);
+      dropBusyClass();
+      return true;
     }
 
     function rejectMeasure(message) {
@@ -238,8 +246,7 @@
             "The preview could not be completed, so nothing was written."
           ).then(function (result) {
             if (!result.ok) {
-              if (result.transport) {
-                showTransportFailure(els.previewResult, result.error);
+              if (presentBadResponse(els.previewResult, result, "The preview returned a response that could not be read, so try again.")) {
                 return;
               }
               showError(els.previewResult, result.error);
@@ -280,8 +287,7 @@
             "The migration could not be completed, and Polylang data was not removed."
           ).then(function (result) {
             if (!result.ok) {
-              if (result.transport) {
-                showTransportFailure(els.report, result.error);
+              if (presentBadResponse(els.report, result, "The migration returned a response that could not be read, so try again.")) {
                 return;
               }
               showError(els.report, failureWithKeptData(result.error));
@@ -732,42 +738,29 @@
     if (trimmed === "-1") {
       return {
         ok: false,
-        error: "The security check failed. Reload the page and try again.",
+        malformed: true,
+        error: "The security check failed, so reload the page and try again.",
       };
     }
     if (trimmed === "0") {
       return {
         ok: false,
-        error:
-          "The migration request was not recognized. Reload the page and try again.",
-      };
-    }
-    if (trimmed === "") {
-      return {
-        ok: false,
-        error:
-          "The server returned an empty response. Reload the page and try again.",
+        malformed: true,
+        error: "The migration request was not recognized, so reload the page and try again.",
       };
     }
 
     var json;
     try {
-      json = JSON.parse(trimmed);
+      json = trimmed === "" ? null : JSON.parse(trimmed);
     } catch (e) {
-      if (status >= 400) {
-        return {
-          ok: false,
-          error: "The request failed (HTTP " + status + ").",
-        };
-      }
-      return {
-        ok: false,
-        error:
-          "The server returned a response that could not be read. Reload the page and try again.",
-      };
+      return { ok: false, malformed: true };
+    }
+    if (!isJsonObject(json)) {
+      return { ok: false, malformed: true };
     }
 
-    if (!json || json.success !== true) {
+    if (json.success !== true) {
       var data = json && Object.prototype.hasOwnProperty.call(json, "data")
         ? json.data
         : json;
@@ -782,6 +775,10 @@
     }
 
     return { ok: true, data: json.data == null ? {} : json.data };
+  }
+
+  function isJsonObject(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
   }
 
   function collectMessages(data) {
