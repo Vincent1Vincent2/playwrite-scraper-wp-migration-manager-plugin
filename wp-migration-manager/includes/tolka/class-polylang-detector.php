@@ -1060,6 +1060,7 @@ class Polylang_Detector
      * Keep a header version only when it is a single version token.
      *
      * "0" is a real version. Comparisons use === '' because empty("0") is true.
+     * "3.9.1" is returned unchanged. Do not cast the token to float or int.
      */
     private static function sanitize_version(string $version): string
     {
@@ -1081,6 +1082,7 @@ class Polylang_Detector
     private static function finished_errors(array $errors): array
     {
         $clean = array();
+        $seen = array();
         foreach ($errors as $error) {
             if (!is_string($error)) {
                 continue;
@@ -1089,6 +1091,10 @@ class Polylang_Detector
             if ($error === '') {
                 continue;
             }
+            if (isset($seen[$error])) {
+                continue;
+            }
+            $seen[$error] = true;
             $clean[] = $error;
         }
 
