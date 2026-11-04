@@ -1874,6 +1874,22 @@ class Test_Speed_Estimate extends TestCase
                 }
             }
         }
+
+        $negative_tolka = self::contractBenchmarks();
+        $negative_tolka['tolka_ms_per_language'] = -6;
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $negative_tolka
+        );
+        // raw = 162, overhead = 162, tolka = 1000 - 162 + min(-18, 162) = 820.
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame(1000, $estimate['current_ms']);
+        $this->assertSame(820, $estimate['tolka_ms']);
+        $this->assertLessThanOrEqual($estimate['current_ms'], $estimate['tolka_ms']);
+        $this->assertSame(18.0, $estimate['faster_percent']);
+        $this->assertLessThanOrEqual(100, $estimate['faster_percent']);
+        $this->assertSame('18.0% faster', $estimate['faster_label']);
     }
 
     public function test_benchmark_file_failures_return_no_coefficients()
