@@ -51,10 +51,12 @@ class Test_Polylang_Media extends TestCase
             return;
         }
 
-        $result = $media->export();
-        $this->assertSame(array('items', 'errors'), array_keys($result));
-        $this->assertIsArray($result['items']);
-        $this->assertIsArray($result['errors']);
+        $first = $media->export();
+        $second = $media->export();
+        $this->assertSame($first, $second);
+        $this->assertSame(array('items', 'errors'), array_keys($first));
+        $this->assertIsArray($first['items']);
+        $this->assertIsArray($first['errors']);
     }
 
     public function test_polylang_inactive()
