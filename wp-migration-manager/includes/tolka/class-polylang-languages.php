@@ -119,6 +119,8 @@ class Polylang_Languages
             $this->storage_failed = true;
         }
 
+        // An empty API list is not the end of the read. Polylang can omit a
+        // language that has no posts, while the language term is still stored.
         $items = $this->merge_items($api_items, $storage_items);
 
         if (!$this->storage_failed || !empty($items)) {
@@ -259,6 +261,10 @@ class Polylang_Languages
         foreach ($terms as $term) {
             $item = $this->item_from_language_term($term, $default);
             if ($item['slug'] === '') {
+                continue;
+            }
+            if (isset($items[$item['slug']])) {
+                $items[$item['slug']] = $this->fill_item($items[$item['slug']], $item);
                 continue;
             }
             $items[$item['slug']] = $item;
@@ -584,12 +590,13 @@ class Polylang_Languages
             $preferred['name'] = $fallback['name'];
         }
 
-        if ($preferred['locale'] === '' && $fallback['locale'] !== '') {
-            $preferred['locale'] = $fallback['locale'];
+        $fallback_is_richer = $fallback['locale'] !== '' && $preferred['locale'] === '';
+        if ($fallback['term_id'] > 0 && ($preferred['term_id'] === 0 || $fallback_is_richer)) {
+            $preferred['term_id'] = $fallback['term_id'];
         }
 
-        if ($preferred['term_id'] === 0 && $fallback['term_id'] > 0) {
-            $preferred['term_id'] = $fallback['term_id'];
+        if ($preferred['locale'] === '' && $fallback['locale'] !== '') {
+            $preferred['locale'] = $fallback['locale'];
         }
 
         if ($this->should_replace_flag($preferred['flag'], $fallback['flag'])) {
