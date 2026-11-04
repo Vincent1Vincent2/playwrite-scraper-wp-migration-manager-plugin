@@ -90,7 +90,7 @@ class Polylang_Detector
             return true;
         }
 
-        return class_exists('PLL') || class_exists('Polylang');
+        return class_exists('\\PLL') || class_exists('\\Polylang');
     }
 
     /**
