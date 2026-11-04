@@ -328,6 +328,7 @@ namespace {
                 $this->assertSame($message, $preview['sections'][$section]['message']);
             }
             $this->assertSame(array(), $preview['errors']);
+            $this->assertSame('', $preview['detail']);
             $this->assertSame(array(), $preview['missing']);
             $this->assertSame('empty', $preview['state']);
             $this->assertSame(
@@ -899,6 +900,7 @@ namespace {
                 $run['counts']
             );
             $this->assertSame('saved', $run['state']);
+            $this->assertSame('', $run['detail']);
             $this->assertSame(
                 'Migration finished. Saved 2 languages, 1 post, 0 terms, 3 strings, 0 menus, and 4 media items for Tolka. Existing Polylang data was not changed.',
                 $run['message']
@@ -1018,6 +1020,7 @@ namespace {
                 'The migration could not be completed. Review the errors before trying again. Existing Polylang data was not changed.',
                 $run['message']
             );
+            $this->assertSame('The Tolka package could not be stored.', $run['detail']);
             $this->assertArrayHasKey('languages', \WMM\Tolka\RunnerTest\Writer::$package);
             $this->assertArrayNotHasKey('missing', \WMM\Tolka\RunnerTest\Schema::$parts);
         }
@@ -1049,6 +1052,10 @@ namespace {
             $this->assertSame(
                 'The migration did not run. Nothing was written, and existing Polylang data was not changed.',
                 $run['message']
+            );
+            $this->assertSame(
+                'The migration package could not be built because NoSchema is not available. Nothing was written, and existing Polylang data was not changed.',
+                $run['detail']
             );
         }
 
