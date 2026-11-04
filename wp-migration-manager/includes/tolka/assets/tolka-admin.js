@@ -152,18 +152,12 @@
 
       var url = els.url ? String(els.url.value || "").trim() : "";
       if (!url) {
-        if (els.url) {
-          els.url.setAttribute("aria-invalid", "true");
-        }
-        showError(els.speed, "Enter a public site URL, then measure again.");
+        rejectMeasure("Enter a public site URL, then measure again.");
         return;
       }
       var invalid = validateUrl(url);
       if (invalid) {
-        if (els.url) {
-          els.url.setAttribute("aria-invalid", "true");
-        }
-        showError(els.speed, invalid);
+        rejectMeasure(invalid);
         return;
       }
       if (els.url) {
@@ -184,7 +178,7 @@
         "Measuring the public page. This can take a few seconds.",
         function () {
           if (!String(url || "").trim()) {
-            showError(els.speed, "Enter a public site URL, then measure again.");
+            rejectMeasure("Enter a public site URL, then measure again.");
             return;
           }
           return post(
@@ -201,6 +195,13 @@
           });
         }
       );
+    }
+
+    function rejectMeasure(message) {
+      if (els.url) {
+        els.url.setAttribute("aria-invalid", "true");
+      }
+      showMeasureRejection(els.speed, message);
     }
 
     function onPreview(event) {
@@ -2063,6 +2064,26 @@
     container.appendChild(status);
     container.classList.remove("wmm-tolka-has-error");
     container.classList.remove("wmm-tolka-has-result");
+  }
+
+  function showMeasureRejection(container, message) {
+    if (container && hasSpeedAnchor(container)) {
+      var slots = collectSpeedSlots(container);
+      var text = normalizeMessages(message).join(" ");
+      if (slots.error) {
+        setText(slots.error, text);
+        var errorBox = errorWrapper(slots.error);
+        reveal(errorBox);
+        errorBox.setAttribute("role", "alert");
+        errorBox.classList.add("notice", "notice-error");
+        return;
+      }
+      var alert = markGenerated(el("p", "wmm-tolka-error", text));
+      alert.setAttribute("role", "alert");
+      container.insertBefore(alert, container.firstChild);
+      return;
+    }
+    showError(container, message);
   }
 
   function showError(container, message) {
