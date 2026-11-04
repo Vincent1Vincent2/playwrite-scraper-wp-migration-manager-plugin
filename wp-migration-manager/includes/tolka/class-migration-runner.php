@@ -196,14 +196,14 @@ class Migration_Runner
             ));
         }
 
-        if (!self::can_call($class, 'export', 0)) {
+        if (!self::can_call($class, 'export', 0) && !self::can_construct_export($class)) {
             return self::envelope(array(), array(
                 sprintf(self::line($meta['unusable']), self::short_class($class)),
             ));
         }
 
         try {
-            $result = $class::export();
+            $result = self::call_export($class);
         } catch (\Throwable $e) {
             return self::envelope(array(), array(
                 sprintf(self::line($meta['threw']), self::safe_exception($e)),
@@ -795,6 +795,56 @@ class Migration_Runner
                 return false;
             }
             if ($ref->getNumberOfParameters() < $passed && !$ref->isVariadic()) {
+                return false;
+            }
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Call export() whether the slice declared it static or on an instance.
+     *
+     * Languages use a static method. Posts and media use a public instance
+     * method. Both are part of the same preview and run.
+     *
+     * @param string $class
+     * @return mixed
+     */
+    private static function call_export($class)
+    {
+        if (self::can_call($class, 'export', 0)) {
+            return $class::export();
+        }
+
+        $instance = new $class();
+
+        return $instance->export();
+    }
+
+    /**
+     * A public instance export() with a public zero-argument constructor.
+     *
+     * @param string $class
+     * @return bool
+     */
+    private static function can_construct_export($class)
+    {
+        try {
+            if (!\class_exists($class) || !\method_exists($class, 'export')) {
+                return false;
+            }
+            $method = new \ReflectionMethod($class, 'export');
+            if (!$method->isPublic() || $method->isStatic() || $method->getNumberOfRequiredParameters() > 0) {
+                return false;
+            }
+            $reflection = new \ReflectionClass($class);
+            if ($reflection->isAbstract() || $reflection->isInterface()) {
+                return false;
+            }
+            $constructor = $reflection->getConstructor();
+            if ($constructor && (!$constructor->isPublic() || $constructor->getNumberOfRequiredParameters() > 0)) {
                 return false;
             }
             return true;

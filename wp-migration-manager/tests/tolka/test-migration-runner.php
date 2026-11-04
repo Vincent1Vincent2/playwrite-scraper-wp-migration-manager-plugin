@@ -44,10 +44,21 @@ namespace WMM\Tolka\RunnerTest {
 
     class UnusableExporter
     {
-        public function export()
+        public function export($required)
         {
             return array(
                 'items' => array(array('title' => 'should not be read')),
+                'errors' => array(),
+            );
+        }
+    }
+
+    class InstanceExporter
+    {
+        public function export()
+        {
+            return array(
+                'items' => array(array('title' => 'From the instance exporter')),
                 'errors' => array(),
             );
         }
@@ -603,6 +614,24 @@ namespace {
             $this->assertSame('error', $preview['sections']['posts']['status']);
             $this->assertNotContains('WMM\\Tolka\\RunnerTest\\UnusableExporter', $preview['missing']);
             $this->assertNotFalse(json_encode($preview));
+        }
+
+        public function test_instance_export_is_called()
+        {
+            $this->reset_doubles();
+            Migration_Runner_Test_Double::$map['posts'] = 'WMM\\Tolka\\RunnerTest\\InstanceExporter';
+            Migration_Runner_Test_Double::$map['media'] = 'WMM\\Tolka\\RunnerTest\\InstanceExporter';
+
+            $preview = Migration_Runner_Test_Double::preview();
+
+            $this->assertSame(1, $preview['counts']['posts']);
+            $this->assertSame(1, $preview['counts']['media']);
+            $this->assertSame('From the instance exporter', $preview['sample']['posts'][0]['title']);
+            $this->assertSame('ready', $preview['sections']['posts']['status']);
+            $this->assertNotContains(
+                'Posts could not be read because InstanceExporter::export() cannot be called.',
+                $preview['errors']
+            );
         }
 
         public function test_one_missing_exporter_keeps_the_other_sections()

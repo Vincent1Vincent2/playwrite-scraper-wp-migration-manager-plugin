@@ -365,7 +365,7 @@ function wmm_tolka_invoke($class, $method, $args = array())
     }
 
     try {
-        $value = call_user_func_array(array($class, $method), $args);
+        $value = wmm_tolka_call($class, $method, $args);
     } catch (Throwable $e) {
         $detail = preg_replace('/\s+/', ' ', $e->getMessage());
         if (!is_string($detail)) {
@@ -387,6 +387,38 @@ function wmm_tolka_invoke($class, $method, $args = array())
         'called' => true,
         'value' => $value,
     );
+}
+
+/**
+ * Call a public slice method. Static methods stay static. An instance
+ * method is constructed when that needs no arguments, so a slice that
+ * omitted the static keyword still runs.
+ *
+ * @param string $class  Fully qualified class name.
+ * @param string $method Method name.
+ * @param array  $args   Arguments.
+ * @return mixed
+ */
+function wmm_tolka_call($class, $method, $args = array())
+{
+    $ref = new ReflectionMethod($class, $method);
+
+    if (!$ref->isPublic()) {
+        throw new RuntimeException('Method is not public.');
+    }
+
+    if ($ref->isStatic()) {
+        return $ref->invokeArgs(null, $args);
+    }
+
+    $reflection = new ReflectionClass($class);
+    $constructor = $reflection->getConstructor();
+
+    if ($reflection->isAbstract() || ($constructor && (!$constructor->isPublic() || $constructor->getNumberOfRequiredParameters() > 0))) {
+        throw new RuntimeException('Method cannot be constructed.');
+    }
+
+    return $ref->invokeArgs($reflection->newInstance(), $args);
 }
 
 /**
