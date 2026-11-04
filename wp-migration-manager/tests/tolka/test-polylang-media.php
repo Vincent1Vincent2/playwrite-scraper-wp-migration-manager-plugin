@@ -1096,6 +1096,145 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('O: the origin', $this->call('unserialize_meta', array('O: the origin')));
     }
 
+    public function test_html_in_alt_text_and_titles_is_kept_and_null_bytes_are_removed()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '2024/05/hero.jpg',
+                'alt' => "Harbor <strong>view</strong>\0 &amp; dock",
+                'title' => "<em>He\0ro</em>",
+            ),
+            11 => array(
+                'file' => '2024/05/hero.jpg',
+                'alt' => "<img alt=\"quai\"> Port\0",
+                'title' => "Visuel\0 <span>FR</span>",
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('<em>Hero</em>', $result['items'][0]['title']['en']);
+        $this->assertSame('Visuel <span>FR</span>', $result['items'][0]['title']['fr']);
+        $this->assertSame('Harbor <strong>view</strong> &amp; dock', $result['items'][0]['alt']['en']);
+        $this->assertSame('<img alt="quai"> Port', $result['items'][0]['alt']['fr']);
+        $this->assertStringNotContainsString("\0", $result['items'][0]['title']['en']);
+        $this->assertStringNotContainsString("\0", $result['items'][0]['alt']['fr']);
+    }
+
+    public function test_second_export_returns_the_same_items_when_media_exists()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('get_posts') || function_exists('get_post_meta') || function_exists('pll_get_post_translations')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $posts = 'wp_posts';
+            public $terms = 'wp_terms';
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $term_relationships = 'wp_term_relationships';
+            public $options = 'wp_options';
+            public $postmeta = 'wp_postmeta';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                foreach ($args as $arg) {
+                    $replacement = is_int($arg) ? (string) $arg : "'" . (string) $arg . "'";
+                    $query = preg_replace('/%[sd]/', $replacement, $query, 1);
+                }
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                if (strpos($query, 'option_name') !== false) {
+                    return serialize(array('default_lang' => 'en'));
+                }
+                return '8';
+            }
+
+            public function get_results($query, $output = null)
+            {
+                unset($output);
+                if (strpos($query, 'AS attachment_id') !== false) {
+                    return array(
+                        array('attachment_id' => 10, 'language_slug' => 'en'),
+                        array('attachment_id' => 11, 'language_slug' => 'fr'),
+                    );
+                }
+                if (strpos($query, 'description') !== false) {
+                    $description = serialize(array('en' => 10, 'fr' => 11));
+                    return array(
+                        array(
+                            'term_taxonomy_id' => 5,
+                            'description' => $description,
+                            'object_id' => 10,
+                            'language_slug' => 'en',
+                        ),
+                        array(
+                            'term_taxonomy_id' => 5,
+                            'description' => $description,
+                            'object_id' => 11,
+                            'language_slug' => 'fr',
+                        ),
+                    );
+                }
+                if (strpos($query, 'post_title') !== false) {
+                    return array(
+                        array('ID' => 10, 'post_title' => "<em>He\0ro</em>"),
+                        array('ID' => 11, 'post_title' => "Visuel\0 <span>FR</span>"),
+                    );
+                }
+                if (strpos($query, 'meta_value') !== false) {
+                    return array(
+                        array('post_id' => 10, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/hero.jpg'),
+                        array('post_id' => 10, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => "Harbor <strong>view</strong>\0"),
+                        array('post_id' => 11, 'meta_key' => '_wp_attached_file', 'meta_value' => '2024/05/hero.jpg'),
+                        array('post_id' => 11, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => "<img alt=\"quai\"> Port\0"),
+                    );
+                }
+                if (strpos($query, 'language_slug') !== false) {
+                    return array(
+                        array('language_slug' => 'en'),
+                        array('language_slug' => 'fr'),
+                    );
+                }
+                if (strpos($query, 'post_type') !== false) {
+                    return array(
+                        array('ID' => 10),
+                        array('ID' => 11),
+                    );
+                }
+                return array();
+            }
+        };
+
+        try {
+            $media = new Polylang_Media();
+            $first = $media->export();
+            $second = $media->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array(), $first['errors']);
+        $this->assertCount(1, $first['items']);
+        $this->assertSame(10, $first['items'][0]['attachment_id']);
+        $this->assertSame('2024/05/hero.jpg', $first['items'][0]['file']);
+        $this->assertSame('<em>Hero</em>', $first['items'][0]['title']['en']);
+        $this->assertSame('Visuel <span>FR</span>', $first['items'][0]['title']['fr']);
+        $this->assertSame('Harbor <strong>view</strong>', $first['items'][0]['alt']['en']);
+        $this->assertSame('<img alt="quai"> Port', $first['items'][0]['alt']['fr']);
+        $this->assertStringNotContainsString("\0", $first['items'][0]['title']['en']);
+        $this->assertStringNotContainsString("\0", $first['items'][0]['alt']['en']);
+        $this->assertStringNotContainsString("\0", $second['items'][0]['title']['fr']);
+    }
+
     public function test_titles_keep_unicode_and_drop_invalid_bytes()
     {
         $this->assertSame('Café 港', $this->call('string_value', array('Café 港')));

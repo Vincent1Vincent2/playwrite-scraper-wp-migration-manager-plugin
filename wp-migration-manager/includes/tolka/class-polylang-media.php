@@ -2329,25 +2329,26 @@ class Polylang_Media
      */
     private function utf8_string($value)
     {
+        $value = str_replace("\0", '', $value);
         if ($value === '') {
             return '';
         }
         if (function_exists('wp_check_invalid_utf8')) {
             $clean = wp_check_invalid_utf8($value, true);
             if (is_string($clean)) {
-                return $clean;
+                return str_replace("\0", '', $clean);
             }
         }
         if (function_exists('iconv')) {
             $clean = iconv('UTF-8', 'UTF-8//IGNORE', $value);
             if (is_string($clean)) {
-                return $clean;
+                return str_replace("\0", '', $clean);
             }
         }
         if (function_exists('mb_convert_encoding')) {
             $clean = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
             if (is_string($clean)) {
-                return $clean;
+                return str_replace("\0", '', $clean);
             }
         }
         return $value;
