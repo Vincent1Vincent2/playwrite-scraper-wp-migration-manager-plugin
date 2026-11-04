@@ -1587,9 +1587,10 @@
 
     var note = container.querySelector(".wmm-tolka-notice p");
     if (note) {
-      note.textContent = summary
-        ? finishSentence(summary)
-        : reportClosing(succeeded, summary) || title;
+      setPlainText(
+        note,
+        summary ? finishSentence(summary) : reportClosing(succeeded, summary) || title
+      );
     }
 
     var extras = [];
