@@ -672,7 +672,7 @@ class Polylang_Detector
                     : 'Activate Polylang, then return to Migrate to Tolka.'
             );
         } elseif (!$active) {
-            $errors[] = self::translate('Polylang is not active. Install and activate Polylang, then return to Migrate to Tolka.');
+            $errors[] = self::translate('Polylang is not installed, so install and activate it, then return to Migrate to Tolka.');
         } elseif ($version === '' && $header_found) {
             $errors[] = self::translate(
                 $pro

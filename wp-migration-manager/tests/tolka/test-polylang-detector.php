@@ -181,7 +181,7 @@ if (class_exists('WMM\\Tolka\\Polylang_Detector')) {
 
 class Polylang_Detector_Test extends TestCase
 {
-    const INACTIVE_ABSENT = 'Polylang is not active. Install and activate Polylang, then return to Migrate to Tolka.';
+    const INACTIVE_ABSENT = 'Polylang is not installed, so install and activate it, then return to Migrate to Tolka.';
 
     const INACTIVE_INSTALLED = 'Polylang %s is installed but not active. Activate Polylang, then return to Migrate to Tolka.';
 
@@ -286,6 +286,55 @@ class Polylang_Detector_Test extends TestCase
             $this->assertStringNotContainsString('<', $error);
         }
         $this->assertSame($status, WMM\Tolka\Polylang_Detector::status());
+    }
+
+    public function test_polylang_not_installed_is_inactive_and_does_not_warn(): void
+    {
+        if (function_exists('pll_languages_list') || class_exists('PLL', false) || class_exists('Polylang', false)) {
+            $this->markTestSkipped('Polylang is loaded in this process.');
+        }
+
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'hello.php', $this->wordpress_header('Hello Dolly', '1.7.2'));
+        Polylang_Detector_Fixture::$directories = array(
+            $root,
+            '/tmp/wmm-tolka-missing-' . uniqid('', true),
+        );
+
+        $status = Polylang_Detector_Fixture::status();
+        $again = Polylang_Detector_Fixture::status();
+
+        $this->assertSame(
+            array(
+                'active' => false,
+                'version' => '',
+                'errors' => array(self::INACTIVE_ABSENT),
+            ),
+            $status
+        );
+        $this->assertSame($status, $again);
+        $this->assertCount(1, $status['errors']);
+        $this->assertMatchesRegularExpression('/^[^.]*\.$/', $status['errors'][0]);
+        $this->assertSame(1, substr_count($again['errors'][0], $status['errors'][0]));
+        $this->assertSame(array(), Polylang_Detector_Api_Fixture::expose_warnings());
+
+        $real = WMM\Tolka\Polylang_Detector::status();
+        $this->assertFalse($real['active']);
+        $this->assertSame('', $real['version']);
+        $this->assertCount(1, $real['errors']);
+        $this->assertSame(self::INACTIVE_ABSENT, $real['errors'][0]);
+        $this->assertSame(array(), Polylang_Detector_Api_Fixture::expose_warnings());
+        $this->assertSame($real, WMM\Tolka\Polylang_Detector::status());
+
+        $probe = static function () {
+            return true;
+        };
+        $before = set_error_handler($probe);
+        restore_error_handler();
+        WMM\Tolka\Polylang_Detector::status();
+        $after = set_error_handler($probe);
+        restore_error_handler();
+        $this->assertSame($before, $after);
     }
 
     public function test_inactive_without_plugin_asks_the_admin_to_install(): void
