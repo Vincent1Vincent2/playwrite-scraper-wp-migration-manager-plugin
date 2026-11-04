@@ -9,6 +9,8 @@
  * `items`. Locations with no menu use menu id 0. Menu links are a tree:
  * each item's `children` list holds its submenu. A language switcher has
  * `switcher` set, and the title "Languages" when none was stored.
+ * Block-theme navigations are included as `navigation:{slug}` with
+ * `kind` `navigation`. Classic menus use `kind` `menu`.
  *
  * Polylang keeps assignments on the `polylang` option at
  * nav_menus[stylesheet][location][language] = menu term id. When the
@@ -547,6 +549,10 @@ class Polylang_Menus
             );
         }
 
+        foreach ($this->navigation_items() as $navigation) {
+            $items[] = $navigation;
+        }
+
         return $items;
     }
 
@@ -625,6 +631,7 @@ class Polylang_Menus
                 'menu_id' => 0,
                 'name' => '',
                 'slug' => '',
+                'kind' => 'menu',
                 'items' => array(),
                 'link_count' => 0,
             );
@@ -666,9 +673,469 @@ class Polylang_Menus
             'menu_id' => $menu_id,
             'name' => $this->entity_text($name),
             'slug' => $slug,
+            'kind' => 'menu',
             'items' => $items,
             'link_count' => $this->link_count($items),
         );
+    }
+
+    /**
+     * Block-theme navigations, one item per translation group.
+     *
+     * @return array<int, array>
+     */
+    private function navigation_items()
+    {
+        $posts = $this->read_navigation_posts();
+        if (! is_array($posts) || empty($posts)) {
+            return array();
+        }
+
+        $normalized = array();
+        foreach ($posts as $post) {
+            $ready = $this->normalize_navigation_post($post);
+            if ($ready === null || isset($normalized[$ready['id']])) {
+                continue;
+            }
+            $normalized[$ready['id']] = $ready;
+        }
+
+        $groups = array();
+        $seen = array();
+        foreach ($normalized as $post) {
+            if (isset($seen[$post['id']])) {
+                continue;
+            }
+            $map = $post['translations'];
+            if (empty($map)) {
+                $map = $this->read_post_translations($post['id']);
+            }
+            if (! is_array($map) || empty($map)) {
+                $map = array();
+            }
+            $ids = array($post['id']);
+            foreach ($map as $id) {
+                $id = $this->to_int($id);
+                if ($id > 0) {
+                    $ids[] = $id;
+                }
+            }
+            $ids = array_values(array_unique($ids));
+            sort($ids, SORT_NUMERIC);
+            $key = (string) $ids[0];
+            if (! isset($groups[$key])) {
+                $groups[$key] = array();
+            }
+            foreach ($ids as $id) {
+                if (! isset($normalized[$id])) {
+                    continue;
+                }
+                $member = $normalized[$id];
+                $language = $member['language'];
+                if ($language === '') {
+                    $language = $this->normalize_lang_slug($this->read_post_language($id));
+                }
+                if ($language === '') {
+                    foreach ($map as $slug => $mapped_id) {
+                        if ($this->to_int($mapped_id) === $id) {
+                            $language = $this->normalize_lang_slug($slug);
+                            break;
+                        }
+                    }
+                }
+                if ($language === '') {
+                    $language = 'unknown';
+                    $this->warn($this->message_unknown_language());
+                }
+                if (! isset($groups[$key][$language])) {
+                    $groups[$key][$language] = $member;
+                }
+                $seen[$id] = true;
+            }
+        }
+
+        $items = array();
+        $used_locations = array();
+        foreach ($groups as $group) {
+            if (empty($group)) {
+                continue;
+            }
+            $anchor = $this->navigation_anchor($group);
+            $slug = $anchor['slug'] !== '' ? $anchor['slug'] : (string) $anchor['id'];
+            $location = 'navigation:' . $slug;
+            if (isset($used_locations[$location])) {
+                $location .= '-' . $anchor['id'];
+            }
+            $used_locations[$location] = true;
+
+            $translations = array();
+            foreach ($group as $language => $member) {
+                $parsed = $this->parse_navigation_blocks($member['content']);
+                $translations[$language] = array(
+                    'menu_id' => $member['id'],
+                    'name' => $member['name'],
+                    'slug' => $member['slug'],
+                    'kind' => 'navigation',
+                    'items' => $parsed,
+                    'link_count' => $this->link_count($parsed),
+                );
+            }
+
+            $label = $anchor['name'] !== '' ? $anchor['name'] : $this->message_navigation_label();
+            $items[] = array(
+                'location' => $location,
+                'label' => $label,
+                'translations' => $translations,
+            );
+        }
+
+        return $items;
+    }
+
+    /**
+     * Prefer the default language's navigation as the group's label and slug.
+     *
+     * @param array<string, array> $group Language => navigation post.
+     * @return array
+     */
+    private function navigation_anchor(array $group)
+    {
+        $default = $this->normalize_lang_slug($this->read_default_language());
+        if ($default !== '' && isset($group[$default])) {
+            return $group[$default];
+        }
+        foreach ($group as $member) {
+            return $member;
+        }
+        return array(
+            'id' => 0,
+            'name' => '',
+            'slug' => '',
+        );
+    }
+
+    /**
+     * @param mixed $post Raw navigation post.
+     * @return array|null
+     */
+    private function normalize_navigation_post($post)
+    {
+        if (is_object($post)) {
+            $post = get_object_vars($post);
+        }
+        if (! is_array($post)) {
+            return null;
+        }
+
+        $id = 0;
+        if (isset($post['id'])) {
+            $id = $this->to_int($post['id']);
+        } elseif (isset($post['ID'])) {
+            $id = $this->to_int($post['ID']);
+        }
+        if ($id === 0) {
+            return null;
+        }
+
+        $translations = array();
+        if (isset($post['translations']) && is_array($post['translations'])) {
+            $translations = $this->normalize_id_map($post['translations']);
+        }
+
+        return array(
+            'id' => $id,
+            'name' => $this->entity_text(isset($post['name']) ? $post['name'] : (isset($post['post_title']) ? $post['post_title'] : '')),
+            'slug' => $this->text(isset($post['slug']) ? $post['slug'] : (isset($post['post_name']) ? $post['post_name'] : '')),
+            'content' => $this->text(isset($post['content']) ? $post['content'] : (isset($post['post_content']) ? $post['post_content'] : '')),
+            'language' => $this->normalize_lang_slug(isset($post['language']) ? $post['language'] : ''),
+            'translations' => $translations,
+        );
+    }
+
+    /**
+     * Navigation block markup to the same nested link shape as classic menus.
+     *
+     * @param string $content Post content.
+     * @return array<int, array>
+     */
+    private function parse_navigation_blocks($content)
+    {
+        if (function_exists('parse_blocks')) {
+            $blocks = parse_blocks($content);
+            if (is_array($blocks) && ! empty($blocks)) {
+                $parsed = $this->items_from_parsed_blocks($blocks, 1);
+                if (! empty($parsed['items'])) {
+                    return $parsed['items'];
+                }
+            }
+        }
+
+        return $this->items_from_block_markup($content);
+    }
+
+    /**
+     * @param array<int, mixed> $blocks   Parsed blocks.
+     * @param int               $position Next position.
+     * @return array{items: array<int, array>, position: int}
+     */
+    private function items_from_parsed_blocks(array $blocks, $position)
+    {
+        $items = array();
+        foreach ($blocks as $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+            $name = isset($block['blockName']) ? $this->text($block['blockName']) : '';
+            $short = $name;
+            if (strpos($short, 'core/') === 0) {
+                $short = substr($short, 5);
+            }
+            $attrs = isset($block['attrs']) && is_array($block['attrs']) ? $block['attrs'] : array();
+            $inner = isset($block['innerBlocks']) && is_array($block['innerBlocks']) ? $block['innerBlocks'] : array();
+
+            if ($short === 'navigation-link' || $short === 'navigation-submenu' || $name === 'polylang/language-switcher') {
+                $built = $this->navigation_link_from_attrs($name, $attrs, $position);
+                $position++;
+                $children = $this->items_from_parsed_blocks($inner, $position);
+                $built['children'] = $children['items'];
+                $position = $children['position'];
+                $items[] = $built;
+                continue;
+            }
+
+            if (! empty($inner)) {
+                $children = $this->items_from_parsed_blocks($inner, $position);
+                foreach ($children['items'] as $child) {
+                    $items[] = $child;
+                }
+                $position = $children['position'];
+            }
+        }
+
+        return array(
+            'items' => $items,
+            'position' => $position,
+        );
+    }
+
+    /**
+     * @param string $content Block markup.
+     * @return array<int, array>
+     */
+    private function items_from_block_markup($content)
+    {
+        $content = $this->text($content);
+        if ($content === '' || ! preg_match_all('/<!--\s+(\/?)wp:([a-z0-9\/-]+)([^>]*?)-->/', $content, $matches, PREG_SET_ORDER)) {
+            return array();
+        }
+
+        $stack = array(array());
+        $position = 1;
+        foreach ($matches as $match) {
+            $closing = $match[1] === '/';
+            $name = $match[2];
+            $rest = $match[3];
+            $self_closing = substr(rtrim($rest), -1) === '/';
+
+            if ($closing) {
+                if ($name === 'navigation-submenu' && count($stack) > 1) {
+                    $children = array_pop($stack);
+                    $parent = array_pop($stack);
+                    if (! empty($parent)) {
+                        $last = array_pop($parent);
+                        $last['children'] = $children;
+                        $parent[] = $last;
+                    }
+                    $stack[] = $parent;
+                }
+                continue;
+            }
+
+            $supported = ($name === 'navigation-link' || $name === 'navigation-submenu' || $name === 'polylang/language-switcher');
+            if (! $supported) {
+                continue;
+            }
+
+            $item = $this->navigation_link_from_attrs($name, $this->block_attrs($rest), $position);
+            $position++;
+            if ($name === 'navigation-submenu' && ! $self_closing) {
+                $current = array_pop($stack);
+                $current[] = $item;
+                $stack[] = $current;
+                $stack[] = array();
+                continue;
+            }
+
+            $current = array_pop($stack);
+            $current[] = $item;
+            $stack[] = $current;
+        }
+
+        while (count($stack) > 1) {
+            $children = array_pop($stack);
+            $parent = array_pop($stack);
+            if (! empty($parent)) {
+                $last = array_pop($parent);
+                if (is_array($last)) {
+                    $existing = isset($last['children']) && is_array($last['children']) ? $last['children'] : array();
+                    $last['children'] = array_merge($existing, $children);
+                    $parent[] = $last;
+                }
+            }
+            $stack[] = $parent;
+        }
+
+        return isset($stack[0]) && is_array($stack[0]) ? $stack[0] : array();
+    }
+
+    /**
+     * @param string $rest Text after the block name.
+     * @return array<string, mixed>
+     */
+    private function block_attrs($rest)
+    {
+        $rest = $this->text($rest);
+        $start = strpos($rest, '{');
+        if ($start === false) {
+            return array();
+        }
+
+        $depth = 0;
+        $length = strlen($rest);
+        for ($i = $start; $i < $length; $i++) {
+            $char = $rest[$i];
+            if ($char === '{') {
+                $depth++;
+            } elseif ($char === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    $decoded = json_decode(substr($rest, $start, $i - $start + 1), true);
+                    return is_array($decoded) ? $decoded : array();
+                }
+            }
+        }
+
+        return array();
+    }
+
+    /**
+     * @param string               $name     Block name.
+     * @param array<string, mixed> $attrs    Block attributes.
+     * @param int                  $position Sibling position.
+     * @return array
+     */
+    private function navigation_link_from_attrs($name, array $attrs, $position)
+    {
+        $title = $this->entity_text(isset($attrs['label']) ? $attrs['label'] : (isset($attrs['title']) ? $attrs['title'] : ''));
+        $url = trim($this->text(isset($attrs['url']) ? $attrs['url'] : ''));
+        $object = $this->text(isset($attrs['type']) ? $attrs['type'] : '');
+        if ($object === '' && isset($attrs['kind'])) {
+            $object = $this->text($attrs['kind']);
+        }
+        $switcher = ($name === 'polylang/language-switcher' || $url === '#pll_switcher');
+        if ($switcher && $url === '') {
+            $url = '#pll_switcher';
+        }
+        if ($switcher && $title === '') {
+            $title = $this->message_switcher_title();
+        }
+        if ($switcher && $object === '') {
+            $object = 'custom';
+        }
+
+        return array(
+            'id' => 0,
+            'parent' => 0,
+            'title' => $title,
+            'url' => $url,
+            'object' => $object,
+            'object_id' => isset($attrs['id']) ? $this->to_int($attrs['id']) : 0,
+            'type' => $object,
+            'attr_title' => '',
+            'description' => $this->entity_text(isset($attrs['description']) ? $attrs['description'] : ''),
+            'target' => '',
+            'classes' => array(),
+            'xfn' => '',
+            'position' => $this->to_int($position) > 0 ? $this->to_int($position) : 1,
+            'children' => array(),
+            'switcher' => $switcher,
+        );
+    }
+
+    /**
+     * Published wp_navigation posts.
+     *
+     * @return array<int, array<string, mixed>|object>
+     */
+    protected function read_navigation_posts()
+    {
+        $tables = $this->tables();
+        if ($tables === null) {
+            return array();
+        }
+
+        return $this->db_get(
+            'SELECT ID AS id, post_title AS name, post_name AS slug, post_content AS content'
+            . ' FROM ' . $tables['posts']
+            . " WHERE post_type = 'wp_navigation' AND post_status = 'publish'"
+            . ' ORDER BY ID ASC',
+            array()
+        );
+    }
+
+    /**
+     * Language of a post, including a navigation post.
+     *
+     * @param int $post_id Post id.
+     * @return string
+     */
+    protected function read_post_language($post_id)
+    {
+        $post_id = $this->to_int($post_id);
+        if ($post_id === 0) {
+            return '';
+        }
+
+        if (function_exists('pll_get_post_language')) {
+            $language = pll_get_post_language($post_id, 'slug');
+            if (is_string($language) && $language !== '') {
+                return $language;
+            }
+        }
+
+        return $this->language_slug_from_relationships($post_id, 'language');
+    }
+
+    /**
+     * Post translation group: language slug => post id.
+     *
+     * @param int $post_id Post id.
+     * @return array<string, int>
+     */
+    protected function read_post_translations($post_id)
+    {
+        $post_id = $this->to_int($post_id);
+        if ($post_id === 0) {
+            return array();
+        }
+
+        if (function_exists('pll_get_post_translations')) {
+            $translations = pll_get_post_translations($post_id);
+            if (is_array($translations)) {
+                return $this->normalize_id_map($translations);
+            }
+        }
+
+        $groups = $this->object_terms($post_id, 'post_translations');
+        foreach ($groups as $group) {
+            $description = isset($group['description']) ? $group['description'] : '';
+            $map = $this->unserialize_array($description);
+            if (! empty($map)) {
+                return $this->normalize_id_map($map);
+            }
+        }
+
+        return array();
     }
 
     /**
@@ -2053,6 +2520,18 @@ class Polylang_Menus
         $text = 'Polylang menu assignments could not be read because the stored nav_menus value is invalid. Theme locations are still listed.';
         if (function_exists('__')) {
             $text = __('Polylang menu assignments could not be read because the stored nav_menus value is invalid. Theme locations are still listed.', 'migration-manager');
+        }
+        return $text;
+    }
+
+    /**
+     * @return string
+     */
+    private function message_navigation_label()
+    {
+        $text = 'Navigation';
+        if (function_exists('__')) {
+            $text = __('Navigation', 'migration-manager');
         }
         return $text;
     }
