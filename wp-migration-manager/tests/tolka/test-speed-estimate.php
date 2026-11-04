@@ -753,8 +753,36 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(8, $again['polylang_extra_ms_per_script']);
         $this->assertSame(6, $again['tolka_ms_per_language']);
         $this->assertSame(0.7, $again['max_overhead_ratio']);
-        $this->assertSame('placeholder', $again['provenance']);
         $this->assertSame(self::PROVENANCE_NOTE, $again['provenance_note']);
+
+        foreach (array(INF, NAN) as $total) {
+            $failed = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total, 'language_count' => 0),
+                array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+                $loaded
+            );
+            $this->assertFalse($failed['ok']);
+            $this->assertSame(0, $failed['current_ms']);
+            $this->assertSame(0, $failed['tolka_ms']);
+            $this->assertSame(0.0, $failed['faster_percent']);
+            $this->assertSame('', $failed['faster_label']);
+            $this->assertNotSame(971, $failed['tolka_ms']);
+            $this->assertNotSame(2.9, $failed['faster_percent']);
+            $this->assertNotSame('2.9% faster', $failed['faster_label']);
+            $this->assertSame(
+                'A Tolka speed estimate is not available. The measured load time is not a finite number.',
+                $failed['error']
+            );
+        }
+
+        $still = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            Speed_Estimate::benchmarks()
+        );
+        $this->assertSame(971, $still['tolka_ms']);
+        $this->assertSame(2.9, $still['faster_percent']);
+        $this->assertSame('2.9% faster', $still['faster_label']);
 
         $strings = Speed_Estimate::project(
             array('ok' => true, 'total_ms' => '1000'),
@@ -1383,7 +1411,7 @@ class Test_Speed_Estimate extends TestCase
         );
         $this->assertUnavailable(
             $infinite,
-            'A Tolka speed estimate is not available. The measured load time is not a usable number.'
+            'A Tolka speed estimate is not available. The measured load time is not a finite number.'
         );
         $this->assertSame('', $infinite['faster_label']);
         $this->assertSame(0.0, $infinite['faster_percent']);
@@ -1397,7 +1425,7 @@ class Test_Speed_Estimate extends TestCase
         );
         $this->assertUnavailable(
             $not_a_number,
-            'A Tolka speed estimate is not available. The measured load time is not a usable number.'
+            'A Tolka speed estimate is not available. The measured load time is not a finite number.'
         );
         $this->assertSame('', $not_a_number['faster_label']);
         $this->assertSame(0.0, $not_a_number['faster_percent']);
@@ -1943,9 +1971,9 @@ class Test_Speed_Estimate extends TestCase
     {
         $benchmarks = self::contractBenchmarks();
         $metrics = array('language_count' => 4, 'has_polylang_switcher' => true, 'script_count' => 8);
-        $message = 'A Tolka speed estimate is not available. The measured load time is not a usable number.';
+        $message = 'A Tolka speed estimate is not available. The measured load time is not a finite number.';
 
-        foreach (array(INF, NAN, 'INF', 'NAN', 'inf', 'nan', '1e309') as $total) {
+        foreach (array(INF, NAN, '1e309', '1e309 ') as $total) {
             $estimate = Speed_Estimate::project(
                 array('ok' => true, 'total_ms' => $total, 'html' => '<p>SECRET_PAGE_MARKUP</p>'),
                 $metrics,
@@ -1957,12 +1985,26 @@ class Test_Speed_Estimate extends TestCase
             $this->assertSame(0, $estimate['overhead_ms']);
             $this->assertSame(0.0, $estimate['faster_percent']);
             $this->assertSame('', $estimate['faster_label']);
-            $this->assertNotSame(100, $estimate['faster_percent']);
+            $this->assertNotSame(1, $estimate['current_ms']);
+            $this->assertNotSame(2.9, $estimate['faster_percent']);
+            $this->assertNotSame('2.9% faster', $estimate['faster_label']);
             $encoded = json_encode($estimate);
             $this->assertIsString($encoded);
             $this->assertStringNotContainsString('INF', $encoded);
             $this->assertStringNotContainsString('NAN', $encoded);
             $this->assertStringNotContainsString('SECRET_PAGE_MARKUP', $encoded);
+        }
+
+        $words = 'A Tolka speed estimate is not available. The measured load time is not a usable number.';
+        foreach (array('INF', 'NAN', 'inf', 'nan') as $total) {
+            $estimate = Speed_Estimate::project(
+                array('ok' => true, 'total_ms' => $total),
+                $metrics,
+                $benchmarks
+            );
+            $this->assertUnavailable($estimate, $words);
+            $this->assertSame('', $estimate['faster_label']);
+            $this->assertSame(0.0, $estimate['faster_percent']);
         }
     }
 

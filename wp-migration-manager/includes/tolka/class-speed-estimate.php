@@ -370,11 +370,36 @@ class Speed_Estimate
             return self::translate('The measured load time is missing.');
         }
 
+        if (self::is_non_finite_number($measurement['total_ms'])) {
+            return self::translate('The measured load time is not a finite number.');
+        }
+
         if (self::integer_milliseconds($measurement['total_ms']) === null) {
             return self::translate('The measured load time is not a usable number.');
         }
 
         return '';
+    }
+
+    /**
+     * True when the value is numeric but INF or NAN.
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    private static function is_non_finite_number($value)
+    {
+        if (is_string($value)) {
+            $value = trim($value);
+        }
+
+        if (is_bool($value) || !is_numeric($value)) {
+            return false;
+        }
+
+        $number = $value + 0;
+
+        return is_float($number) && !is_finite($number);
     }
 
     /**
