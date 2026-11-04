@@ -181,8 +181,35 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-tolka-load'));
         $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-faster'));
         $this->assertStringNotContainsString('Placeholder coefficients', $html);
-        $this->assertTrue($this->document($html)->getElementById('wmm-tolka-basis')->hasAttribute('hidden'));
+        $this->assertSame('Not measured yet', $this->text($html, 'wmm-tolka-basis'));
+        $this->assertFalse($this->document($html)->getElementById('wmm-tolka-basis')->hasAttribute('hidden'));
+        $this->assertStringContainsString('single page', $this->text($html, 'wmm-tolka-speed-scope'));
         $this->assertTrue($this->document($html)->getElementById('wmm-tolka-speed-error')->parentNode->hasAttribute('hidden'));
+        $this->assertTrue($this->document($html)->getElementById('wmm-tolka-provenance-note')->parentNode->hasAttribute('hidden'));
+    }
+
+    public function test_value_slots_can_be_updated_in_place()
+    {
+        $html = $this->render(false);
+        $document = $this->document($html);
+        $slots = array(
+            'wmm-tolka-current-load' => 'current_ms',
+            'wmm-tolka-tolka-load' => 'tolka_ms',
+            'wmm-tolka-faster' => 'faster',
+            'wmm-tolka-basis' => 'basis',
+        );
+
+        foreach ($slots as $id => $name) {
+            $node = $document->getElementById($id);
+            $this->assertNotNull($node, $id);
+            $this->assertSame($name, $node->getAttribute('data-wmm-tolka'));
+            $this->assertSame(0, $this->element_child_count($node), $id);
+        }
+
+        $note = $document->getElementById('wmm-tolka-provenance-note');
+        $this->assertSame('provenance_note', $note->parentNode->getAttribute('data-wmm-tolka'));
+        $this->assertStringContainsString('wmm-tolka-provenance', $note->parentNode->getAttribute('class'));
+        $this->assertStringContainsString('wmm-tolka-value', $note->getAttribute('class'));
     }
 
     public function test_empty_array_stays_unmeasured()
@@ -217,7 +244,6 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
             $this->text($html, 'wmm-tolka-speed-savings')
         );
         $this->assertStringContainsString('single page', $this->text($html, 'wmm-tolka-speed-scope'));
-        $this->assertSame('Basis', $this->text_by_class($html, 'wmm-tolka-speed-basis-label'));
         $this->assertSame(
             'Measured page load plus coefficients from benchmarks.json.',
             $this->text($html, 'wmm-tolka-basis')
@@ -269,6 +295,24 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertTrue($document->getElementById('wmm-tolka-basis')->hasAttribute('hidden'));
         $this->assertSame('', $this->text($html, 'wmm-tolka-basis'));
         $this->assertStringContainsString('Placeholder coefficients', $this->text($html, 'wmm-tolka-provenance-note'));
+    }
+
+    public function test_failed_estimate_finishes_a_fragment_and_does_not_repeat_itself()
+    {
+        $fragment = $this->render(true, array('ok' => false, 'error' => 'Missing coefficient'));
+        $this->assertSame(
+            'The speed estimate could not be completed. Missing coefficient.',
+            $this->text($fragment, 'wmm-tolka-speed-error')
+        );
+
+        $already = $this->render(true, array(
+            'ok' => false,
+            'error' => 'The speed estimate could not be completed. Try another public URL.',
+        ));
+        $this->assertSame(
+            'The speed estimate could not be completed. Try another public URL.',
+            $this->text($already, 'wmm-tolka-speed-error')
+        );
     }
 
     public function test_failed_estimate_without_a_reason_still_explains_the_failure()
@@ -408,18 +452,21 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
     }
 
     /**
-     * Text of the first element with a class.
+     * Element children, ignoring text nodes.
      *
-     * @param string $html  Markup.
-     * @param string $class Class name.
-     * @return string
+     * @param DOMNode $node Node.
+     * @return int
      */
-    private function text_by_class($html, $class)
+    private function element_child_count($node)
     {
-        $xpath = new DOMXPath($this->document($html));
-        $nodes = $xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " ' . $class . ' ")]');
-        $this->assertGreaterThan(0, $nodes->length, $class);
+        $count = 0;
+        foreach ($node->childNodes as $child) {
+            if (XML_ELEMENT_NODE === $child->nodeType) {
+                $count++;
+            }
+        }
 
-        return trim(preg_replace('/\s+/', ' ', $nodes->item(0)->textContent));
+        return $count;
     }
+
 }
