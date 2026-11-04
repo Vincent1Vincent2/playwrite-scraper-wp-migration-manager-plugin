@@ -24,6 +24,8 @@
     "Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.";
   var BASIS_FALLBACK =
     "Measured page load plus coefficients from benchmarks.json";
+  var SPEED_SCOPE =
+    "The speed percent is an estimate for the single page you load. It is not a result for every page on the site.";
   var SAMPLE_LIMIT = 20;
 
   var SECTIONS = [
@@ -879,9 +881,28 @@
     return "The speed estimate could not be completed. " + finishSentence(text);
   }
 
-  function speedSummary(faster, currentText, tolkaText) {
+  function speedSummary(faster, currentText, tolkaText, percent) {
     if (!faster || !currentText || !tolkaText) {
-      return "The speed estimate completed, but one or more figures were missing.";
+      return "The speed estimate completed, but one or more figures were missing. No percent is shown.";
+    }
+    var number = Number(percent);
+    if (isFinite(number) && number < 0) {
+      return (
+        "Tolka is not estimated to be faster on this page. The current load is " +
+        currentText +
+        ", and the estimated Tolka load is " +
+        tolkaText +
+        "."
+      );
+    }
+    if (isFinite(number) && number < 0.05) {
+      return (
+        "Tolka is estimated to take about the same time on this page. The current load is " +
+        currentText +
+        ", and the estimated Tolka load is " +
+        tolkaText +
+        "."
+      );
     }
     return (
       "Tolka is estimated to be " +
@@ -892,6 +913,44 @@
       tolkaText +
       "."
     );
+  }
+
+  function applySavings(slots, estimate) {
+    if (!slots.savings) {
+      return;
+    }
+    var saved = 0;
+    var percent = NaN;
+    if (estimate) {
+      saved = rounded(estimate.current_ms) - rounded(estimate.tolka_ms);
+      percent = Number(estimate.faster_percent);
+    }
+    if (estimate && isFinite(percent) && percent > 0 && saved > 0) {
+      setText(
+        slots.savings,
+        "The estimated Tolka load is " +
+          formatMs(saved) +
+          " shorter than the measured load."
+      );
+      slots.savings.setAttribute("data-saved-ms", String(saved));
+      reveal(slots.savings);
+      return;
+    }
+    setText(slots.savings, "");
+    slots.savings.removeAttribute("data-saved-ms");
+    conceal(slots.savings);
+  }
+
+  function applyScope(slots, show) {
+    if (!slots.scope) {
+      return;
+    }
+    if (!show) {
+      conceal(slots.scope);
+      return;
+    }
+    setText(slots.scope, SPEED_SCOPE);
+    reveal(slots.scope);
   }
 
   function fillSpeedPanel(container, estimate, metrics, currentText, tolkaText, faster, basis, note) {
@@ -920,13 +979,21 @@
     } else {
       slots.faster.removeAttribute("data-faster-percent");
     }
-    setText(slots.basis, basis);
+    setText(slots.basis, finishSentence(basis));
     reveal(slots.basis);
+    if (slots.basisLabel) {
+      reveal(slots.basisLabel);
+    }
     if (slots.summary) {
-      setText(slots.summary, speedSummary(faster, currentText, tolkaText));
+      setText(
+        slots.summary,
+        speedSummary(faster, currentText, tolkaText, estimate.faster_percent)
+      );
       reveal(slots.summary);
       slots.summary.classList.remove("description");
     }
+    applySavings(slots, estimate);
+    applyScope(slots, true);
     applyProvenance(slots, note, estimate.provenance || "");
     hideSpeedError(slots);
     upsertTruncation(container, metrics);
@@ -959,6 +1026,11 @@
     slots.faster.removeAttribute("data-faster-percent");
     setText(slots.basis, "");
     conceal(slots.basis);
+    if (slots.basisLabel) {
+      conceal(slots.basisLabel);
+    }
+    applySavings(slots, null);
+    applyScope(slots, false);
     if (slots.summary) {
       setText(slots.summary, "");
       conceal(slots.summary);
@@ -1792,6 +1864,9 @@
         ["[data-wmm-tolka='provenance_note']", "[data-wmm-tolka='provenance']"]
       ),
       error: speedSlot(container, ["[data-field='error']", "#wmm-tolka-speed-error"]),
+      savings: speedSlot(container, ["[data-field='savings']", "#wmm-tolka-speed-savings"]),
+      scope: speedSlot(container, ["[data-field='scope']", "#wmm-tolka-speed-scope"]),
+      basisLabel: findSlot(container, ".wmm-tolka-speed-basis-label"),
     };
   }
 
@@ -2054,7 +2129,22 @@
     if (number < 0) {
       digits = "-" + digits;
     }
-    return digits + " ms";
+    if (number < 1000) {
+      return digits + " ms";
+    }
+
+    var seconds = number / 1000;
+    var hundredths = Math.round(seconds * 100);
+    var decimals = 2;
+    if (hundredths % 100 === 0) {
+      decimals = 0;
+    } else if (hundredths % 10 === 0) {
+      decimals = 1;
+    }
+    if (decimals === 0 && Math.round(seconds) === 1) {
+      return digits + " ms (1 second)";
+    }
+    return digits + " ms (" + seconds.toFixed(decimals) + " seconds)";
   }
 
   function finishSentence(value) {
