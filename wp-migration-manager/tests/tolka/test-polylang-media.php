@@ -408,6 +408,54 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame(0, $result['skipped']);
     }
 
+    public function test_serialized_meta_text_is_unpacked_without_wordpress()
+    {
+        if (function_exists('maybe_unserialize')) {
+            $this->markTestSkipped('WordPress unserialize helper is loaded.');
+        }
+
+        $this->assertSame('Harbor', $this->call('unserialize_meta', array(serialize('Harbor'))));
+        $this->assertSame('2024/01/a.jpg', $this->call('unserialize_meta', array('2024/01/a.jpg')));
+        $this->assertSame('Door', $this->call('string_value', array($this->call('unserialize_meta', array(serialize('Door'))))));
+    }
+
+    public function test_titles_keep_unicode_and_drop_invalid_bytes()
+    {
+        $this->assertSame('Café 港', $this->call('string_value', array('Café 港')));
+        $this->assertSame('Doorway', $this->call('string_value', array("Door\xFFway")));
+        $this->assertSame('', $this->call('string_value', array("\xFF\xFE")));
+        $encoded = json_encode(array(
+            'title' => $this->call('string_value', array("Door\xFFway")),
+            'alt' => $this->call('string_value', array('Café 港')),
+        ));
+        $this->assertIsString($encoded);
+        $decoded = json_decode($encoded, true);
+        $this->assertSame('Doorway', $decoded['title']);
+        $this->assertSame('Café 港', $decoded['alt']);
+    }
+
+    public function test_id_query_placeholders_match_the_batch_size()
+    {
+        $this->assertSame('%d, %d, %d', $this->call('int_placeholders', array(3)));
+        $this->assertSame('0', $this->call('int_placeholders', array(0)));
+    }
+
+    public function test_record_lookup_without_wordpress_returns_empty_strings()
+    {
+        if (function_exists('get_post_meta') || function_exists('get_post') || isset($GLOBALS['wpdb'])) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $records = $this->call('records_for', array(array(4, 4, 0, -3)));
+        $this->assertSame(array(
+            4 => array(
+                'file' => '',
+                'alt' => '',
+                'title' => '',
+            ),
+        ), $records);
+    }
+
     public function test_source_only_reads_polylang_media()
     {
         $source = file_get_contents(dirname(__DIR__, 2) . '/includes/tolka/class-polylang-media.php');

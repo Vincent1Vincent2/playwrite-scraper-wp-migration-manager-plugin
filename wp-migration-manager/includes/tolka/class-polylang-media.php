@@ -1579,23 +1579,149 @@ class Polylang_Media
     private function records_for($ids)
     {
         $records = array();
-        if (!is_array($ids)) {
+        if (is_array($ids)) {
+            foreach ($ids as $id) {
+                $id = (int) $id;
+                if ($id <= 0 || isset($records[$id])) {
+                    continue;
+                }
+                $records[$id] = array(
+                    'file' => '',
+                    'alt' => '',
+                    'title' => '',
+                );
+            }
+        }
+        if ($records === array()) {
             return $records;
         }
 
-        foreach ($ids as $id) {
-            $id = (int) $id;
-            if ($id <= 0 || isset($records[$id])) {
-                continue;
+        $record_ids = array_keys($records);
+        if (function_exists('get_post_meta') || function_exists('get_post')) {
+            $this->prime_attachment_cache($record_ids);
+            foreach ($record_ids as $id) {
+                $records[$id] = array(
+                    'file' => $this->meta_string($id, '_wp_attached_file'),
+                    'alt' => $this->meta_string($id, '_wp_attachment_image_alt'),
+                    'title' => $this->attachment_title($id),
+                );
             }
-            $records[$id] = array(
-                'file' => $this->meta_string($id, '_wp_attached_file'),
-                'alt' => $this->meta_string($id, '_wp_attachment_image_alt'),
-                'title' => $this->attachment_title($id),
-            );
+            return $records;
         }
 
+        $this->fill_records_from_database($records);
         return $records;
+    }
+
+    /**
+     * Prime post and meta caches in chunks so a large library does not query once per file.
+     *
+     * @param array $ids
+     * @return void
+     */
+    private function prime_attachment_cache($ids)
+    {
+        try {
+            if (function_exists('update_meta_cache')) {
+                foreach (array_chunk($ids, 200) as $chunk) {
+                    update_meta_cache('post', $chunk);
+                }
+            }
+            if (function_exists('_prime_post_caches')) {
+                foreach (array_chunk($ids, 200) as $chunk) {
+                    _prime_post_caches($chunk, false, false);
+                }
+            }
+        } catch (\Throwable $e) {
+            return;
+        }
+    }
+
+    /**
+     * @param array $records
+     * @return void
+     */
+    private function fill_records_from_database(&$records)
+    {
+        $wpdb = $this->wpdb();
+        if ($wpdb === null || $records === array()) {
+            return;
+        }
+
+        $ids = array_keys($records);
+        $posts = isset($wpdb->posts) ? $this->table_name($wpdb->posts) : '';
+        $postmeta = isset($wpdb->postmeta) ? $this->table_name($wpdb->postmeta) : '';
+
+        if ($posts !== '') {
+            foreach (array_chunk($ids, 200) as $chunk) {
+                $rows = $this->query_rows(
+                    $wpdb,
+                    "SELECT ID, post_title FROM {$posts} WHERE ID IN (" . $this->int_placeholders(count($chunk)) . ')',
+                    $chunk
+                );
+                if (!is_array($rows)) {
+                    continue;
+                }
+                foreach ($rows as $row) {
+                    $id = (int) $this->row_value($row, 'ID');
+                    if (!isset($records[$id])) {
+                        continue;
+                    }
+                    $records[$id]['title'] = $this->string_value($this->row_value($row, 'post_title'));
+                }
+            }
+        }
+
+        if ($postmeta === '') {
+            return;
+        }
+
+        foreach (array_chunk($ids, 200) as $chunk) {
+            $args = array_merge(
+                array('_wp_attached_file', '_wp_attachment_image_alt'),
+                $chunk
+            );
+            $rows = $this->query_rows(
+                $wpdb,
+                "SELECT post_id, meta_key, meta_value FROM {$postmeta}
+                WHERE meta_key IN (%s, %s)
+                    AND post_id IN (" . $this->int_placeholders(count($chunk)) . ')',
+                $args
+            );
+            if (!is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                $id = (int) $this->row_value($row, 'post_id');
+                if (!isset($records[$id])) {
+                    continue;
+                }
+                $key = $this->row_value($row, 'meta_key');
+                $field = '';
+                if ($key === '_wp_attached_file') {
+                    $field = 'file';
+                } elseif ($key === '_wp_attachment_image_alt') {
+                    $field = 'alt';
+                }
+                if ($field === '' || $records[$id][$field] !== '') {
+                    continue;
+                }
+                $records[$id][$field] = $this->string_value($this->unserialize_meta($this->row_value($row, 'meta_value')));
+            }
+        }
+    }
+
+    /**
+     * @param int $count
+     * @return string
+     */
+    private function int_placeholders($count)
+    {
+        $count = (int) $count;
+        if ($count < 1) {
+            return '0';
+        }
+        return implode(', ', array_fill(0, $count, '%d'));
     }
 
     /**
@@ -1609,11 +1735,7 @@ class Polylang_Media
             return $this->string_value(get_post_meta($id, $key, true));
         }
 
-        $value = $this->meta_from_db($id, $key);
-        if (is_string($value) && function_exists('maybe_unserialize')) {
-            $value = maybe_unserialize($value);
-        }
-        return $this->string_value($value);
+        return $this->string_value($this->unserialize_meta($this->meta_from_db($id, $key)));
     }
 
     /**
@@ -1681,6 +1803,25 @@ class Polylang_Media
 
     /**
      * @param mixed $value
+     * @return mixed
+     */
+    private function unserialize_meta($value)
+    {
+        if (!is_string($value)) {
+            return $value;
+        }
+        if (function_exists('maybe_unserialize')) {
+            return maybe_unserialize($value);
+        }
+        $decoded = $this->safe_unserialize($value);
+        if (is_string($decoded) || is_numeric($decoded) || is_array($decoded)) {
+            return $decoded;
+        }
+        return $value;
+    }
+
+    /**
+     * @param mixed $value
      * @return string
      */
     private function string_value($value)
@@ -1696,6 +1837,40 @@ class Polylang_Media
         }
         if (!is_string($value)) {
             return '';
+        }
+        return $this->utf8_string($value);
+    }
+
+    /**
+     * Keep text that can be stored in the Tolka package.
+     *
+     * Invalid bytes would make the package fail when it is encoded.
+     *
+     * @param string $value
+     * @return string
+     */
+    private function utf8_string($value)
+    {
+        if ($value === '') {
+            return '';
+        }
+        if (function_exists('wp_check_invalid_utf8')) {
+            $clean = wp_check_invalid_utf8($value, true);
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+        if (function_exists('iconv')) {
+            $clean = iconv('UTF-8', 'UTF-8//IGNORE', $value);
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+        if (function_exists('mb_convert_encoding')) {
+            $clean = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+            if (is_string($clean)) {
+                return $clean;
+            }
         }
         return $value;
     }
