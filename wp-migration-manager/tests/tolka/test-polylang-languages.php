@@ -3,6 +3,9 @@
 /**
  * Languages exported from Polylang for the Tolka migration.
  *
+ * PHPUnit class: Test_Polylang_Languages. The filename is fixed by the
+ * migration contract, so load this file and run that class.
+ *
  * @package MigrationManager
  */
 
