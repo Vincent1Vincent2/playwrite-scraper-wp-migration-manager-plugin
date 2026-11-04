@@ -467,6 +467,118 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         $this->assertArrayHasKey('items', $first);
         $this->assertArrayHasKey('errors', $first);
         $this->assertSame(array(), $first['items']);
+        $this->assertExportShape($first);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_newlines_and_quotation_marks_are_kept()
+    {
+        $original = "She said \"hello\"\r\nThen 'goodbye'\n";
+        $translated = "Il a dit \"bonjour\"\r\nPuis 'au revoir'\n";
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('en', 'fr'),
+            'registered' => array(
+                array(
+                    'name' => "Quote \"name\"",
+                    'string' => $original,
+                    'context' => "Group's name",
+                ),
+            ),
+            'mo' => array(
+                'fr' => array(array($original, $translated)),
+            ),
+            'errors' => array('Already noted.', 5, array('bad'), null, ''),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame("Quote \"name\"", $result['items'][0]['name']);
+        $this->assertSame("Group's name", $result['items'][0]['context']);
+        $this->assertSame($original, $result['items'][0]['string']);
+        $this->assertSame($translated, $result['items'][0]['translations']['fr']);
+        $this->assertSame('', $result['items'][0]['translations']['en']);
+        $this->assertSame(array('Already noted.'), $result['errors']);
+        $this->assertExportShape($result);
+
+        $slashed = addslashes(serialize(array(array($original, $translated))));
+        $from_catalogue = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array('fr' => $slashed),
+        ));
+        $this->assertSame($original, $from_catalogue['items'][0]['string']);
+        $this->assertSame($translated, $from_catalogue['items'][0]['translations']['fr']);
+
+        $only_marks = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'registered' => array(
+                array('name' => '"', 'string' => "\n", 'context' => "'"),
+            ),
+            'mo' => array(
+                'fr' => array(array("\n", '"')),
+            ),
+        ));
+        $this->assertCount(1, $only_marks['items']);
+        $this->assertSame('"', $only_marks['items'][0]['name']);
+        $this->assertSame("\n", $only_marks['items'][0]['string']);
+        $this->assertSame("'", $only_marks['items'][0]['context']);
+        $this->assertSame('"', $only_marks['items'][0]['translations']['fr']);
+        $this->assertExportShape($only_marks);
+    }
+
+    /**
+     * @return void
+     */
+    public function test_a_second_export_does_not_append_duplicate_items()
+    {
+        $db = new WMM_Tolka_Strings_Db();
+        $db->language_rows = array(
+            array('term_id' => 10, 'slug' => 'en'),
+            array('term_id' => 11, 'slug' => 'fr'),
+        );
+        $db->option_rows = array(
+            array(
+                'option_name' => 'polylang_wpml_strings',
+                'option_value' => serialize(array(
+                    'one' => array(
+                        'name' => 'Quote "name"',
+                        'string' => "Line one\nLine \"two\"",
+                        'context' => 'theme',
+                    ),
+                    'blank' => array(
+                        'name' => '',
+                        'string' => '',
+                        'context' => 'theme',
+                    ),
+                )),
+            ),
+        );
+        $db->term_meta_rows = array(
+            array(
+                'term_id' => 11,
+                'meta_value' => serialize(array(
+                    array("Line one\nLine \"two\"", "Ligne une\nLigne \"deux\""),
+                )),
+            ),
+        );
+        $exporter = $this->probe($db, array(), true);
+        $first = $exporter->export();
+        $second = $exporter->export();
+
+        $this->assertCount(1, $first['items']);
+        $this->assertCount(1, $second['items']);
+        $this->assertSame($first, $second);
+        $this->assertSame("Line one\nLine \"two\"", $second['items'][0]['string']);
+        $this->assertSame("Ligne une\nLigne \"deux\"", $second['items'][0]['translations']['fr']);
+        $this->assertContains(
+            'A string was left out because it had no name and no text.',
+            $second['errors']
+        );
+        $this->assertExportShape($first);
+        $this->assertExportShape($second);
     }
 
     /**
@@ -1921,6 +2033,22 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
 
         $this->assertSame('0', $result['items'][0]['string']);
         $this->assertSame('zéro', $result['items'][0]['translations']['fr']);
+    }
+
+    /**
+     * @param array $result Exporter envelope.
+     * @return void
+     */
+    private function assertExportShape(array $result)
+    {
+        $this->assertSame(array_values($result['items']), $result['items']);
+        $this->assertSame(array_values($result['errors']), $result['errors']);
+        $this->assertStringStartsWith('[', json_encode($result['items']));
+        $this->assertStringStartsWith('[', json_encode($result['errors']));
+        foreach ($result['errors'] as $error) {
+            $this->assertIsString($error);
+            $this->assertNotSame('', $error);
+        }
     }
 
     /**
