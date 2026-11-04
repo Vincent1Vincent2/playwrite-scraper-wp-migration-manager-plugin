@@ -284,6 +284,16 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
                 'faster_label' => 'Nearly twice as quick',
                 'faster_percent' => 84,
             ),
+            'numeric strings' => array(
+                'current_ms' => '1842',
+                'tolka_ms' => '900',
+                'current_text' => '1,842 ms',
+                'tolka_text' => '900 ms',
+                'current_attr' => '1842',
+                'tolka_attr' => '900',
+                'faster_label' => '51.1% faster',
+                'faster_percent' => '51.1',
+            ),
         );
 
         foreach ($cases as $name => $case) {
