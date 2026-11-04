@@ -45,7 +45,7 @@ class Tolka_Schema
     {
         return array(
             'format' => self::FORMAT,
-            'version' => self::VERSION,
+            'version' => 1,
             'generated_at' => self::zulu($generated_at),
         );
     }
@@ -167,14 +167,18 @@ class Tolka_Schema
      *
      * Each part is an exporter envelope with `items` and `errors`. Missing
      * parts and unreadable envelopes become empty item lists. Exporter error
-     * strings are not copied into the package.
+     * strings are not copied into the package. A package time of
+     * 2024-05-06T07:08:09+00:00 is stored as 2024-05-06T07:08:09Z. The same
+     * text inside a string is not rewritten. The version is the integer 1.
      *
      * @param array $parts Keys languages, posts, terms, strings, menus, media.
      * @return array
      */
     public static function package(array $parts)
     {
-        $package = self::header();
+        $generated = array_key_exists('generated_at', $parts) ? $parts['generated_at'] : null;
+        $package = self::header($generated);
+        $package['version'] = 1;
 
         foreach (self::sections() as $section) {
             $package[$section] = self::items_from(
