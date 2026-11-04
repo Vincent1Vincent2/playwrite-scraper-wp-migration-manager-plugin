@@ -166,6 +166,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         );
 
         $this->assertFalse(Tolka_Schema::is_gmt_timestamp('2020-13-40T00:00:00Z'));
+        $this->assertFalse(Tolka_Schema::is_gmt_timestamp('2020-01-01T00:00:00.000Z'));
         $before_invalid = time();
         $invalid = Tolka_Writer::write(array(
             'format' => 'tolka-migration',
@@ -195,6 +196,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
                     'group' => 'post:9',
                     'translations' => array(
                         'en' => array('id' => 9, 'title' => 'Hello'),
+                        'polylang' => array('id' => 19, 'title' => 'Not the option'),
                     ),
                 ),
             ),
@@ -237,6 +239,8 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             ),
             $GLOBALS['wmm_tolka_schema_driver']['post_meta'][9]
         );
+        $this->assertSame('polylang', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][19]['_wmm_tolka_lang']);
+        $this->assertSame('post:9', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][19]['_wmm_tolka_group']);
         $this->assertSame(
             array(
                 '_wmm_tolka_lang' => 'en',
