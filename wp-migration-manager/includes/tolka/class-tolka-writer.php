@@ -79,6 +79,7 @@ class Tolka_Writer
     {
         $hidden = 0;
         $errors = array();
+        $version_ok = self::supported_version($package);
 
         if (!self::caller_may_write()) {
             self::add_error(
@@ -86,23 +87,24 @@ class Tolka_Writer
                 $hidden,
                 'You need administrator permission to migrate this site to Tolka.'
             );
-            $collected = self::collect(self::prepare_package($package), $errors, $hidden);
+            $collected = self::collect(self::prepare_package(self::clean_package($package)), $errors, $hidden);
             return self::result($collected['counts'], $errors, $hidden);
         }
 
-        if (!self::supported_version($package)) {
+        if (!$version_ok) {
             self::add_error(
                 $errors,
                 $hidden,
                 'This Tolka package is version "%s", and this site can save version 1 only. Run the migration again from this site.',
                 array(self::version_label(isset($package['version']) ? $package['version'] : null))
             );
-            $collected = self::collect(self::prepare_package($package), $errors, $hidden);
+            $collected = self::collect(self::prepare_package(self::clean_package($package)), $errors, $hidden);
             return self::result($collected['counts'], $errors, $hidden);
         }
 
         $package = self::prepare_package($package);
         $collected = self::collect($package, $errors, $hidden);
+        $package = self::clean_package($package);
 
         if (!self::store_package($package, $errors, $hidden)) {
             return self::result($collected['counts'], $errors, $hidden);
@@ -238,9 +240,11 @@ class Tolka_Writer
             }
 
             foreach ($item['translations'] as $lang => $translation) {
-                $lang = (string) $lang;
+                $raw_lang = (string) $lang;
+                $lang = self::stored_text($raw_lang);
                 if ($lang === '') {
-                    self::add_error($errors, $hidden, $copy['no_lang'], array($group));
+                    $template = ($raw_lang === '') ? 'no_lang' : 'bad_lang';
+                    self::add_error($errors, $hidden, $copy[$template], array($group));
                     continue;
                 }
 
@@ -275,6 +279,7 @@ class Tolka_Writer
                 'unreadable' => 'One term entry in the Tolka package has translations Tolka cannot read, so Tolka skipped it.',
                 'no_group' => 'A term translation has no group id, so Tolka skipped it.',
                 'no_lang' => 'A term translation in group "%s" has no language code, so Tolka skipped it.',
+                'bad_lang' => 'A term translation in group "%s" had a language code WordPress cannot store, so Tolka skipped it.',
                 'no_id' => 'A term translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
                 'conflict' => 'Term %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
                 'lang_failed' => 'Tolka could not save the language "%1$s" on term %2$d.',
@@ -287,7 +292,8 @@ class Tolka_Writer
             'incomplete' => 'One post entry in the Tolka package was incomplete, so Tolka skipped it.',
             'unreadable' => 'One post entry in the Tolka package has translations Tolka cannot read, so Tolka skipped it.',
             'no_group' => 'A post translation has no group id, so Tolka skipped it.',
-            'no_lang' => 'A post translation in group "%s" has no language code, so Tolka skipped it.',
+                'no_lang' => 'A post translation in group "%s" has no language code, so Tolka skipped it.',
+                'bad_lang' => 'A post translation in group "%s" had a language code WordPress cannot store, so Tolka skipped it.',
             'no_id' => 'A post translation for "%1$s" in group "%2$s" has no id, so Tolka skipped it.',
             'conflict' => 'Post %1$d was listed as "%2$s" in group "%3$s" and as "%4$s" in group "%5$s", so Tolka kept "%4$s" in group "%5$s". Check that translation before you switch the site to Tolka.',
             'lang_failed' => 'Tolka could not save the language "%1$s" on post %2$d.',
@@ -309,7 +315,7 @@ class Tolka_Writer
         }
 
         if (is_string($item['group'])) {
-            return $item['group'];
+            return self::stored_text($item['group']);
         }
 
         if (is_int($item['group'])) {
@@ -468,6 +474,36 @@ class Tolka_Writer
 
         self::add_error($errors, $hidden, self::store_failed_message($package));
         return false;
+    }
+
+    /**
+     * Copy the package into text WordPress can store.
+     *
+     * @param array $package Package or exporter parts.
+     * @return array
+     */
+    private static function clean_package(array $package)
+    {
+        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
+            return Tolka_Schema::for_storage($package);
+        }
+
+        return $package;
+    }
+
+    /**
+     * Text stored in Tolka meta.
+     *
+     * @param mixed $value Raw language or group.
+     * @return string
+     */
+    private static function stored_text($value)
+    {
+        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
+            return Tolka_Schema::text($value);
+        }
+
+        return str_replace("\0", '', (string) $value);
     }
 
     /**
