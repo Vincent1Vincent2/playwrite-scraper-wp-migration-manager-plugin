@@ -78,6 +78,20 @@ if (class_exists(__NAMESPACE__ . '\\Speed_Loader', false)) {
         public static $throw = false;
 
         /**
+         * Message used when the fake transport throws.
+         *
+         * @var string
+         */
+        public static $throw_message = 'transport failed';
+
+        /**
+         * Throw only after this many successful fetches. 0 throws immediately.
+         *
+         * @var int
+         */
+        public static $throw_after = 0;
+
+        /**
          * Microseconds to pause inside the fake transport.
          *
          * @var int
@@ -96,8 +110,8 @@ if (class_exists(__NAMESPACE__ . '\\Speed_Loader', false)) {
             if (self::$delay_us > 0) {
                 usleep(self::$delay_us);
             }
-            if (self::$throw) {
-                throw new \RuntimeException('transport failed');
+            if (self::$throw && (self::$throw_after < 1 || count(self::$requested_urls) > self::$throw_after)) {
+                throw new \RuntimeException(self::$throw_message);
             }
             if (self::$queue !== array()) {
                 return array_shift(self::$queue);
@@ -131,6 +145,8 @@ if (class_exists(__NAMESPACE__ . '\\Speed_Loader', false)) {
             self::$requested_urls = array();
             self::$queue = array();
             self::$throw = false;
+            self::$throw_message = 'transport failed';
+            self::$throw_after = 0;
             self::$delay_us = 0;
         }
     }
@@ -164,6 +180,50 @@ class Speed_Loader_Header_Bag
     {
         $key = strtolower((string) $offset);
         return isset($this->items[$key]) ? $this->items[$key] : null;
+    }
+}
+
+/**
+ * Transport failure identified by a timeout error code and an empty message.
+ */
+class Speed_Loader_Timeout_Code
+{
+    /**
+     * @return string
+     */
+    public function get_error_code()
+    {
+        return 'http_request_timed_out';
+    }
+
+    /**
+     * @return string
+     */
+    public function get_error_message()
+    {
+        return '';
+    }
+}
+
+/**
+ * Transport failure whose message getter throws a timeout exception.
+ */
+class Speed_Loader_Throwing_Timeout
+{
+    /**
+     * @return string
+     */
+    public function get_error_code()
+    {
+        return 'http_request_failed';
+    }
+
+    /**
+     * @return string
+     */
+    public function get_error_message()
+    {
+        throw new \RuntimeException('cURL error 28: Operation timed out after 15000 milliseconds');
     }
 }
 
@@ -215,7 +275,7 @@ class Speed_Loader_Test extends TestCase
 
     const HTTP_API_MESSAGE = 'WordPress could not load the page because the HTTP API is unavailable.';
 
-    const TIMEOUT_MESSAGE = 'The site did not respond within 15 seconds. Check the address and try again.';
+    const TIMEOUT_MESSAGE = 'The site did not respond within 15 seconds, so the load time could not be measured.';
 
     const RESULT_KEYS = array(
         'ok',
@@ -779,12 +839,66 @@ class Speed_Loader_Test extends TestCase
 
         $result = Speed_Loader_Harness::measure('http://1.1.1.1/');
 
-        $this->assertFalse($result['ok']);
-        $this->assertSame(self::TIMEOUT_MESSAGE, $result['error']);
-        $this->assertSame('', $result['html']);
-        $this->assertNull($result['ttfb_ms']);
+        $this->assertTimeoutResult($result);
         $this->assertGreaterThanOrEqual(50, $result['total_ms']);
         $this->assertLessThan(5000, $result['total_ms']);
+    }
+
+    public function test_timeout_from_an_error_code_is_one_sentence()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = new Speed_Loader_Timeout_Code();
+
+        $result = $this->measureWithoutThrowing('http://1.1.1.1/');
+
+        $this->assertTimeoutResult($result);
+    }
+
+    public function test_timeout_when_the_error_object_throws_is_not_fatal()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = new Speed_Loader_Throwing_Timeout();
+
+        $result = $this->measureWithoutThrowing('https://example.com/');
+
+        $this->assertTimeoutResult($result);
+        $this->assertStringNotContainsString('cURL', $result['error']);
+    }
+
+    public function test_timeout_on_a_later_hop_stops_without_throwing()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$queue = array(
+            $this->http_response(302, '<html>hop</html>', 'https://example.com/next'),
+        );
+        Speed_Loader_Harness::$throw = true;
+        Speed_Loader_Harness::$throw_after = 1;
+        Speed_Loader_Harness::$throw_message = 'Operation timed out after 15000 milliseconds';
+
+        $result = $this->measureWithoutThrowing('https://example.com/');
+
+        $this->assertTimeoutResult($result);
+        $this->assertSame(
+            array('https://example.com/', 'https://example.com/next'),
+            Speed_Loader_Harness::$requested_urls
+        );
+        $this->assertStringNotContainsString('hop', (string) json_encode($result));
+    }
+
+    public function test_thrown_timeout_is_one_sentence_and_not_fatal()
+    {
+        $this->requireHarness();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$throw = true;
+        Speed_Loader_Harness::$throw_message = 'cURL error 28: Operation timed out after 15000 milliseconds';
+
+        $result = $this->measureWithoutThrowing('https://example.com/');
+
+        $this->assertTimeoutResult($result);
+        $this->assertSame('', $result['html']);
     }
 
     public function test_transport_exception_is_not_fatal()
@@ -1405,6 +1519,34 @@ class Speed_Loader_Test extends TestCase
         }
 
         return $response;
+    }
+
+    /**
+     * @param string $url Address to measure.
+     * @return array
+     */
+    private function measureWithoutThrowing($url)
+    {
+        try {
+            return Speed_Loader_Harness::measure($url);
+        } catch (\Throwable $e) {
+            $this->fail('measure() threw ' . get_class($e) . ': ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * @param array $result Measurement.
+     */
+    private function assertTimeoutResult(array $result)
+    {
+        $this->assertFalse($result['ok']);
+        $this->assertSame('', $result['html']);
+        $this->assertSame(0, $result['html_bytes']);
+        $this->assertSame(0, $result['status_code']);
+        $this->assertNull($result['ttfb_ms']);
+        $this->assertSame(self::TIMEOUT_MESSAGE, $result['error']);
+        $this->assertSame(1, preg_match_all('/\./', $result['error']));
+        $this->assertMatchesRegularExpression('/\.\z/', $result['error']);
     }
 
     private function requireHarness()
