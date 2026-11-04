@@ -74,6 +74,8 @@
 
 .wmm-tolka-wizard {
     margin: 0;
+    container-type: inline-size;
+    container-name: wmm-tolka-wizard;
 }
 
 .wmm-tolka-lead,
@@ -312,29 +314,36 @@
     align-items: center;
     justify-content: center;
     max-width: 100%;
+    overflow: visible;
     cursor: progress;
     opacity: 1 !important;
     color: #1d2327 !important;
-    background: #f0f0f1 !important;
+    background-color: #f0f0f1 !important;
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent) !important;
+    background-repeat: no-repeat !important;
+    background-size: 40% 100% !important;
     border-color: #1d2327 !important;
     text-shadow: none !important;
-    box-shadow: none !important;
+    box-shadow: inset 0 0 0 1px rgba(29, 35, 39, 0.35) !important;
+    animation: wmm-tolka-busy 1s linear infinite;
 }
 
 #wmm-tolka-measure.button.wmm-tolka-is-busy,
 #wmm-tolka-measure.button.wmm-tolka-busy,
 #wmm-tolka-measure.button[aria-busy="true"] {
     color: #fff !important;
-    background: #084e39 !important;
+    background-color: #084e39 !important;
     border-color: #063828 !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35) !important;
 }
 
 #wmm-tolka-run.button.wmm-tolka-is-busy,
 #wmm-tolka-run.button.wmm-tolka-busy,
 #wmm-tolka-run.button[aria-busy="true"] {
     color: #fff !important;
-    background: #0a4b78 !important;
+    background-color: #0a4b78 !important;
     border-color: #083654 !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28) !important;
 }
 
 #wmm-tolka-wizard button.wmm-tolka-busy::after,
@@ -344,8 +353,8 @@
     content: "";
     display: block;
     flex: 0 0 auto;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     margin: 0;
     border: 2px solid currentColor;
     border-right-color: transparent;
@@ -356,6 +365,16 @@
 @keyframes wmm-tolka-spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@keyframes wmm-tolka-busy {
+    from {
+        background-position: -40% 0;
+    }
+
+    to {
+        background-position: 140% 0;
     }
 }
 
@@ -1405,9 +1424,19 @@ p.wmm-tolka-speed-tolka {
 }
 
 #wmm-tolka-provenance-note[hidden],
-.wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
-.wmm-tolka-provenance-note:has(#wmm-tolka-provenance-note[hidden]) {
+.wmm-tolka-provenance:has(> #wmm-tolka-provenance-note[hidden]),
+.wmm-tolka-provenance-note:has(> #wmm-tolka-provenance-note[hidden]) {
     display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    border: 0 !important;
+    background: none !important;
 }
 
 .wmm-tolka-speed-result {
@@ -1625,7 +1654,33 @@ dl.wmm-tolka-lines dd,
     margin: 0 0 6px;
 }
 
+@container wmm-tolka-wizard (max-width: 720px) {
+    .wmm-tolka-speed-figures,
+    .wmm-tolka-compare,
+    .wmm-tolka-metrics,
+    .wmm-tolka-speed__compare,
+    #wmm-tolka-speed > dl {
+        grid-template-columns: 1fr;
+    }
+
+    .wmm-tolka-speed-figure,
+    .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-faster) {
+        grid-column: 1 / -1;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
+    #wmm-tolka-wizard button.wmm-tolka-busy,
+    #wmm-tolka-wizard button.wmm-tolka-is-busy,
+    #wmm-tolka-wizard button.wmm-tolka-button--busy,
+    #wmm-tolka-wizard button[aria-busy="true"] {
+        animation: none;
+        outline: 2px dashed currentColor;
+        outline-offset: 2px;
+    }
+
     #wmm-tolka-wizard button.wmm-tolka-busy::after,
     #wmm-tolka-wizard button.wmm-tolka-is-busy::after,
     #wmm-tolka-wizard button.wmm-tolka-button--busy::after,
@@ -1753,6 +1808,13 @@ dl.wmm-tolka-lines dd,
     dl.wmm-tolka-report-lines,
     .wmm-tolka-report-line {
         grid-template-columns: 1fr;
+    }
+
+    .wmm-tolka-speed-figure,
+    .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-faster) {
+        grid-column: 1 / -1;
     }
 
     #wmm-tolka-speed > dl > dt:nth-of-type(1),
