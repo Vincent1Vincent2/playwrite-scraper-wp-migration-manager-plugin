@@ -1373,6 +1373,41 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertStringNotContainsString($marker, json_encode($stored));
     }
 
+    public function test_version_two_and_boolean_one_are_not_rewritten()
+    {
+        $previous = array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => '2024-01-01T00:00:00Z',
+            'posts' => array(),
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['stored_package'] = $previous;
+
+        foreach (array(2, true, '2', 1.5) as $version) {
+            $GLOBALS['wmm_tolka_schema_driver']['calls'] = array();
+            $result = Tolka_Writer::write(array(
+                'format' => 'tolka-migration',
+                'version' => $version,
+                'generated_at' => '2024-05-06T07:08:09Z',
+                'posts' => array(
+                    array(
+                        'group' => 'post:4',
+                        'translations' => array('en' => 4),
+                    ),
+                ),
+            ));
+
+            $this->assertFalse($result['ok']);
+            $this->assertSame($previous, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+            $this->assertSame(0, $this->call_count('update_option'));
+            $this->assertSame(0, $this->call_count('update_post_meta'));
+            $this->assertSame(
+                $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+                $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+            );
+        }
+    }
+
     public function test_unknown_package_version_is_not_saved()
     {
         $result = Tolka_Writer::write(array(
