@@ -70,7 +70,9 @@ class Speed_Loader
      * html_bytes is the full response size; html keeps at most the first
      * 2,000,000 bytes. A status outside 200–299 keeps that status and the
      * elapsed time, with html empty. A redirect is followed only after the
-     * next address is checked, and a private next hop is never requested.
+     * next address is checked. A private next hop is never requested, and
+     * the fourth redirect is not fetched. An address with a username or
+     * password is refused before any request.
      *
      * @param string $url Public http or https URL.
      * @return array{ok: bool, url: string, status_code: int, total_ms: int, ttfb_ms: null, html_bytes: int, html: string, error: string}
@@ -134,11 +136,7 @@ class Speed_Loader
             $next = self::resolve_redirect($current, $location);
             $next_checked = self::parse_public_url($next);
             if ($next_checked['error'] !== '') {
-                $message = self::text('The site redirected to an address that is not a public http or https page.');
-                if ($next_checked['reason'] === 'private' || $next_checked['reason'] === 'private-dns') {
-                    $message = self::text('The site redirected to a private or local address. Enter the public address visitors use.');
-                }
-                return self::fail($result, $message, $code);
+                return self::fail($result, self::redirect_refusal_message($next_checked['reason']), $code);
             }
 
             $current = $next_checked['url'];
@@ -149,11 +147,7 @@ class Speed_Loader
         if (is_string($reported) && $reported !== '' && $reported !== $current) {
             $reported_checked = self::parse_public_url($reported);
             if ($reported_checked['error'] !== '') {
-                $message = self::text('The site redirected to an address that is not a public http or https page.');
-                if ($reported_checked['reason'] === 'private' || $reported_checked['reason'] === 'private-dns') {
-                    $message = self::text('The site redirected to a private or local address. Enter the public address visitors use.');
-                }
-                return self::fail($result, $message, $code);
+                return self::fail($result, self::redirect_refusal_message($reported_checked['reason']), $code);
             }
             if ($reported_checked['url'] !== '') {
                 $result['url'] = $reported_checked['url'];
@@ -497,6 +491,14 @@ class Speed_Loader
             $none['error'] = self::reason_message('malformed');
             $none['reason'] = 'malformed';
             return $none;
+        }
+
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return array(
+                'url' => $clean,
+                'error' => self::reason_message('userinfo'),
+                'reason' => 'userinfo',
+            );
         }
 
         $reason = self::judge_host($host);
@@ -1029,6 +1031,24 @@ class Speed_Loader
     }
 
     /**
+     * Finished sentence when a redirect target must not be fetched.
+     *
+     * @param string $reason Why the next address was refused.
+     * @return string
+     */
+    private static function redirect_refusal_message($reason)
+    {
+        if ($reason === 'private' || $reason === 'private-dns') {
+            return self::text('The site redirected to a private or local address. Enter the public address visitors use.');
+        }
+        if ($reason === 'userinfo') {
+            return self::text('The site redirected to an address that contains a username or password.');
+        }
+
+        return self::text('The site redirected to an address that is not a public http or https page.');
+    }
+
+    /**
      * Rebuild an http(s) URL without userinfo or a fragment.
      *
      * @param string $scheme http or https.
@@ -1267,6 +1287,8 @@ class Speed_Loader
                 return self::text('That address is on a private or local network. Enter the public address visitors use.');
             case 'private-dns':
                 return self::text('That address resolves to a private or local network. Enter the public address visitors use.');
+            case 'userinfo':
+                return self::text('That address contains a username or password. Enter it again without a login.');
             default:
                 return self::text('That address could not be read. Use a full http or https URL.');
         }

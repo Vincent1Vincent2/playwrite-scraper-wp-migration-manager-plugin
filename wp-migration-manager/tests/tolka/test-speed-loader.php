@@ -347,7 +347,6 @@ class Speed_Loader_Test extends TestCase
             'octal shorthand private' => array('http://012.0.0.1/', $private),
             'octal private lan' => array('http://0300.0250.0.1/', $private),
             'nul loopback' => array('http://127.0.0.1%00.example.com/', $private),
-            'userinfo loopback' => array('http://user:secret@127.0.0.1/admin', $private),
             'ten start' => array('http://10.0.0.0/', $private),
             'ten end' => array('http://10.255.255.255/', $private),
             'ten shorthand' => array('http://10.1/', $private),
@@ -506,12 +505,45 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame('http://1.1.1.1/', $pasted['url']);
         $this->assertSame(self::HTTP_API_MESSAGE, $pasted['error']);
 
-        $result = Speed_Loader::measure('https://user:secret@1.1.1.1/admin#top');
+        $result = Speed_Loader::measure('https://example.com/page#top');
 
-        $this->assertSame('https://1.1.1.1/admin', $result['url']);
-        $this->assertStringNotContainsString('secret', json_encode($result));
         $this->assertStringNotContainsString('#', $result['url']);
-        $this->assertSame(self::HTTP_API_MESSAGE, $result['error']);
+    }
+
+    public function test_userinfo_is_refused_before_any_request()
+    {
+        $this->requireHarness();
+        $urls = array(
+            'https://user:secret@example.com',
+            'https://user:secret@example.com/admin',
+            'https://user@example.com/path',
+            'https://user:secret@1.1.1.1/admin#top',
+            'user:secret@example.com/admin',
+            'https://:secret@example.com/',
+            'http://user:secret@127.0.0.1/admin',
+        );
+
+        foreach ($urls as $url) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            Speed_Loader_Harness::$response = $this->http_response(200, '<html>secret page</html>');
+            $result = Speed_Loader_Harness::measure($url);
+
+            $this->assertFalse($result['ok'], $url);
+            $this->assertSame('', $result['html'], $url);
+            $this->assertSame(0, $result['html_bytes'], $url);
+            $this->assertSame(0, $result['total_ms'], $url);
+            $this->assertSame(0, $result['status_code'], $url);
+            $this->assertSame(array(), Speed_Loader_Harness::$requested_urls, $url);
+            $this->assertSame(
+                'That address contains a username or password. Enter it again without a login.',
+                $result['error'],
+                $url
+            );
+            $this->assertMatchesRegularExpression('/\.$/', $result['error'], $url);
+            $this->assertStringNotContainsString('secret', (string) json_encode($result), $url);
+            $this->assertStringNotContainsString('@', $result['url'], $url);
+        }
     }
 
     public function test_cleaned_url_is_what_would_be_fetched()
@@ -786,7 +818,6 @@ class Speed_Loader_Test extends TestCase
             'example.com/about' => 'https://example.com/about',
             'www.example.com' => 'https://www.example.com',
             '//www.example.com/path?x=1#section' => 'https://www.example.com/path?x=1',
-            'user:secret@example.com/admin' => 'https://example.com/admin',
             'example.com:8443/path' => 'https://example.com:8443/path',
             'example.com?utm=1' => 'https://example.com?utm=1',
             'example.com#pricing' => 'https://example.com',
@@ -905,7 +936,6 @@ class Speed_Loader_Test extends TestCase
             'unbracketed ipv6' => array('http://::1/secret'),
             'unspecified v4' => array('http://0.0.0.0/x'),
             'unspecified v6' => array('http://[::]/x'),
-            'userinfo hides loopback' => array('http://example.com@127.0.0.1/secret'),
             'ten boundary' => array('http://10.255.255.255/'),
             'lan boundary' => array('http://192.168.255.255/'),
         );
@@ -1019,14 +1049,18 @@ class Speed_Loader_Test extends TestCase
 
         $result = Speed_Loader_Harness::measure('http://example.com/');
 
-        $this->assertTrue($result['ok']);
-        $this->assertSame('https://www.example.com/home', $result['url']);
+        $this->assertFalse($result['ok']);
+        $this->assertSame('', $result['html']);
+        $this->assertSame(302, $result['status_code']);
         $this->assertSame(
-            array('http://example.com/', 'https://www.example.com/home'),
-            Speed_Loader_Harness::$requested_urls
+            'The site redirected to an address that contains a username or password.',
+            $result['error']
         );
+        $this->assertMatchesRegularExpression('/\.$/', $result['error']);
+        $this->assertSame(array('http://example.com/'), Speed_Loader_Harness::$requested_urls);
         $this->assertStringNotContainsString('secret', (string) json_encode(Speed_Loader_Harness::$requested_urls));
         $this->assertStringNotContainsString('secret', (string) json_encode($result));
+        $this->assertStringNotContainsString('@', $result['url']);
     }
 
     public function test_fourth_redirect_is_not_fetched()
@@ -1045,8 +1079,11 @@ class Speed_Loader_Test extends TestCase
 
         $this->assertFailure($result);
         $this->assertSame('The site redirected too many times.', $result['error']);
+        $this->assertMatchesRegularExpression('/\A[A-Z].+\.\z/', $result['error']);
         $this->assertSame('', $result['html']);
+        $this->assertSame(0, $result['html_bytes']);
         $this->assertSame(302, $result['status_code']);
+        $this->assertStringNotContainsString('five', (string) json_encode($result));
         $this->assertSame(
             array(
                 'https://example.com/a',
