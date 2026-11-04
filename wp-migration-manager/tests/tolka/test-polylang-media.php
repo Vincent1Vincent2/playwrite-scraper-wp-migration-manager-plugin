@@ -52,7 +52,7 @@ class Test_Polylang_Media extends TestCase
                     11 => 'fr',
                 ),
             ),
-        ), array(), array(10, 11, 12), array('en', 'fr'), 'en', array(
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
             10 => array('file' => '2024/01/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
             11 => array('file' => '', 'alt' => 'Port', 'title' => 'Visuel'),
             12 => array('file' => '2024/01/other.jpg', 'alt' => 'Other', 'title' => 'Other'),
@@ -246,7 +246,74 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame(0, $result['skipped']);
     }
 
-    public function test_member_without_a_language_is_skipped_and_explained()
+    public function test_attachments_with_no_translation_keep_their_text()
+    {
+        $result = $this->itemsFrom(array(), array(), array(9, 4, 4), array('en', 'de'), 'en', array(
+            4 => array('file' => '2024/03/scan.pdf', 'alt' => '', 'title' => 'Scan'),
+            9 => array('file' => '2024/03/photo.jpg', 'alt' => 'Door', 'title' => 'Door'),
+        ));
+
+        $this->assertSame(0, $result['skipped']);
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(4, $result['items'][0]['attachment_id']);
+        $this->assertSame('2024/03/scan.pdf', $result['items'][0]['file']);
+        $this->assertSame(array('en' => ''), $result['items'][0]['alt']);
+        $this->assertSame(array('en' => 'Scan'), $result['items'][0]['title']);
+        $this->assertSame(9, $result['items'][1]['attachment_id']);
+        $this->assertSame(array('en' => 'Door'), $result['items'][1]['alt']);
+        $this->assertSame(array('en' => 'Door'), $result['items'][1]['title']);
+    }
+
+    public function test_unassigned_file_is_listed_when_no_default_language_is_known()
+    {
+        $result = $this->itemsFrom(array(), array(), array(4), array('en', 'de'), '', array(
+            4 => array('file' => 'plain.jpg', 'alt' => 'Alt', 'title' => 'Title'),
+        ));
+
+        $this->assertSame(4, $result['items'][0]['attachment_id']);
+        $this->assertSame('plain.jpg', $result['items'][0]['file']);
+        $this->assertSame(array(), $result['items'][0]['alt']);
+        $this->assertSame(array(), $result['items'][0]['title']);
+    }
+
+    public function test_single_site_language_labels_unassigned_media()
+    {
+        $result = $this->itemsFrom(array(), array(), array(4), array('sv'), '', array(
+            4 => array('file' => 'sv.jpg', 'alt' => 'Hej', 'title' => 'Hej'),
+        ));
+
+        $this->assertSame(array('sv' => 'Hej'), $result['items'][0]['alt']);
+        $this->assertSame(array('sv' => 'Hej'), $result['items'][0]['title']);
+    }
+
+    public function test_translated_and_untranslated_media_are_both_exported()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(
+            array('id' => 8, 'lang' => 'de'),
+        ), array(11, 10, 3, 8), array('en', 'fr', 'de'), 'en', array(
+            10 => array('file' => 'hero.jpg', 'alt' => 'EN', 'title' => 'EN'),
+            11 => array('file' => 'hero.jpg', 'alt' => 'FR', 'title' => 'FR'),
+            8 => array('file' => 'logo.svg', 'alt' => 'Logo', 'title' => 'Logo'),
+            3 => array('file' => 'scan.pdf', 'alt' => '', 'title' => 'Scan'),
+        ));
+
+        $this->assertSame(array(3, 8, 10), array(
+            $result['items'][0]['attachment_id'],
+            $result['items'][1]['attachment_id'],
+            $result['items'][2]['attachment_id'],
+        ));
+        $this->assertSame(array('en' => 'Scan'), $result['items'][0]['title']);
+        $this->assertSame(array('de' => 'Logo'), $result['items'][1]['title']);
+        $this->assertSame(array('en' => 'EN', 'fr' => 'FR'), $result['items'][2]['alt']);
+        $this->assertCount(3, $result['items']);
+    }
+
+    public function test_group_member_without_a_language_is_still_exported()
     {
         $result = $this->itemsFrom(array(
             array(
@@ -254,14 +321,41 @@ class Test_Polylang_Media extends TestCase
                 'members' => array(6 => ''),
             ),
         ), array(), array(6), array('en'), 'en', array(
-            6 => array('file' => 'lost.jpg', 'alt' => 'Lost', 'title' => 'Lost'),
+            6 => array('file' => 'lost.jpg', 'alt' => 'Lost alt', 'title' => 'Lost'),
         ));
 
-        $this->assertSame(array(), $result['items']);
-        $this->assertSame(1, $result['skipped']);
+        $this->assertSame(0, $result['skipped']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(6, $result['items'][0]['attachment_id']);
+        $this->assertSame('lost.jpg', $result['items'][0]['file']);
+        $this->assertSame(array('en' => 'Lost'), $result['items'][0]['title']);
+    }
+
+    public function test_failed_attachment_is_not_reported_as_untranslated_media()
+    {
+        $result = $this->call('items_from_parts', array(
+            array(),
+            array(),
+            array(9, 4),
+            array('en'),
+            'en',
+            array(
+                9 => array('file' => 'bad.jpg', 'alt' => 'Bad', 'title' => 'Bad'),
+                4 => array('file' => 'ok.jpg', 'alt' => 'Ok', 'title' => 'Ok'),
+            ),
+            array(9),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(4, $result['items'][0]['attachment_id']);
+    }
+
+    public function test_skipped_media_message_is_a_finished_sentence()
+    {
         $messages = $this->call('messages_for', array(1));
         $this->assertCount(1, $messages);
         $this->assertCustomerSentence($messages[0]);
+        $this->assertStringContainsString('Nothing was changed', $messages[0]);
         $this->assertSame(array(), $this->call('messages_for', array(0)));
     }
 
@@ -279,7 +373,7 @@ class Test_Polylang_Media extends TestCase
                 'description' => array('en' => 3, 'note' => 4, '9bad' => 5),
                 'members' => array(3 => 'en'),
             ),
-        ), array(), array(3, 4, 5), array('en'), 'en', array(
+        ), array(), array(3), array('en'), 'en', array(
             3 => array('file' => 'ok.jpg', 'alt' => 'Ok', 'title' => 'Ok'),
         ));
 

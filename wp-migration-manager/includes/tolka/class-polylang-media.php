@@ -4,8 +4,10 @@
  * Export Polylang media for the Tolka migration.
  *
  * Translated media is a group of attachment posts that share one file.
- * Alt text and titles are stored on each attachment. This class only reads
- * that data. It does not delete Polylang rows, options, files, or meta.
+ * Alt text and titles are stored on each attachment. Attachments that were
+ * never given a translation are included too, so the media library is not
+ * dropped when Polylang's media module is off. This class only reads that
+ * data. It does not delete Polylang rows, options, files, or meta.
  *
  * @package MigrationManager
  */
@@ -33,8 +35,7 @@ class Polylang_Media
      *
      * Each item is one group: the default-language attachment when that
      * translation exists, the shared file, and alt and title maps keyed by
-     * language slug. An attachment that has a language but no translated
-     * copies is its own item.
+     * language slug. An attachment with no translations is its own item.
      *
      * @return array
      */
@@ -62,7 +63,8 @@ class Polylang_Media
                 isset($read['attachment_ids']) ? $read['attachment_ids'] : array(),
                 isset($read['known_languages']) ? $read['known_languages'] : array(),
                 isset($read['default_lang']) ? $read['default_lang'] : '',
-                isset($read['records']) ? $read['records'] : null
+                isset($read['records']) ? $read['records'] : null,
+                isset($read['excluded_ids']) ? $read['excluded_ids'] : array()
             );
         } catch (\Throwable $e) {
             return $this->envelope(array(), array(
@@ -100,17 +102,27 @@ class Polylang_Media
      * @param array $known_languages
      * @param string $default_lang
      * @param array|null $records
+     * @param array $excluded_ids
      * @return array
      */
-    private function items_from_parts($translation_rows, $language_rows, $attachment_ids, $known_languages, $default_lang, $records)
+    private function items_from_parts($translation_rows, $language_rows, $attachment_ids, $known_languages, $default_lang, $records, $excluded_ids = array())
     {
         $built = $this->groups_from_rows($translation_rows, $language_rows, $attachment_ids, $known_languages);
+        $bare_ids = $this->unassigned_ids(
+            $attachment_ids,
+            isset($built['seen']) ? $built['seen'] : array(),
+            $excluded_ids
+        );
         if (!is_array($records)) {
-            $records = $this->records_for($this->ids_in_groups($built['groups']));
+            $record_ids = $this->ids_in_groups($built['groups']);
+            foreach ($bare_ids as $bare_id) {
+                $record_ids[] = $bare_id;
+            }
+            $records = $this->records_for($record_ids);
         }
 
         return array(
-            'items' => $this->assemble_items($built['groups'], $default_lang, $records),
+            'items' => $this->assemble_items($built['groups'], $bare_ids, $default_lang, $known_languages, $records),
             'skipped' => (int) $built['skipped'],
             'seen' => $built['seen'],
         );
@@ -262,6 +274,7 @@ class Polylang_Media
         $language_rows = array();
         $seen_groups = array();
         $claimed = array();
+        $excluded = array();
         $skipped = 0;
 
         foreach ($ids as $id) {
@@ -280,6 +293,8 @@ class Polylang_Media
                 }
             } catch (\Throwable $e) {
                 $skipped++;
+                $excluded[] = $id;
+                $claimed[$id] = true;
                 continue;
             }
 
@@ -320,6 +335,7 @@ class Polylang_Media
             'translation_rows' => $rows,
             'language_rows' => $language_rows,
             'attachment_ids' => $ids,
+            'excluded_ids' => $excluded,
             'skipped' => $skipped,
         );
     }
@@ -706,10 +722,6 @@ class Polylang_Media
                 if ($lang === '') {
                     continue;
                 }
-                if ($known !== array() && !isset($known[$lang])) {
-                    $skipped++;
-                    continue;
-                }
                 $seen[$id] = true;
                 $groups[] = $this->order_map(array($lang => $id));
             }
@@ -772,8 +784,7 @@ class Polylang_Media
             if (isset($placed[$member_id])) {
                 continue;
             }
-            if ($slug === '' || ($known !== array() && !isset($known[$slug]))) {
-                $skipped++;
+            if ($slug === '') {
                 continue;
             }
             if (isset($map[$slug])) {
@@ -835,15 +846,17 @@ class Polylang_Media
 
     /**
      * @param array $groups
+     * @param array $bare_ids
      * @param string $default_lang
+     * @param array $known_languages
      * @param array $records
      * @return array
      */
-    private function assemble_items($groups, $default_lang, $records)
+    private function assemble_items($groups, $bare_ids, $default_lang, $known_languages, $records)
     {
         $items = array();
         if (!is_array($groups)) {
-            return $items;
+            $groups = array();
         }
         if (!is_array($records)) {
             $records = array();
@@ -875,6 +888,13 @@ class Polylang_Media
             );
         }
 
+        $bare_lang = $this->unassigned_language($default_lang, $known_languages);
+        if (is_array($bare_ids)) {
+            foreach ($bare_ids as $bare_id) {
+                $items[] = $this->item_for_unassigned($bare_id, $bare_lang, $records);
+            }
+        }
+
         usort($items, function ($left, $right) {
             $left_id = isset($left['attachment_id']) ? (int) $left['attachment_id'] : 0;
             $right_id = isset($right['attachment_id']) ? (int) $right['attachment_id'] : 0;
@@ -887,6 +907,104 @@ class Polylang_Media
         });
 
         return $items;
+    }
+
+    /**
+     * Attachments that are not in a Polylang group and have no language.
+     *
+     * Ids that could not be read are excluded so a failure is not reported twice.
+     *
+     * @param array $attachment_ids
+     * @param array $seen
+     * @param array $excluded_ids
+     * @return array
+     */
+    private function unassigned_ids($attachment_ids, $seen, $excluded_ids)
+    {
+        $used = array();
+        if (is_array($seen)) {
+            foreach (array_keys($seen) as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $used[$id] = true;
+                }
+            }
+        }
+        if (is_array($excluded_ids)) {
+            foreach ($excluded_ids as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $used[$id] = true;
+                }
+            }
+        }
+
+        $bare = array();
+        if (!is_array($attachment_ids)) {
+            return $bare;
+        }
+        foreach ($attachment_ids as $id) {
+            $id = (int) $id;
+            if ($id <= 0 || isset($used[$id])) {
+                continue;
+            }
+            $used[$id] = true;
+            $bare[] = $id;
+        }
+        sort($bare, SORT_NUMERIC);
+        return $bare;
+    }
+
+    /**
+     * Language used for text on an attachment Polylang never translated.
+     *
+     * The stored title and alt text are kept under the default language.
+     * A site with one language uses that language when no default is set.
+     *
+     * @param string $default_lang
+     * @param array $known_languages
+     * @return string
+     */
+    private function unassigned_language($default_lang, $known_languages)
+    {
+        $lang = $this->language_slug($default_lang);
+        if ($lang !== '') {
+            return $lang;
+        }
+
+        $known = $this->clean_slugs(is_array($known_languages) ? $known_languages : array());
+        if (count($known) === 1) {
+            return $known[0];
+        }
+
+        return '';
+    }
+
+    /**
+     * One library file that has no Polylang translation group.
+     *
+     * @param int $id
+     * @param string $lang
+     * @param array $records
+     * @return array
+     */
+    private function item_for_unassigned($id, $lang, $records)
+    {
+        $id = (int) $id;
+        $alt = array();
+        $title = array();
+        $lang = $this->language_slug($lang);
+        if ($lang !== '') {
+            $alt[$lang] = $this->record_string($records, $id, 'alt');
+            $title[$lang] = $this->record_string($records, $id, 'title');
+        }
+
+        return array(
+            'attachment_id' => $id,
+            'file' => $this->record_string($records, $id, 'file'),
+            'alt' => $alt,
+            'title' => $title,
+        );
     }
 
     /**
