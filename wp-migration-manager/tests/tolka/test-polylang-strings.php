@@ -579,6 +579,25 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             'errors' => $repeated,
         ));
         $this->assertSame(array('The same problem was reported.'), $collapsed['errors']);
+
+        $full = array_slice($errors, 0, 30);
+        $later = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('sv'),
+            'registered' => array(
+                array('name' => '', 'string' => '', 'context' => 'Widget'),
+                array('name' => 'Ö', 'string' => 'ä', 'context' => 'å'),
+            ),
+            'errors' => $full,
+        ));
+        $this->assertSame('ä', $later['items'][0]['string']);
+        $this->assertCount(31, $later['errors']);
+        $this->assertSame('Problem 30 needs attention.', $later['errors'][29]);
+        $this->assertSame('1 more error was left out.', $later['errors'][30]);
+        $this->assertNotContains(
+            'A string was left out because it had no name and no text.',
+            $later['errors']
+        );
     }
 
     /**
