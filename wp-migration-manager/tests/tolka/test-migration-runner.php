@@ -386,6 +386,22 @@ namespace {
             Migration_Runner_Test_Double::$writer = 'WMM\\Tolka\\RunnerTest\\Writer';
         }
 
+        /**
+         * @param array $result
+         * @return string[]
+         */
+        private function section_keys_in($result)
+        {
+            $sections = array('languages', 'posts', 'terms', 'strings', 'menus', 'media');
+            $found = array();
+            foreach (array_keys($result) as $key) {
+                if (in_array($key, $sections, true)) {
+                    $found[] = $key;
+                }
+            }
+            return $found;
+        }
+
         public function test_contract_class_map()
         {
             $this->assertSame(
@@ -1797,14 +1813,36 @@ namespace {
             Migration_Runner_Test_Double::$map = $map;
             \WMM\Tolka\RunnerTest\Writer::$throw = true;
 
+            $collected = Migration_Runner_Test_Double::collect();
+            $this->assertSame(array_merge($sections, array('missing')), array_keys($collected));
+            foreach ($sections as $section) {
+                $this->assertSame(array(), $collected[$section]['items']);
+            }
+
             $preview = Migration_Runner_Test_Double::preview();
             $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
             $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertArrayNotHasKey('write', $preview);
+            $this->assertSame($sections, array_keys($preview['counts']));
+            $this->assertSame($sections, array_keys($preview['sample']));
+            $this->assertSame($sections, array_keys($preview['sections']));
+            $this->assertSame('missing', $preview['state']);
+            $this->assertSame($sections, $this->section_keys_in($preview));
+            foreach ($sections as $section) {
+                $this->assertArrayHasKey($section, $preview);
+                $this->assertSame(array(), $preview[$section]['items']);
+                $this->assertNotEmpty($preview[$section]['errors']);
+                $this->assertIsInt($preview['counts'][$section]);
+                $this->assertSame(0, $preview['counts'][$section]);
+                $this->assertSame(array(), $preview['sample'][$section]);
+                $this->assertSame('missing', $preview['sections'][$section]['status']);
+            }
 
             $run = Migration_Runner_Test_Double::run();
             $this->assertFalse($run['ok']);
             $this->assertNull($run['write']);
             $this->assertSame('blocked', $run['state']);
+            $this->assertSame($sections, $this->section_keys_in($run));
             $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
             $this->assertSame(1, \WMM\Tolka\RunnerTest\Schema::$calls);
             $this->assertSame($sections, array_keys(\WMM\Tolka\RunnerTest\Schema::$parts));
