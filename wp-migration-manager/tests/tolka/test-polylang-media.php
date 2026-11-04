@@ -355,10 +355,203 @@ class Test_Polylang_Media extends TestCase
         ));
 
         $this->assertCount(2, $result['items']);
+        $this->assertSame('', $result['items'][0]['file']);
+        $this->assertSame('', $result['items'][1]['file']);
         $this->assertSame(array(10, 11), array(
             $result['items'][0]['attachment_id'],
             $result['items'][1]['attachment_id'],
         ));
+        $errors = $this->call('errors_for_result', array(0, $result['items']));
+        $this->assertCount(1, $errors);
+        $this->assertCustomerSentence($errors[0]);
+        $this->assertSame(
+            '2 media items have no file path and were exported with an empty file. Nothing was changed.',
+            $errors[0]
+        );
+    }
+
+    public function test_attachment_with_no_file_path_is_exported_with_an_empty_file_and_one_error()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 15, 'lang' => 'sv'),
+        ), array(15), array('sv'), 'sv', array(
+            15 => array(
+                'file' => " \0 ",
+                'alt' => 'Skärgård',
+                'title' => 'Ö',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(15, $result['items'][0]['attachment_id']);
+        $this->assertSame('', $result['items'][0]['file']);
+        $this->assertSame('Skärgård', $result['items'][0]['alt']['sv']);
+        $this->assertSame('Ö', $result['items'][0]['title']['sv']);
+
+        $errors = $this->call('errors_for_result', array(0, $result['items']));
+        $this->assertCount(1, $errors);
+        $this->assertCustomerSentence($errors[0]);
+        $this->assertSame(
+            'One media item has no file path and was exported with an empty file. Nothing was changed.',
+            $errors[0]
+        );
+        $this->assertStringNotContainsString('not active', strtolower($errors[0]));
+        $this->assertStringNotContainsString('left out', strtolower($errors[0]));
+    }
+
+    public function test_export_includes_an_attachment_with_no_file_path_and_one_error()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('get_posts') || function_exists('get_post_meta') || function_exists('pll_get_post_translations')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $posts = 'wp_posts';
+            public $terms = 'wp_terms';
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $term_relationships = 'wp_term_relationships';
+            public $options = 'wp_options';
+            public $postmeta = 'wp_postmeta';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                foreach ($args as $arg) {
+                    $replacement = is_int($arg) ? (string) $arg : "'" . (string) $arg . "'";
+                    $query = preg_replace('/%[sd]/', $replacement, $query, 1);
+                }
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                if (strpos($query, 'option_name') !== false) {
+                    return serialize(array('default_lang' => 'sv'));
+                }
+                return '8';
+            }
+
+            public function get_results($query, $output = null)
+            {
+                unset($output);
+                if (strpos($query, 'AS attachment_id') !== false) {
+                    return array(
+                        array('attachment_id' => 15, 'language_slug' => 'sv'),
+                    );
+                }
+                if (strpos($query, 'description') !== false) {
+                    return array();
+                }
+                if (strpos($query, 'post_title') !== false) {
+                    return array(
+                        array('ID' => 15, 'post_title' => 'Ö'),
+                    );
+                }
+                if (strpos($query, 'meta_value') !== false) {
+                    return array(
+                        array('post_id' => 15, 'meta_key' => '_wp_attachment_image_alt', 'meta_value' => 'Skärgård'),
+                    );
+                }
+                if (strpos($query, 'language_slug') !== false) {
+                    return array(
+                        array('language_slug' => 'sv'),
+                    );
+                }
+                if (strpos($query, 'post_type') !== false) {
+                    return array(
+                        array('ID' => 15),
+                    );
+                }
+                return array();
+            }
+        };
+
+        try {
+            $media = new Polylang_Media();
+            $first = $media->export();
+            $second = $media->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame($first, $second);
+        $this->assertCount(1, $first['items']);
+        $this->assertSame(15, $first['items'][0]['attachment_id']);
+        $this->assertSame('', $first['items'][0]['file']);
+        $this->assertSame('Ö', $first['items'][0]['title']['sv']);
+        $this->assertSame('Skärgård', $first['items'][0]['alt']['sv']);
+        $this->assertCount(1, $first['errors']);
+        $this->assertCustomerSentence($first['errors'][0]);
+        $this->assertSame(
+            'One media item has no file path and was exported with an empty file. Nothing was changed.',
+            $first['errors'][0]
+        );
+    }
+
+    public function test_library_exports_a_missing_file_beside_a_real_file_with_one_error()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'fr'),
+        ), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame('2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame('', $result['items'][1]['file']);
+        $this->assertSame('Visuel', $result['items'][1]['title']['fr']);
+        $errors = $this->call('errors_for_result', array(0, $result['items']));
+        $this->assertCount(1, $errors);
+        $this->assertCustomerSentence($errors[0]);
+        $this->assertSame(
+            'One media item has no file path and was exported with an empty file. Nothing was changed.',
+            $errors[0]
+        );
+    }
+
+    public function test_missing_file_notice_stays_one_sentence_beside_a_read_error()
+    {
+        $items = array(
+            array(
+                'attachment_id' => 1,
+                'file' => '',
+                'alt' => array('en' => 'Alt'),
+                'title' => array('en' => 'Title'),
+            ),
+        );
+        $errors = $this->call('errors_for_result', array(1, $items));
+
+        $this->assertCount(2, $errors);
+        $this->assertSame(
+            'One media file could not be read and was left out of this export. Nothing was changed.',
+            $errors[0]
+        );
+        $this->assertSame(
+            'One media item has no file path and was exported with an empty file. Nothing was changed.',
+            $errors[1]
+        );
+        foreach ($errors as $error) {
+            $this->assertCustomerSentence($error);
+        }
+    }
+
+    public function test_sibling_file_path_does_not_warn_about_a_missing_file()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => '', 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame(array(), $this->call('errors_for_result', array(0, $result['items'])));
     }
 
     public function test_untranslated_attachment_keeps_a_remote_file_url()

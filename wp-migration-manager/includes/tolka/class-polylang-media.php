@@ -73,7 +73,71 @@ class Polylang_Media
         }
 
         $skipped = (int) $parts['skipped'] + (isset($read['skipped']) ? (int) $read['skipped'] : 0);
-        return $this->envelope($parts['items'], $this->messages_for($skipped));
+        return $this->envelope(
+            $parts['items'],
+            $this->errors_for_result($skipped, $parts['items'])
+        );
+    }
+
+    /**
+     * @param int $skipped
+     * @param array $items
+     * @return array
+     */
+    private function errors_for_result($skipped, $items)
+    {
+        return array_merge(
+            $this->messages_for($skipped),
+            $this->missing_file_message($this->count_missing_files($items))
+        );
+    }
+
+    /**
+     * @param array $items
+     * @return int
+     */
+    private function count_missing_files($items)
+    {
+        $count = 0;
+        if (!is_array($items)) {
+            return 0;
+        }
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $file = isset($item['file']) ? $item['file'] : '';
+            if (!is_string($file) || $file === '') {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
+     * One sentence when exported media has no stored file path.
+     *
+     * @param int $count
+     * @return array
+     */
+    private function missing_file_message($count)
+    {
+        $count = (int) $count;
+        if ($count <= 0) {
+            return array();
+        }
+        if ($count === 1) {
+            return array(
+                $this->text('One media item has no file path and was exported with an empty file. Nothing was changed.'),
+            );
+        }
+
+        $template = $this->text('%d media items have no file path and were exported with an empty file. Nothing was changed.');
+        if (strpos($template, '%d') === false) {
+            return array($template);
+        }
+
+        return array(sprintf($template, $count));
     }
 
     /**
@@ -1464,7 +1528,10 @@ class Polylang_Media
     private function portable_file($file, $uploads_basedir = null)
     {
         $file = str_replace('\\', '/', $this->string_value($file));
-        if ($file === '' || preg_match('#^[a-z][a-z0-9+.-]*://#i', $file) === 1) {
+        if (trim($file) === '') {
+            return '';
+        }
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $file) === 1) {
             return $file;
         }
 
