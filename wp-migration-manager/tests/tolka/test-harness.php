@@ -106,6 +106,649 @@ abstract class Tolka_Test_Case extends TestCase
 
         @rmdir($directory);
     }
+
+    /**
+     * Call a Tolka class method, or skip when WordPress is not loaded.
+     *
+     * @param string $class Fully qualified class name.
+     * @param string $method Method name.
+     * @param array $arguments Arguments.
+     * @return mixed
+     */
+    protected function call_static($class, $method, $arguments)
+    {
+        try {
+            return call_user_func_array(array($class, $method), $arguments);
+        } catch (Throwable $error) {
+            if ($this->needs_wordpress($error)) {
+                $this->markTestSkipped(
+                    $class . '::' . $method . ' needs WordPress, so this test was skipped. ' . $error->getMessage()
+                );
+            }
+
+            throw $error;
+        }
+    }
+
+    /**
+     * Whether a failure is a missing WordPress or PHP API, not a logic bug.
+     *
+     * @param Throwable $error Caught failure.
+     * @return bool
+     */
+    protected function needs_wordpress($error)
+    {
+        $message = $error->getMessage();
+
+        return (bool) preg_match('/undefined function|undefined constant/i', $message);
+    }
+
+    /**
+     * Placeholder coefficients from the migration contract.
+     *
+     * @return array
+     */
+    protected function coefficients()
+    {
+        return array(
+            'id' => 'tolka-lab',
+            'provenance' => 'placeholder',
+            'provenance_note' => 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.',
+            'polylang_extra_ms_per_language' => 35,
+            'polylang_switcher_ms' => 25,
+            'polylang_extra_ms_per_script' => 8,
+            'tolka_ms_per_language' => 6,
+            'max_overhead_ratio' => 0.7,
+        );
+    }
+
+    /**
+     * The contract formula, kept here so the class under test cannot mark its own homework.
+     *
+     * @param array $measurement Speed measurement.
+     * @param array $metrics Page metrics.
+     * @param array $benchmarks Coefficient map.
+     * @return array
+     */
+    protected function expected_projection($measurement, $metrics, $benchmarks)
+    {
+        $languages = max(1, (int) $metrics['language_count']);
+        $raw = $languages * $benchmarks['polylang_extra_ms_per_language'];
+
+        if (!empty($metrics['has_polylang_switcher'])) {
+            $raw += $benchmarks['polylang_switcher_ms'];
+        }
+
+        $raw += (int) $metrics['script_count'] * $benchmarks['polylang_extra_ms_per_script'];
+        $current = max(1, (int) $measurement['total_ms']);
+        $overhead = (int) min($raw, (int) floor($current * $benchmarks['max_overhead_ratio']));
+        $tolka = (int) max(1, $current - $overhead + min($languages * $benchmarks['tolka_ms_per_language'], $overhead));
+        $faster = round(($current - $tolka) / $current * 100, 1);
+
+        return array(
+            'current_ms' => (int) $current,
+            'tolka_ms' => $tolka,
+            'overhead_ms' => $overhead,
+            'faster_percent' => $faster,
+        );
+    }
+
+    /**
+     * Compare two millisecond or percent figures.
+     *
+     * @param float|int $expected Expected number.
+     * @param mixed $actual Actual number.
+     * @param string $label What is being compared.
+     */
+    protected function assert_close($expected, $actual, $label)
+    {
+        $this->assertTrue(
+            abs((float) $expected - (float) $actual) < 0.001,
+            $label . ' expected ' . $expected . ' and got ' . $actual . '.'
+        );
+    }
+}
+
+/**
+ * Contract checks for slices that may not have landed yet.
+ *
+ * Each test skips, with a finished sentence, when its class file is missing.
+ */
+trait Tolka_Contract_Tests
+{
+    /**
+     * Hand-checked examples for the overhead cap and the floor at 1ms.
+     */
+    public function test_reference_formula_matches_worked_examples()
+    {
+        $benchmarks = $this->coefficients();
+        $under = $this->expected_projection(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 1),
+            $benchmarks
+        );
+        $capped = $this->expected_projection(
+            array('ok' => true, 'total_ms' => 100),
+            array('language_count' => 8, 'has_polylang_switcher' => true, 'script_count' => 20),
+            $benchmarks
+        );
+        $floor = $this->expected_projection(
+            array('ok' => true, 'total_ms' => 0),
+            array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $benchmarks
+        );
+
+        $this->assertSame(78, $under['overhead_ms']);
+        $this->assertSame(934, $under['tolka_ms']);
+        $this->assert_close(6.6, $under['faster_percent'], 'Under the cap');
+        $this->assertSame(70, $capped['overhead_ms']);
+        $this->assertSame(78, $capped['tolka_ms']);
+        $this->assert_close(22.0, $capped['faster_percent'], 'Overhead cap');
+        $this->assertSame(1, $floor['current_ms']);
+        $this->assertSame(0, $floor['overhead_ms']);
+        $this->assertSame(1, $floor['tolka_ms']);
+        $this->assert_close(0.0, $floor['faster_percent'], 'Floor at one millisecond');
+    }
+
+    /**
+     * Speed_Estimate::project follows the contract formula, including the cap.
+     */
+    public function test_estimate_matches_the_contract_formula()
+    {
+        wmm_tolka_skip_without_class('Speed_Estimate');
+
+        $benchmarks = $this->coefficients();
+        $cases = array(
+            'under the cap' => array(
+                'measurement' => array('ok' => true, 'total_ms' => 1000),
+                'metrics' => array('language_count' => 2, 'has_polylang_switcher' => false, 'script_count' => 1),
+            ),
+            'overhead cap' => array(
+                'measurement' => array('ok' => true, 'total_ms' => 100),
+                'metrics' => array('language_count' => 8, 'has_polylang_switcher' => true, 'script_count' => 20),
+            ),
+            'no languages and no time' => array(
+                'measurement' => array('ok' => true, 'total_ms' => 0),
+                'metrics' => array('language_count' => 0, 'has_polylang_switcher' => false, 'script_count' => 0),
+            ),
+        );
+
+        foreach ($cases as $label => $case) {
+            $expected = $this->expected_projection($case['measurement'], $case['metrics'], $benchmarks);
+            $result = $this->call_static(Speed_Estimate::class, 'project', array($case['measurement'], $case['metrics'], $benchmarks));
+
+            $this->assertTrue(is_array($result), $label);
+            $this->assertTrue($result['ok'], $label);
+            $this->assertSame($expected['current_ms'], (int) $result['current_ms'], $label);
+            $this->assertSame($expected['tolka_ms'], (int) $result['tolka_ms'], $label);
+            $this->assertSame($expected['overhead_ms'], (int) $result['overhead_ms'], $label);
+            $this->assert_close($expected['faster_percent'], $result['faster_percent'], $label);
+            $this->assertSame('Measured page load plus coefficients from benchmarks.json', $result['basis'], $label);
+            $this->assertSame('placeholder', $result['provenance'], $label);
+            $this->assertSame($benchmarks['provenance_note'], $result['provenance_note'], $label);
+            $this->assertStringContainsString('% faster', $result['faster_label'], $label);
+            $this->assert_close($result['faster_percent'], str_replace('% faster', '', $result['faster_label']), $label . ' label');
+        }
+    }
+
+    /**
+     * A failed measurement must not invent a percent.
+     */
+    public function test_estimate_does_not_invent_a_percent_when_measurement_failed()
+    {
+        wmm_tolka_skip_without_class('Speed_Estimate');
+
+        $result = $this->call_static(
+            Speed_Estimate::class,
+            'project',
+            array(
+                array('ok' => false, 'total_ms' => 800, 'html' => '<html></html>', 'error' => 'The page did not load.'),
+                array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+                $this->coefficients(),
+            )
+        );
+
+        $this->assert_failed_estimate($result);
+    }
+
+    /**
+     * A missing coefficient must not invent a percent.
+     */
+    public function test_estimate_does_not_invent_a_percent_when_a_coefficient_is_missing()
+    {
+        wmm_tolka_skip_without_class('Speed_Estimate');
+
+        $required = array(
+            'polylang_extra_ms_per_language',
+            'polylang_switcher_ms',
+            'polylang_extra_ms_per_script',
+            'tolka_ms_per_language',
+            'max_overhead_ratio',
+        );
+
+        foreach ($required as $key) {
+            $benchmarks = $this->coefficients();
+            unset($benchmarks[$key]);
+            $result = $this->call_static(
+                Speed_Estimate::class,
+                'project',
+                array(
+                    array('ok' => true, 'total_ms' => 500),
+                    array('language_count' => 2, 'has_polylang_switcher' => true, 'script_count' => 1),
+                    $benchmarks,
+                )
+            );
+            $this->assert_failed_estimate($result, $key);
+        }
+    }
+
+    /**
+     * benchmarks.json is the coefficient source when the estimate slice has added it.
+     */
+    public function test_estimate_benchmarks_match_the_json_file()
+    {
+        wmm_tolka_skip_without_class('Speed_Estimate');
+
+        $path = WMM_TOLKA_PLUGIN_DIR . '/includes/tolka/data/benchmarks.json';
+
+        if (!is_file($path)) {
+            $this->markTestSkipped('benchmarks.json is not in this checkout, so this test was skipped.');
+        }
+
+        $decoded = json_decode(file_get_contents($path), true);
+        $loaded = $this->call_static(Speed_Estimate::class, 'benchmarks', array());
+
+        $this->assertTrue(is_array($decoded));
+        $this->assertTrue(is_array($loaded));
+        $this->assertSame($this->coefficients(), $decoded);
+        $this->assertSame($decoded, $loaded);
+    }
+
+    /**
+     * Metrics count hreflang, assets, and the Polylang switcher.
+     */
+    public function test_metrics_count_languages_assets_and_switcher()
+    {
+        wmm_tolka_skip_without_class('Speed_Metrics');
+
+        $html = '<!DOCTYPE html><html><head>'
+            . '<link rel="stylesheet" href="/a.css">'
+            . '<link rel="stylesheet" href="/b.css">'
+            . '<link rel="alternate" hreflang="en" href="https://example.com/en">'
+            . '<link rel="alternate" hreflang="sv" href="https://example.com/sv">'
+            . '<link rel="alternate" hreflang="de" href="https://example.com/de">'
+            . '<link rel="alternate" hreflang="en" href="https://example.com/en/page">'
+            . '<link rel="alternate" hreflang="x-default" href="https://example.com/">'
+            . '</head><body>'
+            . '<script src="/a.js"></script>'
+            . '<script>var x = 1;</script>'
+            . '<img src="/a.png">'
+            . '<img src="/b.png" alt="">'
+            . '<img src="/c.png">'
+            . '<div class="pll-switcher">Languages</div>'
+            . '</body></html>';
+
+        $metrics = $this->analyze_html($html);
+
+        $this->assertSame(3, (int) $metrics['hreflang_count']);
+        $this->assertSame(3, (int) $metrics['language_count']);
+        $this->assertSame(2, (int) $metrics['script_count']);
+        $this->assertSame(2, (int) $metrics['stylesheet_count']);
+        $this->assertSame(3, (int) $metrics['image_count']);
+        $this->assertTrue((bool) $metrics['has_polylang_switcher']);
+        $this->assertTrue(is_bool($metrics['truncated']));
+    }
+
+    /**
+     * Without hreflang, a switcher means two languages and a plain page means one.
+     */
+    public function test_metrics_language_count_falls_back_when_hreflang_is_absent()
+    {
+        wmm_tolka_skip_without_class('Speed_Metrics');
+
+        $plain = $this->analyze_html('<html><body><p>Hello</p></body></html>');
+        $this->assertSame(0, (int) $plain['hreflang_count']);
+        $this->assertSame(1, (int) $plain['language_count']);
+        $this->assertFalse((bool) $plain['has_polylang_switcher']);
+
+        $tokens = array('POLYLANG', 'PLL-Switcher', 'Lang-Item', 'pll-parent-menu-item');
+
+        foreach ($tokens as $token) {
+            $metrics = $this->analyze_html('<html><body><div>' . $token . '</div></body></html>');
+            $this->assertSame(2, (int) $metrics['language_count'], $token);
+            $this->assertTrue((bool) $metrics['has_polylang_switcher'], $token);
+        }
+    }
+
+    /**
+     * The package keeps items only, and missing sections are empty lists.
+     */
+    public function test_schema_package_uses_empty_items_for_missing_sections()
+    {
+        wmm_tolka_skip_without_class('Tolka_Schema');
+
+        $package = $this->call_static(
+            Tolka_Schema::class,
+            'package',
+            array(
+                array(
+                    'languages' => array(
+                        'items' => array(
+                            array(
+                                'slug' => 'en',
+                                'name' => 'English',
+                                'locale' => 'en_US',
+                                'is_default' => true,
+                                'term_id' => 3,
+                                'flag' => 'us',
+                            ),
+                        ),
+                        'errors' => array(),
+                    ),
+                    'posts' => array(
+                        'items' => array(),
+                        'errors' => array('No post translations were found.'),
+                    ),
+                ),
+            )
+        );
+
+        $this->assertSame('tolka-migration', $package['format']);
+        $this->assertEquals(1, $package['version']);
+        $this->assertSame('en', $package['languages'][0]['slug']);
+        $this->assertSame(array(), $package['posts']);
+
+        foreach (array('terms', 'strings', 'menus', 'media') as $section) {
+            $this->assertArrayHasKey($section, $package);
+            $this->assertSame(array(), $package[$section]);
+        }
+
+        $this->assertTrue(
+            (bool) preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/', $package['generated_at']),
+            $package['generated_at']
+        );
+        $stamp = strtotime($package['generated_at']);
+        $this->assertTrue($stamp !== false && abs($stamp - time()) < 172800);
+    }
+
+    /**
+     * Private, local, and non-HTTP URLs fail closed and do not return HTML.
+     */
+    public function test_loader_rejects_urls_that_are_not_public_http()
+    {
+        wmm_tolka_skip_without_class('Speed_Loader');
+
+        $urls = array(
+            '',
+            '   ',
+            '/wp-admin',
+            'ftp://example.com/file',
+            'file:///etc/passwd',
+            'http://localhost/',
+            'http://localhost:8080/path',
+            'HTTP://LOCALHOST/',
+            'http://127.0.0.1/',
+            'https://127.0.0.2/admin',
+            'http://10.1.2.3/',
+            'http://172.16.0.1/',
+            'http://172.31.255.255/',
+            'http://192.168.1.20/page',
+            'http://169.254.1.1/',
+            'http://[::1]/',
+            'http://',
+            'https://',
+        );
+
+        foreach ($urls as $url) {
+            $result = $this->call_static(Speed_Loader::class, 'measure', array($url));
+            $this->assertTrue(is_array($result), $url);
+            $this->assertFalse($result['ok'], $url);
+            $this->assertSame('', $result['html'], $url);
+            $this->assertNull($result['ttfb_ms'], $url);
+            $this->assertTrue(is_string($result['error']) && $result['error'] !== '', $url);
+        }
+    }
+
+    /**
+     * With Polylang absent, detection is inactive and does not invent a version.
+     */
+    public function test_detector_reports_an_inactive_site_without_wordpress()
+    {
+        wmm_tolka_skip_without_class('Polylang_Detector');
+
+        if (function_exists('pll_languages_list') || class_exists('PLL', false) || class_exists('Polylang', false)) {
+            $this->markTestSkipped('Polylang is present in this process, so the inactive-site check was skipped.');
+        }
+
+        $status = $this->call_static(Polylang_Detector::class, 'status', array());
+
+        $this->assertFalse($status['active']);
+        $this->assertSame('', $status['version']);
+        $this->assertTrue(is_array($status['errors']));
+
+        foreach ($status['errors'] as $error) {
+            $this->assertTrue(is_string($error));
+        }
+    }
+
+    /**
+     * Each exporter returns items and errors, and does not throw when Polylang is missing.
+     */
+    public function test_exporters_return_envelopes_without_throwing()
+    {
+        $classes = array(
+            'Polylang_Languages',
+            'Polylang_Posts',
+            'Polylang_Terms',
+            'Polylang_Strings',
+            'Polylang_Menus',
+            'Polylang_Media',
+        );
+        $seen = false;
+
+        foreach ($classes as $short) {
+            if (!class_exists('WMM\\Tolka\\' . $short, false)) {
+                continue;
+            }
+
+            $seen = true;
+            $result = $this->call_static('WMM\\Tolka\\' . $short, 'export', array());
+            $this->assertTrue(is_array($result['items']), $short);
+            $this->assertTrue(is_array($result['errors']), $short);
+
+            if (count($result['items']) === 0) {
+                $this->assertNotEmpty($result['errors'], $short);
+            }
+
+            foreach ($result['errors'] as $error) {
+                $this->assertTrue(is_string($error) && $error !== '', $short);
+            }
+        }
+
+        if (!$seen) {
+            wmm_tolka_skip_without_class($classes);
+        }
+    }
+
+    /**
+     * Collect returns exporter envelopes and can list classes that have not landed.
+     */
+    public function test_runner_collect_returns_envelopes_or_lists_what_is_missing()
+    {
+        wmm_tolka_skip_without_class('Migration_Runner');
+
+        $collected = $this->call_static(Migration_Runner::class, 'collect', array());
+
+        $this->assertTrue(is_array($collected));
+
+        foreach (array('languages', 'posts', 'terms', 'strings', 'menus', 'media') as $section) {
+            if (!isset($collected[$section]) || !is_array($collected[$section])) {
+                continue;
+            }
+
+            $this->assertArrayHasKey('items', $collected[$section], $section);
+            $this->assertArrayHasKey('errors', $collected[$section], $section);
+        }
+
+        if (isset($collected['missing'])) {
+            $this->assertTrue(is_array($collected['missing']));
+
+            foreach ($collected['missing'] as $name) {
+                $this->assertTrue(is_string($name) && $name !== '');
+            }
+        }
+    }
+
+    /**
+     * Preview samples stay small, and missing slices are listed rather than fatal.
+     */
+    public function test_runner_preview_keeps_samples_small()
+    {
+        wmm_tolka_skip_without_class('Migration_Runner');
+
+        $preview = $this->call_static(Migration_Runner::class, 'preview', array());
+
+        $this->assertArrayHasKey('counts', $preview);
+        $this->assertArrayHasKey('sample', $preview);
+        $this->assertArrayHasKey('errors', $preview);
+        $this->assertTrue(is_array($preview['errors']));
+        $this->assertTrue(is_array($preview['missing']));
+
+        foreach ($preview['missing'] as $name) {
+            $this->assertTrue(is_string($name) && $name !== '');
+        }
+
+        $this->assertTrue(is_array($preview['sample']));
+
+        foreach ($preview['sample'] as $section => $items) {
+            $this->assertTrue(is_array($items), $section);
+            $this->assertLessThanOrEqual(20, count($items), $section);
+        }
+    }
+
+    /**
+     * A run reports ok, counts, the writer result, errors, and missing classes.
+     */
+    public function test_runner_run_reports_the_write()
+    {
+        wmm_tolka_skip_without_class('Migration_Runner');
+
+        $run = $this->call_static(Migration_Runner::class, 'run', array());
+
+        foreach (array('ok', 'counts', 'write', 'errors', 'missing') as $key) {
+            $this->assertArrayHasKey($key, $run);
+        }
+
+        $this->assertTrue(is_bool($run['ok']));
+        $this->assertTrue(is_array($run['errors']));
+        $this->assertTrue(is_array($run['missing']));
+    }
+
+    /**
+     * The writer does not pretend it stored a package when WordPress is absent.
+     */
+    public function test_writer_reports_a_failure_without_wordpress()
+    {
+        wmm_tolka_skip_without_class('Tolka_Writer');
+
+        $package = array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => gmdate('Y-m-d\\TH:i:s\\Z'),
+            'languages' => array(),
+            'posts' => array(),
+            'terms' => array(),
+            'strings' => array(),
+            'menus' => array(),
+            'media' => array(),
+        );
+        $result = $this->call_static(Tolka_Writer::class, 'write', array($package));
+
+        $this->assertTrue(is_bool($result['ok']));
+        $this->assertTrue(is_array($result['errors']));
+
+        if (!function_exists('update_option')) {
+            $this->assertFalse($result['ok']);
+            $this->assertNotEmpty($result['errors']);
+        }
+    }
+
+    /**
+     * The report is something an admin can read: a title, a summary, and labeled lines.
+     */
+    public function test_report_uses_finished_sentences()
+    {
+        wmm_tolka_skip_without_class('Migration_Report');
+
+        $report = $this->call_static(
+            Migration_Report::class,
+            'format',
+            array(
+                array(
+                    'ok' => false,
+                    'counts' => array(
+                        'languages' => 0,
+                        'posts' => 0,
+                        'terms' => 0,
+                        'strings' => 0,
+                        'menus' => 0,
+                        'media' => 0,
+                    ),
+                    'errors' => array('Polylang is not active on this site.'),
+                    'missing' => array('Tolka_Writer'),
+                    'write' => null,
+                ),
+            )
+        );
+
+        $this->assertTrue(is_bool($report['ok']));
+        $this->assertTrue(is_string($report['title']) && trim($report['title']) !== '');
+        $this->assertTrue(is_string($report['summary']) && trim($report['summary']) !== '');
+        $this->assertTrue(is_array($report['lines']));
+
+        foreach ($report['lines'] as $line) {
+            $this->assertTrue(is_string($line['label']) && $line['label'] !== '');
+            $this->assertTrue(is_string($line['value']) || is_numeric($line['value']));
+        }
+    }
+
+    /**
+     * A failed projection keeps every time at zero and explains why.
+     *
+     * @param array $result Projection.
+     * @param string $label Case label.
+     */
+    private function assert_failed_estimate($result, $label = '')
+    {
+        $this->assertTrue(is_array($result), $label);
+        $this->assertFalse($result['ok'], $label);
+        $this->assertSame(0, (int) $result['current_ms'], $label);
+        $this->assertSame(0, (int) $result['tolka_ms'], $label);
+        $this->assertSame(0, (int) $result['overhead_ms'], $label);
+        $this->assert_close(0, $result['faster_percent'], $label);
+        $this->assertTrue(is_string($result['error']) && $result['error'] !== '', $label);
+    }
+
+    /**
+     * Analyze one HTML document with the metrics class.
+     *
+     * @param string $html Page HTML.
+     * @return array
+     */
+    private function analyze_html($html)
+    {
+        return $this->call_static(
+            Speed_Metrics::class,
+            'analyze',
+            array(
+                array(
+                    'ok' => true,
+                    'html' => $html,
+                    'html_bytes' => strlen($html),
+                ),
+            )
+        );
+    }
 }
 
 /**
@@ -114,6 +757,8 @@ abstract class Tolka_Test_Case extends TestCase
  */
 class Harness_Test extends Tolka_Test_Case
 {
+    use Tolka_Contract_Tests;
+
     /**
      * The suite must not boot WordPress or pretend Polylang is installed.
      */
@@ -261,6 +906,21 @@ class Harness_Test extends Tolka_Test_Case
         $this->assertSame('class-polylang-detector.php', wmm_tolka_class_basename('WMM\\Tolka\\Polylang_Detector'));
         $this->assertSame('class-tolka-schema.php', wmm_tolka_class_basename('\\WMM\\Tolka\\Tolka_Schema'));
         $this->assertSame('', wmm_tolka_class_basename('   '));
+    }
+
+    /**
+     * Abstract classes and anonymous classes are not the test PHPUnit should run.
+     */
+    public function test_concrete_class_names_skip_abstract_and_anonymous_classes()
+    {
+        $directory = $this->make_temp_dir();
+        $file = $directory . '/classes.php';
+        file_put_contents(
+            $file,
+            "<?php\nabstract class Abstract_Probe {}\nfinal class Probe_Test {}\n\$made = new class {};\nclass Other_Test {}\n"
+        );
+
+        $this->assertSame(array('Probe_Test', 'Other_Test'), wmm_tolka_concrete_class_names($file));
     }
 
     /**

@@ -346,6 +346,13 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
                 continue;
             }
 
+            if (count($names) > 1) {
+                fwrite(
+                    STDERR,
+                    $names[0] . ' is the test class PHPUnit ' . $version . ' will run from ' . basename($file) . '. The other classes in that file are ' . implode(', ', array_slice($names, 1)) . '. Put each of those in its own test file if they should run too.' . PHP_EOL
+                );
+            }
+
             $target = $temp . '/' . $names[0] . '.php';
 
             if (!copy($file, $target)) {
@@ -376,29 +383,46 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
             return;
         }
 
-        register_shutdown_function(
-            static function () use ($restore, $temp) {
-                foreach ($restore as $pair) {
-                    if (is_link($pair[0])) {
-                        unlink($pair[0]);
-                    }
-
-                    if (is_file($pair[1])) {
-                        rename($pair[1], $pair[0]);
-                    }
-                }
-
-                $copies = glob($temp . '/*.php');
-
-                if (is_array($copies)) {
-                    foreach ($copies as $copy) {
-                        unlink($copy);
-                    }
-                }
-
-                @rmdir($temp);
+        $restored = false;
+        $put_back = function () use (&$restored, $restore, $temp) {
+            if ($restored) {
+                return;
             }
-        );
+
+            $restored = true;
+
+            foreach ($restore as $pair) {
+                if (is_link($pair[0])) {
+                    unlink($pair[0]);
+                }
+
+                if (is_file($pair[1]) && !file_exists($pair[0])) {
+                    rename($pair[1], $pair[0]);
+                }
+            }
+
+            $copies = glob($temp . '/*.php');
+
+            if (is_array($copies)) {
+                foreach ($copies as $copy) {
+                    unlink($copy);
+                }
+            }
+
+            @rmdir($temp);
+        };
+
+        register_shutdown_function($put_back);
+
+        if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
+            pcntl_async_signals(true);
+            $stop = function () use ($put_back) {
+                $put_back();
+                exit(1);
+            };
+            pcntl_signal(SIGINT, $stop);
+            pcntl_signal(SIGTERM, $stop);
+        }
     }
 }
 
