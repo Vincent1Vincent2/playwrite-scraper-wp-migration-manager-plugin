@@ -1144,9 +1144,9 @@ class Polylang_Languages
     private function message_failed()
     {
         if (!function_exists('__')) {
-            return 'Polylang languages could not be read. Nothing was changed. Preview the migration again once Polylang has finished loading.';
+            return 'Polylang languages could not be read. Nothing was changed. Preview the migration again.';
         }
 
-        return __('Polylang languages could not be read. Nothing was changed. Preview the migration again once Polylang has finished loading.', 'migration-manager');
+        return __('Polylang languages could not be read. Nothing was changed. Preview the migration again.', 'migration-manager');
     }
 }

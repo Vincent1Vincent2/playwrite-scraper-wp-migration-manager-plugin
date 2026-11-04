@@ -250,7 +250,7 @@ class Test_Polylang_Languages extends PHPUnit\Framework\TestCase
 
         $this->assertSame(array(), $result['items']);
         $this->assertSame(
-            'Polylang languages could not be read. Nothing was changed. Preview the migration again once Polylang has finished loading.',
+            'Polylang languages could not be read. Nothing was changed. Preview the migration again.',
             $result['errors'][0]
         );
         $this->assertQueriesAreReadOnly($db->queries);
