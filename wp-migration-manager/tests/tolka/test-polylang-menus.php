@@ -818,6 +818,85 @@ class Polylang_Menus_Test extends TestCase
         );
     }
 
+    public function test_bad_rows_are_skipped_instead_of_throwing(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'languages' => array('en'),
+            'menus' => array(10 => 'Main'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('en' => 10),
+                    ),
+                ),
+            ),
+            'items' => array(
+                10 => array(
+                    'nope',
+                    null,
+                    12,
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Home',
+                        'url' => '/',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 1,
+                    ),
+                ),
+            ),
+        ));
+
+        $result = $fixture->run();
+        $english = $this->location($result, 'primary')['translations']['en'];
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $english['items']);
+        $this->assertSame('Home', $english['items'][0]['title']);
+        $this->assertSame(1, $english['link_count']);
+    }
+
+    public function test_corrupt_translation_description_does_not_throw(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'en',
+            'nav_menus' => array(
+                'flavor' => array(
+                    'primary' => array('en' => 10),
+                ),
+            ),
+        ));
+        $database->term_translations = array(
+            10 => 'a:1:{broken',
+            11 => 'a:1:{broken',
+        );
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $result = Polylang_Menus::export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $this->assertSame(10, $this->location($result, 'primary')['translations']['en']['menu_id']);
+        $this->assertSame(0, $this->location($result, 'primary')['translations']['sv']['menu_id']);
+        $this->assertSame('Home', $this->location($result, 'primary')['translations']['en']['items'][0]['title']);
+    }
+
     public function test_source_does_not_write_or_delete_polylang_data(): void
     {
         $source = file_get_contents(dirname(__DIR__, 2) . '/includes/tolka/class-polylang-menus.php');

@@ -1092,11 +1092,7 @@ class Polylang_Menus
         }
 
         $by_parent = array();
-        $ids = array();
         foreach ($normalized as $item) {
-            if ($item['id'] > 0) {
-                $ids[$item['id']] = true;
-            }
             $parent = $item['parent'];
             if (! isset($by_parent[$parent])) {
                 $by_parent[$parent] = array();
