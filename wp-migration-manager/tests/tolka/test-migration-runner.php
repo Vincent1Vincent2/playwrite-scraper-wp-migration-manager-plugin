@@ -2126,5 +2126,65 @@ namespace {
             $this->assertSame(802, strlen($written['content']));
             $this->assertNotSame($sample['content'], $written['content']);
         }
+
+        public function test_section_error_keeps_ok_false_while_writer_receives_original_text()
+        {
+            $this->reset_doubles();
+            $original = str_repeat('p', 480);
+            $clean = str_repeat('q', 420);
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array(
+                    'items' => array(array('name' => 'English', 'slug' => 'en')),
+                    'errors' => array(),
+                ),
+                1 => array(
+                    'items' => array(array(
+                        'title' => 'Hello',
+                        'content' => $original,
+                    )),
+                    'errors' => array('One post body could not be copied.'),
+                ),
+                3 => array(
+                    'items' => array(array(
+                        'name' => 'Greeting',
+                        'string' => $clean,
+                    )),
+                    'errors' => array(),
+                ),
+            );
+            \WMM\Tolka\RunnerTest\Writer::$use_result = true;
+            \WMM\Tolka\RunnerTest\Writer::$result = array(
+                'ok' => true,
+                'errors' => array(),
+                'counts' => array('posts' => 1),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame(str_repeat('p', 400) . '...', $preview['sample']['posts'][0]['content']);
+            $this->assertSame(str_repeat('q', 400) . '...', $preview['sample']['strings'][0]['string']);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame('error', $preview['sections']['posts']['status']);
+            $this->assertSame('ready', $preview['sections']['strings']['status']);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($run['write']['ok']);
+            $this->assertFalse($run['ok']);
+            $this->assertSame('partial', $run['state']);
+            $this->assertStringNotContainsString('Migration finished', $run['message']);
+            $this->assertSame(
+                'The Tolka package was saved, but Posts could not be read. Existing Polylang data was not changed.',
+                $run['message']
+            );
+            $this->assertContains('Posts: One post body could not be copied.', $run['errors']);
+            $written = \WMM\Tolka\RunnerTest\Writer::$package;
+            $this->assertSame($original, $written['posts'][0]['content']);
+            $this->assertSame($clean, $written['strings'][0]['string']);
+            $this->assertSame(480, strlen($written['posts'][0]['content']));
+            $this->assertSame(420, strlen($written['strings'][0]['string']));
+            $this->assertNotSame($preview['sample']['posts'][0]['content'], $written['posts'][0]['content']);
+            $this->assertNotSame($preview['sample']['strings'][0]['string'], $written['strings'][0]['string']);
+        }
     }
 }

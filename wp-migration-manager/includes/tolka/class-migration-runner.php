@@ -136,6 +136,7 @@ class Migration_Runner
 
         $had_errors = !empty($blocking) || !empty($view['errors']);
         $saved = is_array($write) && isset($write['ok']) && $write['ok'] === true;
+        // A saved package is not a full success when any section reported an error.
         $ok = $saved && !$had_errors && empty($missing);
         $errors = self::merge_errors($blocking, $view['errors']);
 
