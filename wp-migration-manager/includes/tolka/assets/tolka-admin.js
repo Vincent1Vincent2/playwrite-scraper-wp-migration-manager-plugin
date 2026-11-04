@@ -1381,10 +1381,14 @@
   }
 
   function summaryTable(container) {
+    return previewTable(container);
+  }
+
+  function previewTable(container) {
     if (!container || !container.querySelector) {
       return null;
     }
-    return container.querySelector("table.wmm-tolka-summary");
+    return container.querySelector("table.wmm-tolka-summary") || container.querySelector("table");
   }
 
   function normalizeLabel(value) {
@@ -1416,7 +1420,7 @@
   function setRowValue(row, value) {
     var cell = rowValueCell(row);
     if (cell) {
-      cell.textContent = value == null ? "" : String(value);
+      setPlainText(cell, value);
     }
   }
 
@@ -1433,29 +1437,73 @@
     return complete ? found : null;
   }
 
+  function orderedPreviewRows(table) {
+    var rows = table.querySelectorAll("tbody tr");
+    if (!rows.length) {
+      rows = table.querySelectorAll("tr");
+    }
+    var bodyRows = [];
+    Array.prototype.forEach.call(rows, function (row) {
+      if (row.parentNode && row.parentNode.tagName && row.parentNode.tagName.toLowerCase() === "thead") {
+        return;
+      }
+      bodyRows.push(row);
+    });
+    if (bodyRows.length !== SECTIONS.length) {
+      return null;
+    }
+    var found = {};
+    SECTIONS.forEach(function (section, index) {
+      found[section.key] = bodyRows[index];
+    });
+    return found;
+  }
+
+  function sectionCountText(section, counts, sample) {
+    var count = countOf(counts, sample, section.key);
+    if (count === 0) {
+      return section.empty;
+    }
+    return countLabel(count, section.singular, section.plural) + ".";
+  }
+
+  function appendPreviewCounts(container, counts, sample) {
+    var list = el("ul", "wmm-tolka-preview-counts");
+    markGenerated(list);
+    SECTIONS.forEach(function (section) {
+      var item = el("li", "wmm-tolka-count");
+      item.setAttribute("data-section", section.key);
+      setPlainText(item, section.title + ": " + sectionCountText(section, counts, sample));
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
+
   function fillPreviewTable(container, counts, sample, errors, missing, total) {
-    var table = summaryTable(container);
-    var rowMap = table ? previewRowMap(table) : null;
-    if (!rowMap) {
+    var table = previewTable(container);
+    if (!table) {
       return false;
     }
 
     removeGenerated(container);
-    SECTIONS.forEach(function (section) {
-      var count = countOf(counts, sample, section.key);
-      setRowValue(
-        rowMap[section.key],
-        count === 0 ? section.empty : countLabel(count, section.singular, section.plural) + "."
-      );
-      rowMap[section.key].setAttribute("data-section", section.key);
-    });
+    var rowMap = previewRowMap(table) || orderedPreviewRows(table);
+    if (rowMap) {
+      SECTIONS.forEach(function (section) {
+        setRowValue(rowMap[section.key], sectionCountText(section, counts, sample));
+        rowMap[section.key].setAttribute("data-section", section.key);
+      });
+    } else {
+      appendPreviewCounts(container, counts, sample);
+    }
 
     var lead = container.querySelector(".wmm-tolka-empty-lead");
     if (lead) {
-      lead.textContent =
+      setPlainText(
+        lead,
         total === 0 && !errors.length
           ? "Nothing was found to preview. Nothing was written, and Polylang data stays in place."
-          : "Preview only. Nothing was written, and Polylang data stays in place.";
+          : "Preview only. Nothing was written, and Polylang data stays in place."
+      );
     }
 
     if (errors.length || missing.length) {
@@ -1539,9 +1587,10 @@
 
     var note = container.querySelector(".wmm-tolka-notice p");
     if (note) {
-      note.textContent = summary
-        ? finishSentence(summary)
-        : reportClosing(succeeded, summary) || title;
+      setPlainText(
+        note,
+        summary ? finishSentence(summary) : reportClosing(succeeded, summary) || title
+      );
     }
 
     var extras = [];
@@ -2415,11 +2464,19 @@
     return node;
   }
 
-  function setText(node, text) {
+  function setPlainText(node, value) {
     if (!node) {
       return;
     }
-    node.textContent = text == null ? "" : String(text);
+    var text = value == null ? "" : String(value);
+    while (node.firstChild) {
+      node.removeChild(node.firstChild);
+    }
+    node.appendChild(document.createTextNode(text));
+  }
+
+  function setText(node, text) {
+    setPlainText(node, text);
   }
 
   function setMs(node, value) {
@@ -2545,7 +2602,7 @@
       node.className = className;
     }
     if (text != null) {
-      node.textContent = String(text);
+      setPlainText(node, text);
     }
     return node;
   }
