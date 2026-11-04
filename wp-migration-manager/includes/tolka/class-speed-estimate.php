@@ -102,11 +102,23 @@ class Speed_Estimate
             if ($total_issue !== '') {
                 $reasons[] = $total_issue;
             }
-            if (self::metric_is_unusable($metrics, 'language_count')) {
-                $reasons[] = self::translate('The language count is not a usable number.');
+            $language_issue = self::count_issue(
+                $metrics,
+                'language_count',
+                'The language count is not a usable number.',
+                'The language count cannot be negative.'
+            );
+            if ($language_issue !== '') {
+                $reasons[] = $language_issue;
             }
-            if (self::metric_is_unusable($metrics, 'script_count')) {
-                $reasons[] = self::translate('The script count is not a usable number.');
+            $script_issue = self::count_issue(
+                $metrics,
+                'script_count',
+                'The script count is not a usable number.',
+                'The script count cannot be negative.'
+            );
+            if ($script_issue !== '') {
+                $reasons[] = $script_issue;
             }
         }
 
@@ -658,22 +670,31 @@ class Speed_Estimate
     }
 
     /**
-     * True when a metric was provided but cannot be used as a whole count.
+     * Why a provided count cannot be used, or an empty string when it can.
      *
-     * A missing count is usable and means zero. That keeps an empty metrics
-     * array from failing a good measurement.
+     * A missing count is allowed and means zero. A negative count is not.
      *
      * @param array  $metrics
      * @param string $key
-     * @return bool
+     * @param string $unusable
+     * @param string $negative
+     * @return string
      */
-    private static function metric_is_unusable(array $metrics, $key)
+    private static function count_issue(array $metrics, $key, $unusable, $negative)
     {
         if (!array_key_exists($key, $metrics)) {
-            return false;
+            return '';
         }
 
-        return self::integer_milliseconds($metrics[$key]) === null;
+        $number = self::finite_number($metrics[$key]);
+        if ($number === null) {
+            return self::translate($unusable);
+        }
+        if ((float) $number < 0) {
+            return self::translate($negative);
+        }
+
+        return '';
     }
 
     /**
