@@ -51,6 +51,13 @@ class Polylang_Posts
     protected $locale_map = null;
 
     /**
+     * Posts dropped because two rows resolved to the same language.
+     *
+     * @var array<int, array{kept: int, dropped: int, lang: string}>
+     */
+    protected $collapsed_languages = array();
+
+    /**
      * Export post translation groups.
      *
      * @return array{items: array<int, array>, errors: string[]}
@@ -60,6 +67,7 @@ class Polylang_Posts
         $this->record_cache = array();
         $this->type_cache = array();
         $this->locale_map = null;
+        $this->collapsed_languages = array();
 
         try {
             if (!$this->polylang_present()) {
@@ -484,6 +492,7 @@ class Polylang_Posts
                 $this->note_duplicate_assignments($map, $errors);
             }
             $normalized = $this->normalize_id_map($map);
+            $this->flush_collapsed_languages($errors);
             if (!empty($normalized)) {
                 $prepared[] = $this->reconcile_languages($normalized, $errors);
             }
@@ -1048,13 +1057,35 @@ class Polylang_Posts
                 $lang = $locales[$lang];
             }
             $post_id = $this->normalize_post_id($post_id);
-            if ($lang === '' || $post_id <= 0 || isset($clean[$lang]) || isset($used[$post_id])) {
+            if ($lang === '' || $post_id <= 0 || isset($used[$post_id])) {
+                continue;
+            }
+            if (isset($clean[$lang]) && $clean[$lang] !== $post_id) {
+                $this->collapsed_languages[] = array(
+                    'kept' => $clean[$lang],
+                    'dropped' => $post_id,
+                    'lang' => $lang,
+                );
                 continue;
             }
             $clean[$lang] = $post_id;
             $used[$post_id] = true;
         }
         return $clean;
+    }
+
+    /**
+     * @param array<int, string> $errors
+     */
+    private function flush_collapsed_languages(array &$errors)
+    {
+        foreach ($this->collapsed_languages as $row) {
+            $errors[] = $this->say_sprintf(
+                'Posts %1$d and %2$d were both stored as %3$s. Post %1$d was kept.',
+                array($row['kept'], $row['dropped'], $row['lang'])
+            );
+        }
+        $this->collapsed_languages = array();
     }
 
     /**
@@ -1253,9 +1284,6 @@ class Polylang_Posts
         return $languages;
     }
 
-    /**
-     * @return array<int, array<string, mixed>>|null
-     */
     /**
      * Polylang's language term description stores the locale. A translation
      * group sometimes names that locale instead of the slug.
