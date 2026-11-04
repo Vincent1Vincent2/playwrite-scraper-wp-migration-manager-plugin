@@ -402,41 +402,144 @@ class Speed_Metrics
     /**
      * Unique hreflang values, excluding x-default.
      *
-     * Comparison is case-insensitive. A value is counted only when its quotes
-     * are closed, or when an unquoted value is followed by whitespace or the
-     * end of the tag. A cut at the loader cap therefore does not invent a
-     * language from a half-written attribute.
+     * Only real attributes count. A sentence or a title that mentions
+     * hreflang is not a language. A value counts when its quotes are closed,
+     * or when an unquoted value ends at whitespace or the end of the tag.
+     * A cut at the loader cap does not invent a language from a half-written
+     * attribute.
      *
-     * @param string $lower_html Lowercased HTML.
+     * @param string $markup Visible HTML.
      * @return int
      */
-    private static function unique_hreflang_count($lower_html)
+    private static function unique_hreflang_count($markup)
     {
-        if ($lower_html === '') {
+        if ($markup === '') {
             return 0;
         }
 
         $values = array();
+        $length = strlen($markup);
+        $offset = 0;
 
-        if (preg_match_all('/(?:^|[\s<])hreflang\s*=\s*"([^"]*)"/', $lower_html, $doubles)) {
-            foreach ($doubles[1] as $value) {
-                self::remember_hreflang($value, $values);
-            }
-        }
+        while (($pos = strpos($markup, '<', $offset)) !== false) {
+            $next = ($pos + 1 < $length) ? $markup[$pos + 1] : '';
 
-        if (preg_match_all('/(?:^|[\s<])hreflang\s*=\s*\'([^\']*)\'/', $lower_html, $singles)) {
-            foreach ($singles[1] as $value) {
-                self::remember_hreflang($value, $values);
+            if ($next < 'a' || $next > 'z') {
+                $offset = $pos + 1;
+                continue;
             }
-        }
 
-        if (preg_match_all('/(?:^|[\s<])hreflang\s*=\s*([^\s"\'=<>`\/]+)(?=[\s>\/])/', $lower_html, $bare)) {
-            foreach ($bare[1] as $value) {
-                self::remember_hreflang($value, $values);
+            $tag = self::read_tag($markup, $pos, $length);
+            $hreflang = self::attribute_value($tag['html'], 'hreflang');
+
+            if ($hreflang !== null) {
+                self::remember_hreflang($hreflang, $values);
             }
+
+            $offset = $tag['next'] > $pos ? $tag['next'] : $pos + 1;
         }
 
         return count($values);
+    }
+
+    /**
+     * The value of one attribute, or null when it is missing or cut off.
+     *
+     * @param string $tag One start tag.
+     * @param string $name Lowercased attribute name.
+     * @return string|null
+     */
+    private static function attribute_value($tag, $name)
+    {
+        $length = strlen($tag);
+        $i = 0;
+
+        while ($i < $length && !self::is_ascii_space($tag[$i]) && $tag[$i] !== '>' && $tag[$i] !== '/') {
+            $i++;
+        }
+
+        while ($i < $length) {
+            while ($i < $length && self::is_ascii_space($tag[$i])) {
+                $i++;
+            }
+
+            if ($i >= $length || $tag[$i] === '>' || $tag[$i] === '/') {
+                break;
+            }
+
+            $start = $i;
+
+            while (
+                $i < $length
+                && !self::is_ascii_space($tag[$i])
+                && $tag[$i] !== '='
+                && $tag[$i] !== '>'
+                && $tag[$i] !== '/'
+            ) {
+                $i++;
+            }
+
+            $attr = substr($tag, $start, $i - $start);
+
+            while ($i < $length && self::is_ascii_space($tag[$i])) {
+                $i++;
+            }
+
+            $value = null;
+
+            if ($i < $length && $tag[$i] === '=') {
+                $i++;
+
+                while ($i < $length && self::is_ascii_space($tag[$i])) {
+                    $i++;
+                }
+
+                if ($i >= $length) {
+                    break;
+                }
+
+                if ($tag[$i] === '"' || $tag[$i] === "'") {
+                    $quote = $tag[$i];
+                    $i++;
+                    $value_start = $i;
+
+                    while ($i < $length && $tag[$i] !== $quote) {
+                        $i++;
+                    }
+
+                    if ($i >= $length || $tag[$i] !== $quote) {
+                        break;
+                    }
+
+                    $value = substr($tag, $value_start, $i - $value_start);
+                    $i++;
+                } else {
+                    $value_start = $i;
+
+                    while (
+                        $i < $length
+                        && !self::is_ascii_space($tag[$i])
+                        && $tag[$i] !== '>'
+                        && $tag[$i] !== '/'
+                    ) {
+                        $i++;
+                    }
+
+                    // A value that runs off the end of a cut tag is not complete.
+                    if ($i >= $length || $i === $value_start) {
+                        break;
+                    }
+
+                    $value = substr($tag, $value_start, $i - $value_start);
+                }
+            }
+
+            if ($attr === $name && $value !== null) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -491,27 +594,87 @@ class Speed_Metrics
     /**
      * Link tags whose rel includes the stylesheet token.
      *
-     * The last tag still counts when a truncated body cuts it off after a
-     * complete rel attribute.
+     * A ">" inside a quoted attribute does not end the tag. The last tag still
+     * counts when a truncated body cuts it off after a complete rel attribute.
      *
      * @param string $lower_html Lowercased HTML.
      * @return int
      */
     private static function count_stylesheets($lower_html)
     {
-        if ($lower_html === '' || !preg_match_all('/<link\b[^>]*(?:>|$)/', $lower_html, $tags)) {
+        if ($lower_html === '') {
             return 0;
         }
 
         $count = 0;
+        $length = strlen($lower_html);
+        $offset = 0;
 
-        foreach ($tags[0] as $tag) {
-            if (self::rel_has_stylesheet($tag)) {
+        while (($pos = strpos($lower_html, '<link', $offset)) !== false) {
+            if (!self::is_tag_boundary($lower_html, $pos + 5)) {
+                $offset = $pos + 5;
+                continue;
+            }
+
+            $tag = self::read_tag($lower_html, $pos, $length);
+
+            if (self::rel_has_stylesheet($tag['html'])) {
                 $count++;
             }
+
+            $offset = $tag['next'];
         }
 
         return $count;
+    }
+
+    /**
+     * One start tag, including a ">" that sits inside a quoted attribute.
+     *
+     * A truncated body returns the unfinished tag through the last byte.
+     *
+     * @param string $html Markup.
+     * @param int    $start Offset of the opening "<".
+     * @param int    $length Byte length of $html.
+     * @return array{html:string,next:int}
+     */
+    private static function read_tag($html, $start, $length)
+    {
+        $quote = '';
+        $i = $start + 1;
+
+        while ($i < $length) {
+            $byte = $html[$i];
+
+            if ($quote !== '') {
+                if ($byte === $quote) {
+                    $quote = '';
+                }
+
+                $i++;
+                continue;
+            }
+
+            if ($byte === '"' || $byte === "'") {
+                $quote = $byte;
+                $i++;
+                continue;
+            }
+
+            if ($byte === '>') {
+                return array(
+                    'html' => substr($html, $start, $i - $start + 1),
+                    'next' => $i + 1,
+                );
+            }
+
+            $i++;
+        }
+
+        return array(
+            'html' => substr($html, $start),
+            'next' => $length,
+        );
     }
 
     /**
@@ -522,15 +685,7 @@ class Speed_Metrics
      */
     private static function rel_has_stylesheet($tag)
     {
-        $rel = null;
-
-        if (preg_match('/(?:^|\s)rel\s*=\s*"([^"]*)"/', $tag, $match)) {
-            $rel = $match[1];
-        } elseif (preg_match('/(?:^|\s)rel\s*=\s*\'([^\']*)\'/', $tag, $match)) {
-            $rel = $match[1];
-        } elseif (preg_match('/(?:^|\s)rel\s*=\s*([^\s"\'=<>`\/]+)/', $tag, $match)) {
-            $rel = $match[1];
-        }
+        $rel = self::attribute_value($tag, 'rel');
 
         if ($rel === null) {
             return false;
