@@ -492,6 +492,33 @@ class Test_Migration_Report extends TestCase
         $this->assertStringNotContainsString('skipped: 0', $noisy['summary']);
     }
 
+    public function test_post_sample_uses_the_excerpt_when_the_title_is_empty()
+    {
+        $report = Migration_Report::format(array(
+            'ok' => true,
+            'counts' => array('posts' => 1),
+            'write' => array('ok' => true),
+            'sample' => array(
+                'posts' => array(
+                    array(
+                        'type' => 'page',
+                        'translations' => array(
+                            'en' => array(
+                                'id' => 4,
+                                'title' => '',
+                                'excerpt' => '<p>Summer hours start Monday.</p>',
+                                'content' => 'A much longer page body that should not lead the report.',
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertSame('Summer hours start Monday. (en)', $this->line($report, 'Example post'));
+        $this->assertStringNotContainsString('longer page body', $this->line($report, 'Example post'));
+    }
+
     public function test_string_sample_shows_the_translated_text()
     {
         $report = Migration_Report::format(array(

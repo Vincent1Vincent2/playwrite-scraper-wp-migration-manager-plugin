@@ -1050,7 +1050,7 @@ class Migration_Report
 
         $fields = array(
             'languages' => array('name', 'slug'),
-            'posts' => array('title', 'slug'),
+            'posts' => array('title', 'excerpt', 'slug'),
             'terms' => array('name', 'slug'),
             'strings' => array('string', 'name'),
             'menus' => array('name', 'location'),
@@ -1167,7 +1167,7 @@ class Migration_Report
             if (is_string($translated)) {
                 $name = self::present_name($section, $translated);
             } elseif (is_array($translated)) {
-                foreach (array('title', 'name', 'string', 'slug') as $key) {
+                foreach (array('title', 'name', 'excerpt', 'string', 'slug') as $key) {
                     if (isset($translated[$key]) && is_string($translated[$key])) {
                         $name = self::present_name($section, $translated[$key]);
                         if ($name !== '') {
