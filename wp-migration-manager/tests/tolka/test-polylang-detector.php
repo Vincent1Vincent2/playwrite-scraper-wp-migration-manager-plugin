@@ -328,6 +328,35 @@ class Polylang_Detector_Test extends TestCase
         $this->assertSame('3.7.0', $status['version']);
     }
 
+    public function test_windows_plugin_path_lists_the_pro_copy(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'polylang/polylang.php', $this->wordpress_header('Polylang', '3.0.0'));
+        $this->write_plugin($root, 'polylang-pro/polylang.php', $this->wordpress_header('Polylang Pro', '4.2.0'));
+        Polylang_Detector_Fixture::$directories = array($root);
+        Polylang_Detector_Fixture::$use_list = true;
+        Polylang_Detector_Fixture::$listed = array('polylang-pro\\polylang.php');
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('4.2.0', $status['version']);
+        $this->assertSame(array(sprintf(self::INACTIVE_LISTED, '4.2.0')), $status['errors']);
+    }
+
+    public function test_parent_directory_segment_is_not_treated_as_active(): void
+    {
+        $root = $this->temp_dir();
+        $this->write_plugin($root, 'plugins/polylang/polylang.php', $this->wordpress_header('Polylang', '3.1.0'));
+        Polylang_Detector_Fixture::$directories = array($root . '/plugins');
+        Polylang_Detector_Fixture::$use_list = true;
+        Polylang_Detector_Fixture::$listed = array('../polylang/polylang.php');
+
+        $status = Polylang_Detector_Fixture::status();
+
+        $this->assertSame('3.1.0', $status['version']);
+        $this->assertSame(array(sprintf(self::INACTIVE_INSTALLED, '3.1.0')), $status['errors']);
+    }
+
     public function test_listed_pro_copy_outranks_an_inactive_free_copy(): void
     {
         $root = $this->temp_dir();

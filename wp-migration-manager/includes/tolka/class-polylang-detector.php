@@ -195,8 +195,8 @@ class Polylang_Detector
             if (!is_string($candidate) || $candidate === '' || !is_dir($candidate) || !is_readable($candidate)) {
                 continue;
             }
-            $resolved = realpath($candidate);
-            $directories[] = is_string($resolved) && $resolved !== '' ? $resolved : $candidate;
+            $resolved = self::resolve_path($candidate);
+            $directories[] = $resolved !== '' ? $resolved : $candidate;
         }
 
         return array_values(array_unique($directories));
@@ -485,8 +485,8 @@ class Polylang_Detector
                 $files[] = $directory . '/' . $relative;
             }
 
-            $entries = scandir($directory);
-            if (!is_array($entries)) {
+            $entries = self::list_directory($directory);
+            if ($entries === array()) {
                 continue;
             }
 
@@ -509,8 +509,8 @@ class Polylang_Detector
                     continue;
                 }
 
-                $inner = scandir($path);
-                if (!is_array($inner)) {
+                $inner = self::list_directory($path);
+                if ($inner === array()) {
                     continue;
                 }
 
@@ -735,7 +735,8 @@ class Polylang_Detector
             $limit = 8192;
         }
 
-        $contents = file_get_contents($path, false, null, 0, $limit);
+        // A warning here would leak into the Migrate to Tolka screen.
+        $contents = @file_get_contents($path, false, null, 0, $limit);
         if (!is_string($contents) || $contents === '') {
             return '';
         }
@@ -796,6 +797,29 @@ class Polylang_Detector
         return $version;
     }
 
+    /**
+     * @return string[]
+     */
+    private static function list_directory(string $directory): array
+    {
+        $entries = @scandir($directory);
+        if (!is_array($entries)) {
+            return array();
+        }
+
+        return $entries;
+    }
+
+    private static function resolve_path(string $path): string
+    {
+        $resolved = @realpath($path);
+        if (!is_string($resolved) || $resolved === '') {
+            return '';
+        }
+
+        return $resolved;
+    }
+
     private static function ends_with(string $haystack, string $needle): bool
     {
         if ($needle === '' || strlen($haystack) < strlen($needle)) {
@@ -818,8 +842,8 @@ class Polylang_Detector
             }
             $key = $file;
             if (is_file($file)) {
-                $resolved = realpath($file);
-                if (is_string($resolved) && $resolved !== '') {
+                $resolved = self::resolve_path($file);
+                if ($resolved !== '') {
                     $key = $resolved;
                 }
             }
