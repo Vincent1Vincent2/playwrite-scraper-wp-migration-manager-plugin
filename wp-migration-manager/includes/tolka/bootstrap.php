@@ -1438,6 +1438,17 @@ function wmm_tolka_fallback_script()
         if (!node) {
             return;
         }
+        if (node.id) {
+            jobs.forEach(function (entry) {
+                if (entry.target !== node.id) {
+                    return;
+                }
+                var button = document.getElementById(entry.id);
+                if (button) {
+                    button.removeAttribute("aria-describedby");
+                }
+            });
+        }
         while (node.firstChild) {
             node.removeChild(node.firstChild);
         }

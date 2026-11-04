@@ -617,6 +617,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('aria-describedby="wmm-tolka-preview-note"', $html);
             $this->assertStringContainsString('id="wmm-tolka-fallback"', $html);
             $this->assertStringContainsString('typeof request.then', $html);
+            $this->assertStringContainsString('removeAttribute("aria-describedby")', $html);
             $this->assertStringContainsString('The request could not be completed.', $html);
             $this->assertStringContainsString('Enter', $html);
             $this->assertStringContainsString('Enable JavaScript', $html);
