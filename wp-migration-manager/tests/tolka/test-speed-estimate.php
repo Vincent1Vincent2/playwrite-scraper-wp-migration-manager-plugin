@@ -1246,9 +1246,9 @@ class Test_Speed_Estimate extends TestCase
             . '}' . "\n"
             . 'define("ABSPATH", __DIR__);' . "\n"
             . 'require ' . var_export(self::classPath(), true) . ';' . "\n"
-            . '$estimate = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false), array(), array());' . "\n"
+            . '$estimate = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false, "total_ms" => 5000), array(), array());' . "\n"
             . '$with_url = \\WMM\\Tolka\\Speed_Estimate::project(array("ok" => false, "url" => "https://example.com/start"), array(), array());' . "\n"
-            . 'echo $estimate["error"], "\n", $with_url["error"];' . "\n";
+            . 'echo $estimate["error"], "\n", $with_url["error"], "\n", $estimate["basis"], "\n", $estimate["faster_label"], "\n", $estimate["faster_percent"], "\n", $estimate["current_ms"];' . "\n";
 
         $path = tempnam(sys_get_temp_dir(), 'tolka-i18n-');
         file_put_contents($path, $script);
@@ -1261,7 +1261,11 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(0, $exit_code, $text);
         $this->assertSame(
             "TR:A Tolka speed estimate is not available. TR:The page could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.\n"
-            . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.',
+            . 'TR:A Tolka speed estimate is not available. TR:The page at https://example.com/start could not be measured. TR:The benchmark coefficients could not be read from includes/tolka/data/benchmarks.json.' . "\n"
+            . "Measured page load plus coefficients from benchmarks.json\n"
+            . "\n"
+            . "0\n"
+            . '0',
             $text
         );
     }
