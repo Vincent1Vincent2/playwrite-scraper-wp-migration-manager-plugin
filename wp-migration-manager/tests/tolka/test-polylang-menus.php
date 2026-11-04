@@ -1791,6 +1791,184 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(array(), $second['errors']);
     }
 
+    public function test_nested_item_stays_under_its_parent_for_a_lowercased_default(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'SV',
+            'languages' => array('SV'),
+            'registered' => array(
+                'primary' => 'Primär',
+            ),
+            'menus' => array(8 => 'Förrätter'),
+            'theme_locations' => array(
+                'primary' => 8,
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => 3,
+                        'parent' => 2,
+                        'title' => 'Djup',
+                        'url' => '',
+                        'object' => 'custom',
+                        'object_id' => 0,
+                        'position' => 3,
+                    ),
+                    array(
+                        'id' => 2,
+                        'parent' => 1,
+                        'title' => 'Kontakt',
+                        'url' => '',
+                        'object' => 'page',
+                        'object_id' => 4,
+                        'position' => 2,
+                    ),
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Hem',
+                        'url' => 'https://example.com/hem',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 1,
+                    ),
+                ),
+            ),
+            'navigations' => array(
+                array(
+                    'id' => 40,
+                    'name' => 'Sidhuvud',
+                    'slug' => 'sidhuvud',
+                    'language' => '',
+                    'content' => '<!-- wp:navigation-submenu {"label":"Om","url":"https://example.com/om"} -->'
+                        . '<!-- wp:navigation-link {"label":"Ärtor","url":""} /-->'
+                        . '<!-- /wp:navigation-submenu -->',
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $link = $this->location($second, 'primary')['translations']['sv']['items'];
+        $navigation = $this->location($second, 'navigation:sidhuvud')['translations']['sv']['items'];
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame($first, $second);
+        $this->assertArrayNotHasKey('SV', $this->location($second, 'primary')['translations']);
+        $this->assertCount(1, $link);
+        $this->assertSame('Hem', $link[0]['title']);
+        $this->assertSame('https://example.com/hem', $link[0]['url']);
+        $this->assertCount(1, $link[0]['children']);
+        $this->assertSame('Kontakt', $link[0]['children'][0]['title']);
+        $this->assertSame('', $link[0]['children'][0]['url']);
+        $this->assertSame(1, $link[0]['children'][0]['parent']);
+        $this->assertSame('Djup', $link[0]['children'][0]['children'][0]['title']);
+        $this->assertSame('', $link[0]['children'][0]['children'][0]['url']);
+        $this->assertSame(2, $link[0]['children'][0]['children'][0]['parent']);
+        $this->assertSame(array(), $link[0]['children'][0]['children'][0]['children']);
+        $this->assertCount(1, $navigation);
+        $this->assertSame('Om', $navigation[0]['title']);
+        $this->assertSame('Ärtor', $navigation[0]['children'][0]['title']);
+        $this->assertSame('', $navigation[0]['children'][0]['url']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
+    }
+
+    public function test_database_nested_item_stays_under_parent_for_lowercased_default(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->menus = array(
+            array(
+                'id' => 12,
+                'name' => 'Förrätter',
+                'slug' => 'forratter',
+            ),
+        );
+        $database->term_languages = array();
+        $database->term_translations = array();
+        $database->menu_posts = array(
+            12 => array(
+                array(
+                    'id' => 21,
+                    'title' => 'Kontakt',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 2,
+                ),
+                array(
+                    'id' => 20,
+                    'title' => 'Hem',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 1,
+                ),
+            ),
+        );
+        $database->meta[21] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'page',
+            '_menu_item_object_id' => '4',
+            '_menu_item_menu_item_parent' => '20',
+            '_menu_item_url' => '',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[20] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '1',
+            '_menu_item_menu_item_parent' => '0',
+            '_menu_item_url' => 'https://example.com/hem',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'SV',
+            'nav_menus' => array(
+                'flavor' => array(
+                    'primary' => 12,
+                ),
+            ),
+        ));
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $menus = new Polylang_Menus();
+            $first = $menus->export();
+            $second = $menus->export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $translations = $this->location($second, 'primary')['translations'];
+        $link = $translations['sv']['items'];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertArrayNotHasKey('SV', $translations);
+        $this->assertCount(1, $link);
+        $this->assertSame('Hem', $link[0]['title']);
+        $this->assertSame('Kontakt', $link[0]['children'][0]['title']);
+        $this->assertSame('', $link[0]['children'][0]['url']);
+        $this->assertSame(20, $link[0]['children'][0]['parent']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, $counts['primary']);
+    }
+
     public function test_option_table_is_read_when_wordpress_functions_are_missing(): void
     {
         if (function_exists('get_option')) {
@@ -1917,6 +2095,10 @@ HTML;
         }
 
         $database = $this->sample_database();
+        $database->option_values['stylesheet'] = 'flavor';
+        $database->option_values['polylang'] = serialize(array(
+            'default_lang' => 'en',
+        ));
         $database->navigation_posts = array(
             array(
                 'id' => 30,
@@ -2643,6 +2825,11 @@ class Tolka_Menus_Fake_Wpdb
     /**
      * @var array<int, string>
      */
+    public $post_languages = array();
+
+    /**
+     * @var array<int, string>
+     */
     public $term_names = array();
 
     /**
@@ -2741,6 +2928,18 @@ class Tolka_Menus_Fake_Wpdb
                 'slug' => 'pll_' . $object_id,
                 'name' => 'group',
                 'description' => $this->term_translations[$object_id],
+            ));
+        }
+        if (strpos($query, 'tr.object_id = ') !== false && strpos($query, "taxonomy = 'language'") !== false) {
+            $object_id = $this->number_after($query, 'tr.object_id = ');
+            if (! isset($this->post_languages[$object_id])) {
+                return array();
+            }
+            return array(array(
+                'term_id' => 3000 + $object_id,
+                'slug' => $this->post_languages[$object_id],
+                'name' => $this->post_languages[$object_id],
+                'description' => '',
             ));
         }
         if (strpos($query, "taxonomy = 'language'") !== false) {
