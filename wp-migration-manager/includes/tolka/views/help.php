@@ -59,7 +59,7 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('The coefficients are the fixed numbers in the benchmark file. The estimate starts from the measured load and uses those numbers only to estimate the difference. It does not replace the measurement.', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__note">
-                <?php esc_html_e('The address must start with http:// or https:// and must be reachable on the public internet. The check refuses an address that only works on this computer or on a private network.', 'migration-manager'); ?>
+                <?php esc_html_e('The address must start with http:// or https:// and must be reachable on the public internet. The check refuses an address that only works on this computer or on a private network. The server for this site loads that page. The page is not sent to Tolka.', 'migration-manager'); ?>
             </p>
             <p class="wmm-tolka-help__note">
                 <?php esc_html_e('If the page cannot be loaded, you see an error and no percent is offered. If the benchmark file lacks the coefficients the estimate needs, you also see an error. A failed estimate is not the same as zero percent faster.', 'migration-manager'); ?>
