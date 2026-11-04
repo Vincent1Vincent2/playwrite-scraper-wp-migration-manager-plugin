@@ -157,13 +157,12 @@ class Tolka_Writer
             $items = self::items_for($package, $section, $errors, $hidden);
             $counts[$section] = count($items);
 
-            if ($section === 'posts') {
-                $posts = self::operations($items, 'post', $errors, $hidden);
-            } elseif ($section === 'terms') {
-                $terms = self::operations($items, 'term', $errors, $hidden);
+            $kind = self::tagged_kind($section);
+            if ($kind === 'post') {
+                $posts = self::operations($items, $kind, $errors, $hidden);
+            } elseif ($kind === 'term') {
+                $terms = self::operations($items, $kind, $errors, $hidden);
             }
-            // Menus, strings, media, and languages are stored in the package
-            // only. Menu items and menu terms do not receive Tolka term meta.
         }
 
         return array(
@@ -171,6 +170,27 @@ class Tolka_Writer
             'posts' => self::resolve_conflicts($posts, 'post', $errors, $hidden),
             'terms' => self::resolve_conflicts($terms, 'term', $errors, $hidden),
         );
+    }
+
+    /**
+     * Posts and terms are the only sections that receive language meta.
+     *
+     * Strings, menus, media, and languages are stored in the package and
+     * are not tagged. A string item never receives post meta.
+     *
+     * @param string $section Section name.
+     * @return string
+     */
+    private static function tagged_kind($section)
+    {
+        if ($section === 'posts') {
+            return 'post';
+        }
+        if ($section === 'terms') {
+            return 'term';
+        }
+
+        return '';
     }
 
     /**
@@ -1025,7 +1045,7 @@ class Tolka_Writer
      */
     private static function write_meta($kind, array $ops, array &$errors, &$hidden)
     {
-        if ($ops === array()) {
+        if ($ops === array() || ($kind !== 'post' && $kind !== 'term')) {
             return;
         }
 
