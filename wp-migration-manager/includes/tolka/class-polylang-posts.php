@@ -617,6 +617,12 @@ class Polylang_Posts
                 $survivor_ids[$lang] = $record['id'];
             }
             $default_id = $this->default_post_id($survivor_ids, $default_lang);
+            if ($default_id <= 0) {
+                if (!empty($missing)) {
+                    $errors[] = $this->missing_group_message($missing);
+                }
+                continue;
+            }
             $group = $this->group_name($default_id);
 
             foreach ($missing as $post_id) {
