@@ -1025,6 +1025,125 @@ class Test_Polylang_Media extends TestCase
         ), $result['items'][0]['title']);
     }
 
+    public function test_alt_text_outside_the_language_list_stays_on_that_lowercase_slug()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('XX' => 10, 'note' => 10, 'en' => 4),
+                'members' => array(10 => 'XX'),
+            ),
+        ), array(), array(10), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '2024/05/a.jpg',
+                'alt' => 'Keep me',
+                'title' => 'Outside',
+            ),
+            4 => array(
+                'file' => '2024/05/b.jpg',
+                'alt' => 'English',
+                'title' => 'English',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(array('xx'), array_keys($result['items'][0]['alt']));
+        $this->assertSame(array('xx'), array_keys($result['items'][0]['title']));
+        $this->assertSame('Keep me', $result['items'][0]['alt']['xx']);
+        $this->assertSame('Outside', $result['items'][0]['title']['xx']);
+        $this->assertArrayNotHasKey('XX', $result['items'][0]['alt']);
+        $this->assertArrayNotHasKey('note', $result['items'][0]['alt']);
+        $this->assertArrayNotHasKey('en', $result['items'][0]['alt']);
+        $this->assertSame(array(), $this->call('errors_for_result', array(0, $result['items'])));
+    }
+
+    public function test_sv_outside_the_language_list_keeps_alt_text_on_sv()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'SV'),
+        ), array(10), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '2024/05/a.jpg',
+                'alt' => 'Skärgård',
+                'title' => 'Ö',
+            ),
+        ));
+
+        $this->assertSame(array('sv' => 'Skärgård'), $result['items'][0]['alt']);
+        $this->assertSame(array('sv' => 'Ö'), $result['items'][0]['title']);
+        $this->assertArrayNotHasKey('SV', $result['items'][0]['alt']);
+        $this->assertArrayNotHasKey('en', $result['items'][0]['alt']);
+        $this->assertSame(array(), $this->call('errors_for_result', array(0, $result['items'])));
+    }
+
+    public function test_metadata_key_does_not_replace_a_known_language()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'note' => 10),
+                'members' => array(10 => 'en'),
+            ),
+        ), array(), array(10), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '2024/05/a.jpg',
+                'alt' => 'English alt',
+                'title' => 'English title',
+            ),
+        ));
+
+        $this->assertSame(array('en' => 'English alt'), $result['items'][0]['alt']);
+        $this->assertArrayNotHasKey('note', $result['items'][0]['alt']);
+        $this->assertArrayNotHasKey('note', $result['items'][0]['title']);
+    }
+
+    public function test_description_only_unknown_slug_keeps_its_alt_text()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('XX' => 10),
+                'members' => array(10 => ''),
+            ),
+        ), array(), array(10), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '2024/05/a.jpg',
+                'alt' => 'Keep me',
+                'title' => 'Outside',
+            ),
+        ));
+
+        $this->assertSame(array('xx' => 'Keep me'), $result['items'][0]['alt']);
+        $this->assertSame(array('xx' => 'Outside'), $result['items'][0]['title']);
+        $this->assertArrayNotHasKey('en', $result['items'][0]['alt']);
+        $this->assertSame(array(), $this->call('errors_for_result', array(0, $result['items'])));
+    }
+
+    public function test_blank_path_with_an_unknown_slug_is_an_empty_file_and_one_error()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('XX' => 10),
+                'members' => array(10 => 'XX'),
+            ),
+        ), array(), array(10), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => " \t ",
+                'alt' => 'Keep me',
+                'title' => 'Ö',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('', $result['items'][0]['file']);
+        $this->assertSame(array('xx' => 'Keep me'), $result['items'][0]['alt']);
+        $this->assertSame(array('xx' => 'Ö'), $result['items'][0]['title']);
+        $errors = $this->call('errors_for_result', array(0, $result['items']));
+        $this->assertCount(1, $errors);
+        $this->assertCustomerSentence($errors[0]);
+        $this->assertSame(
+            'One media item has no file path and was exported with an empty file. Nothing was changed.',
+            $errors[0]
+        );
+    }
+
     public function test_member_language_outside_the_known_list_is_kept()
     {
         $result = $this->itemsFrom(array(

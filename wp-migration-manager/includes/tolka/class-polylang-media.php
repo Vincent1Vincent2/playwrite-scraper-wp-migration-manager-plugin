@@ -877,16 +877,13 @@ class Polylang_Media
         foreach ($decoded as $lang => $raw_id) {
             $slug = $this->language_slug($lang);
             $attachment_id = (int) $raw_id;
-            if ($slug === '' || $attachment_id <= 0) {
-                continue;
-            }
-            if ($known !== array()) {
-                $slug = $this->match_known_slug($slug, $known);
-            }
-            if ($slug === '' || isset($map[$slug])) {
+            if ($slug === '' || $attachment_id <= 0 || isset($map[$slug])) {
                 continue;
             }
             if (!isset($members[$attachment_id]) && !isset($lookup[$attachment_id])) {
+                continue;
+            }
+            if (!$this->description_slug_is_usable($slug, $attachment_id, $members, $decoded, $known)) {
                 continue;
             }
             $map[$slug] = $attachment_id;
@@ -926,6 +923,43 @@ class Polylang_Media
             'maps' => $maps,
             'skipped' => $skipped,
         );
+    }
+
+    /**
+     * Keep a description slug that is this attachment's language.
+     *
+     * A slug that is not in the site language list is still usable. A metadata
+     * key is ignored when the attachment already has a different known language.
+     *
+     * @param string $slug
+     * @param int $attachment_id
+     * @param array $members
+     * @param array $decoded
+     * @param array $known
+     * @return bool
+     */
+    private function description_slug_is_usable($slug, $attachment_id, $members, $decoded, $known)
+    {
+        if ($known === array() || isset($known[$slug])) {
+            return true;
+        }
+        $member_lang = isset($members[$attachment_id]) ? $members[$attachment_id] : '';
+        if ($member_lang !== '' && $member_lang !== $slug) {
+            return false;
+        }
+        if ($member_lang === $slug) {
+            return true;
+        }
+        foreach ($decoded as $lang => $raw_id) {
+            if ((int) $raw_id !== (int) $attachment_id) {
+                continue;
+            }
+            $other = $this->language_slug($lang);
+            if ($other !== '' && $other !== $slug && isset($known[$other])) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -1872,8 +1906,8 @@ class Polylang_Media
     /**
      * Use the site's slug when it differs only by case.
      *
-     * A valid slug that is not one of the known languages is kept. Description
-     * keys use match_known_slug() instead, so extra Polylang metadata is ignored.
+     * A valid slug that is not one of the known languages is kept. Alt text for
+     * that slug stays on the lowercase slug.
      *
      * @param mixed $value
      * @param array $known
