@@ -1298,6 +1298,24 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('A ferry on the river', $result['items'][0]['alt']['en']);
     }
 
+    public function test_utf8_and_latin1_swedish_letters_can_share_one_string()
+    {
+        $mixed = "\xC3\xA5 och \xF6 \xC3\x84\xC4";
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 3, 'lang' => 'sv'),
+        ), array(3), array('sv'), 'sv', array(
+            3 => array(
+                'file' => "2024/05/\xC3\xA5-\xF6.jpg",
+                'alt' => $mixed,
+                'title' => $mixed,
+            ),
+        ));
+
+        $this->assertSame('2024/05/å-ö.jpg', $result['items'][0]['file']);
+        $this->assertSame('å och ö ÄÄ', $result['items'][0]['title']['sv']);
+        $this->assertSame('å och ö ÄÄ', $result['items'][0]['alt']['sv']);
+    }
+
     public function test_swedish_file_name_matches_its_server_path()
     {
         $result = $this->itemsFrom(array(), array(
