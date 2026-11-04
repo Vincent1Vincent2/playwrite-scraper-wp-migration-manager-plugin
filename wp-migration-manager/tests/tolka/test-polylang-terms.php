@@ -702,6 +702,91 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(2, $second['items']);
     }
 
+    public function test_a_shared_term_id_stays_a_category_on_every_export(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = '<p>Meny åäö</p> &amp; <em>News</em>';
+        $category = $this->term(12, 'Höst', 'HÖST', 'category', 'sv', '4', $html);
+        $tag = $this->term(12, 'Tagg', 'TAGG-HÖST', 'post_tag', 'sv', 9, 'tagg');
+        $menu = $this->term(12, 'Main', 'MAIN', 'nav_menu', 'sv', 0, $html);
+        $english = $this->term(13, 'Autumn', 'AUTUMN', 'category', 'en', 0, $html);
+
+        $menuFirst = $this->sharedTermExport(array($menu, $tag, $category, $english));
+        $categoryFirst = $this->sharedTermExport(array($category, $english, $menu, $tag));
+
+        $this->assertSame($menuFirst, $categoryFirst);
+        $this->assertSame(array('term:12'), $this->groupIds($menuFirst['items']));
+
+        $item = $this->itemByGroup($menuFirst['items'], 'term:12');
+        $this->assertSame('category', $item['taxonomy']);
+        $this->assertSame(array('en', 'sv'), array_keys($item['translations']));
+        $this->assertSame('höst', $item['translations']['sv']['slug']);
+        $this->assertSame('Höst', $item['translations']['sv']['name']);
+        $this->assertSame($html, $item['translations']['sv']['description']);
+        $this->assertSame(4, $item['translations']['sv']['parent']);
+        $this->assertIsInt($item['translations']['sv']['parent']);
+        $this->assertSame('autumn', $item['translations']['en']['slug']);
+        $this->assertSame('Autumn', $item['translations']['en']['name']);
+        $this->assertSame(0, $item['translations']['en']['parent']);
+        $this->assertIsInt($item['translations']['en']['parent']);
+
+        $encoded = json_encode($menuFirst['items']);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertStringNotContainsString('post_tag', $encoded);
+        $this->assertStringNotContainsString('Tagg', $encoded);
+        $this->assertStringNotContainsString('MAIN', $encoded);
+        $this->assertCount(1, $menuFirst['items']);
+        $this->assertSame(array(), $menuFirst['errors']);
+    }
+
+    public function test_an_uppercase_stored_language_stays_lowercase_on_a_second_export(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->languages = array(
+            array('slug' => 'PLL_SV', 'term_group' => 0),
+        );
+        $database->catalog = array(
+            $this->term(9, 'Höst', 'HÖST', 'category', '', '3'),
+            $this->term(70, 'Main', 'MAIN', 'nav_menu', 'SV', 0, '<p>Meny</p>'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame($first, $second);
+        $this->assertSame(array('term:9'), $this->groupIds($second['items']));
+        $item = $this->itemByGroup($second['items'], 'term:9');
+        $this->assertSame(array('sv'), array_keys($item['translations']));
+        $this->assertSame('höst', $item['translations']['sv']['slug']);
+        $this->assertSame('Höst', $item['translations']['sv']['name']);
+        $this->assertSame(3, $item['translations']['sv']['parent']);
+        $this->assertIsInt($item['translations']['sv']['parent']);
+        $this->assertSame('', $item['translations']['sv']['description']);
+        $this->assertIsString($item['translations']['sv']['description']);
+        $this->assertNotContains('term:70', $this->groupIds($second['items']));
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertStringNotContainsString('PLL_SV', $encoded);
+        $this->assertSame(
+            array('A term has no Polylang language. It is included under sv, the first language stored by Polylang, so it is not dropped.'),
+            $second['errors']
+        );
+    }
+
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
     {
         if (!$this->canUseDatabaseStub()) {
@@ -1826,6 +1911,28 @@ class Polylang_Terms_Test extends TestCase
             }
         }
         $this->fail('Missing group ' . $group);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $catalog
+     * @return array{items: array<int, mixed>, errors: array<int, string>}
+     */
+    private function sharedTermExport(array $catalog)
+    {
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->descriptions = array(serialize(array('en' => 13, 'sv' => 12)));
+        $database->catalog = $catalog;
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $third = $exporter->export();
+        $this->assertSame($first, $second);
+        $this->assertSame($second, $third);
+
+        return $second;
     }
 
     /**

@@ -636,9 +636,7 @@ class Polylang_Terms
                     continue;
                 }
                 $existing = isset($details[$normalized['id']]) ? $details[$normalized['id']] : null;
-                if ($existing === null || ($this->isInternalTaxonomy($existing['taxonomy']) && !$this->isInternalTaxonomy($normalized['taxonomy']))) {
-                    $details[$normalized['id']] = $normalized;
-                }
+                $details[$normalized['id']] = $this->preferListedTerm($existing, $normalized);
             }
         }
 
@@ -762,11 +760,16 @@ class Polylang_Terms
         if ($this->databaseReady()) {
             $rows = $this->fetchTermsByIds(array($id));
             if (is_array($rows)) {
+                $preferred = null;
                 foreach ($rows as $row) {
                     $normalized = $this->normalizeListedTerm($row, true);
-                    if ($normalized !== null && $normalized['id'] === $id && !$this->isInternalTaxonomy($normalized['taxonomy'])) {
-                        return $normalized;
+                    if ($normalized === null || $normalized['id'] !== $id) {
+                        continue;
                     }
+                    $preferred = $this->preferListedTerm($preferred, $normalized);
+                }
+                if ($preferred !== null && !$this->isInternalTaxonomy($preferred['taxonomy'])) {
+                    return $preferred;
                 }
             }
         }
@@ -1723,11 +1726,45 @@ class Polylang_Terms
      */
     private function languageFromRelationshipSlug($slug)
     {
-        $slug = strtolower($this->stringValue($slug));
+        $slug = strtolower(trim($this->stringValue($slug)));
         if (strpos($slug, 'pll_') === 0) {
-            $slug = substr($slug, 4);
+            $slug = trim(substr($slug, 4));
         }
         return $slug;
+    }
+
+    /**
+     * One term id can come back as a category and as a menu. Keep one row.
+     * A menu never replaces a content term. Between content taxonomies, the
+     * name that sorts first is kept, so a second read cannot switch the group.
+     *
+     * @param array<string, mixed>|null $existing
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    private function preferListedTerm($existing, array $incoming)
+    {
+        if ($existing === null) {
+            return $incoming;
+        }
+
+        $existingInternal = $this->isInternalTaxonomy(isset($existing['taxonomy']) ? $existing['taxonomy'] : '');
+        $incomingInternal = $this->isInternalTaxonomy(isset($incoming['taxonomy']) ? $incoming['taxonomy'] : '');
+        if ($existingInternal && !$incomingInternal) {
+            return $incoming;
+        }
+        if ($incomingInternal && !$existingInternal) {
+            return $existing;
+        }
+        if (!$existingInternal && !$incomingInternal) {
+            $existingName = isset($existing['taxonomy']) ? (string) $existing['taxonomy'] : '';
+            $incomingName = isset($incoming['taxonomy']) ? (string) $incoming['taxonomy'] : '';
+            if (strcmp($existingName, $incomingName) > 0) {
+                return $incoming;
+            }
+        }
+
+        return $existing;
     }
 
     /**
@@ -2102,11 +2139,7 @@ class Polylang_Terms
         if (!is_array($rows) || $rows === array() || !isset($rows[0]['slug'])) {
             return '';
         }
-        $slug = trim($this->stringValue($rows[0]['slug']));
-        if (strpos($slug, 'pll_') === 0) {
-            $slug = substr($slug, 4);
-        }
-        return $slug;
+        return $this->languageFromRelationshipSlug($rows[0]['slug']);
     }
 
     /**
