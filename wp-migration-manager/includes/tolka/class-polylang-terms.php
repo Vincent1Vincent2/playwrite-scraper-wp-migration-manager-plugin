@@ -1414,7 +1414,7 @@ class Polylang_Terms
     private function decodeMap($description)
     {
         if (is_array($description)) {
-            return $description;
+            return $this->translationMap($description);
         }
         if ($description === null || $description === '') {
             return array();
@@ -1430,7 +1430,7 @@ class Polylang_Terms
             $value = $this->unserializeValue($value);
         }
         if (is_array($value)) {
-            return $value;
+            return $this->translationMap($value);
         }
         if (!is_string($value)) {
             return null;
@@ -1440,7 +1440,7 @@ class Polylang_Terms
         if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
             $decoded = json_decode($trimmed, true);
             if (is_array($decoded)) {
-                return $decoded;
+                return $this->translationMap($decoded);
             }
         }
         if ($value !== $description) {
@@ -1452,9 +1452,42 @@ class Polylang_Terms
 
         $again = $this->unserializeValue($value);
         if (is_array($again)) {
-            return $again;
+            return $this->translationMap($again);
         }
         return null;
+    }
+
+    /**
+     * A translation group is a language map. A plain list is not a group.
+     *
+     * @param array<mixed, mixed> $value
+     * @return array<mixed, mixed>|null
+     */
+    private function translationMap(array $value)
+    {
+        if ($this->isListArray($value)) {
+            return null;
+        }
+        return $value;
+    }
+
+    /**
+     * @param array<mixed, mixed> $value
+     * @return bool
+     */
+    private function isListArray(array $value)
+    {
+        if ($value === array()) {
+            return false;
+        }
+        $index = 0;
+        foreach (array_keys($value) as $key) {
+            if ($key !== $index) {
+                return false;
+            }
+            $index++;
+        }
+        return true;
     }
 
     /**
