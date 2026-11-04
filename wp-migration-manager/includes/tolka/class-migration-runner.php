@@ -336,7 +336,7 @@ class Migration_Runner
     }
 
     /**
-     * At most SAMPLE_LIMIT items, in the original order.
+     * The first SAMPLE_LIMIT items, in exporter order. Not a sorted subset.
      *
      * @param array $items
      * @return array

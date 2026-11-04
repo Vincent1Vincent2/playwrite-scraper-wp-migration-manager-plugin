@@ -2636,5 +2636,52 @@ namespace {
             $this->assertSame($full, \WMM\Tolka\RunnerTest\Writer::$package['posts'][24]['content']);
             $this->assertSame(510, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][24]['content']));
         }
+
+        public function test_twenty_five_posts_sample_the_first_twenty_and_the_writer_gets_all()
+        {
+            $this->reset_doubles();
+            $last_text = 'LAST-POST-' . str_repeat('z', 480);
+            $posts = array();
+            for ($i = 0; $i < 25; $i++) {
+                $posts[] = array(
+                    'title' => ($i === 24) ? 'AAA sorts first' : 'Post ' . $i,
+                    'content' => ($i === 24) ? $last_text : 'body ' . $i,
+                );
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                1 => array('items' => $posts, 'errors' => array()),
+            );
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertIsInt($preview['counts']['posts']);
+            $this->assertSame(25, $preview['counts']['posts']);
+            $this->assertSame(25, $preview['sections']['posts']['count']);
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertArrayNotHasKey(20, $preview['sample']['posts']);
+            for ($i = 0; $i < 20; $i++) {
+                $this->assertSame('Post ' . $i, $preview['sample']['posts'][$i]['title']);
+                $this->assertSame('body ' . $i, $preview['sample']['posts'][$i]['content']);
+            }
+            $this->assertStringNotContainsString('AAA sorts first', json_encode($preview['sample']['posts']));
+            $this->assertStringNotContainsString('LAST-POST-', json_encode($preview['sample']['posts']));
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($run['ok']);
+            $this->assertIsInt($run['counts']['posts']);
+            $this->assertSame(25, $run['counts']['posts']);
+            $this->assertCount(20, $run['sample']['posts']);
+            $written = \WMM\Tolka\RunnerTest\Writer::$package['posts'];
+            $this->assertCount(25, $written);
+            for ($i = 0; $i < 24; $i++) {
+                $this->assertSame('Post ' . $i, $written[$i]['title']);
+            }
+            $this->assertSame('AAA sorts first', $written[24]['title']);
+            $this->assertSame($last_text, $written[24]['content']);
+            $this->assertSame(490, strlen($written[24]['content']));
+            $this->assertSame('Post 19', $run['sample']['posts'][19]['title']);
+        }
     }
 }
