@@ -477,8 +477,31 @@ function wmm_tolka_ajax_measure()
 
     wp_send_json_success(array(
         'metrics' => wmm_tolka_strip_html_keys($analyzed['value']),
-        'estimate' => wmm_tolka_strip_html_keys($projected['value']),
+        'estimate' => wmm_tolka_without_unusable_percent(wmm_tolka_strip_html_keys($projected['value'])),
     ));
+}
+
+/**
+ * Drop a percent unless the estimate itself says it is usable.
+ *
+ * @param mixed $estimate Projected estimate.
+ * @return mixed
+ */
+function wmm_tolka_without_unusable_percent($estimate)
+{
+    if (!is_array($estimate)) {
+        return $estimate;
+    }
+
+    $ok = array_key_exists('ok', $estimate) && ($estimate['ok'] === true || $estimate['ok'] === 1);
+
+    if ($ok) {
+        return $estimate;
+    }
+
+    unset($estimate['faster_percent'], $estimate['faster_label']);
+
+    return $estimate;
 }
 
 /**
