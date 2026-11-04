@@ -730,6 +730,51 @@ class Test_Speed_Estimate extends TestCase
         $this->assertNotSame(self::PROVENANCE_NOTE, $estimate['provenance_note']);
         $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
         $this->assertSame(self::PROVENANCE_NOTE, Speed_Estimate::benchmarks()['provenance_note']);
+
+        foreach ($coefficient_keys as $key) {
+            $this->assertSame($passed[$key], $estimate['coefficients'][$key]);
+        }
+    }
+
+    public function test_successful_estimate_does_not_invent_provenance_when_it_was_not_passed()
+    {
+        $benchmarks = self::contractBenchmarks();
+        unset($benchmarks['provenance'], $benchmarks['provenance_note']);
+
+        $estimate = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $benchmarks
+        );
+
+        $this->assertTrue($estimate['ok']);
+        $this->assertSame(14.4, $estimate['faster_percent']);
+        $this->assertSame('', $estimate['provenance']);
+        $this->assertSame('', $estimate['provenance_note']);
+        $this->assertNotSame('placeholder', $estimate['provenance']);
+        $this->assertNotSame(self::PROVENANCE_NOTE, $estimate['provenance_note']);
+
+        $blank = self::contractBenchmarks();
+        $blank['provenance'] = '';
+        $blank['provenance_note'] = '';
+        $empty = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $blank
+        );
+        $this->assertTrue($empty['ok']);
+        $this->assertSame('', $empty['provenance']);
+        $this->assertSame('', $empty['provenance_note']);
+        $this->assertSame('placeholder', Speed_Estimate::benchmarks()['provenance']);
+        foreach (array(
+            'polylang_extra_ms_per_language',
+            'polylang_switcher_ms',
+            'polylang_extra_ms_per_script',
+            'tolka_ms_per_language',
+            'max_overhead_ratio',
+        ) as $key) {
+            $this->assertArrayHasKey($key, Speed_Estimate::benchmarks());
+        }
     }
 
     public function test_zero_coefficients_do_not_invent_a_speedup()
