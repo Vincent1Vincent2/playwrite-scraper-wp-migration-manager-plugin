@@ -291,6 +291,13 @@ class Polylang_Menus_Test extends TestCase
                 'description' => '',
                 'position' => 1,
             ),
+            array(
+                'id' => 9,
+                'title' => '',
+                'attr_title' => '',
+                'description' => '',
+                'position' => 2,
+            ),
         );
         $database->meta[8] = array(
             '_menu_item_type' => 'custom',
@@ -298,6 +305,16 @@ class Polylang_Menus_Test extends TestCase
             '_menu_item_object_id' => '0',
             '_menu_item_menu_item_parent' => '0',
             '_menu_item_url' => 'https://example.com/blank',
+            '_menu_item_target' => '',
+            '_menu_item_classes' => '',
+            '_menu_item_xfn' => '',
+        );
+        $database->meta[9] = array(
+            '_menu_item_type' => 'custom',
+            '_menu_item_object' => 'custom',
+            '_menu_item_object_id' => '0',
+            '_menu_item_menu_item_parent' => '8',
+            '_menu_item_url' => 'https://example.com/child-blank',
             '_menu_item_target' => '',
             '_menu_item_classes' => '',
             '_menu_item_xfn' => '',
@@ -335,6 +352,9 @@ class Polylang_Menus_Test extends TestCase
         $this->assertNotNull($blank);
         $this->assertSame('', $blank['title']);
         $this->assertSame('custom', $blank['object']);
+        $this->assertCount(1, $blank['children']);
+        $this->assertSame('', $blank['children'][0]['title']);
+        $this->assertSame('https://example.com/child-blank', $blank['children'][0]['url']);
     }
 
     public function test_groups_locations_and_nests_items(): void
