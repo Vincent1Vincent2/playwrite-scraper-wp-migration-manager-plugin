@@ -101,13 +101,17 @@ class Speed_Loader
                 $result['total_ms'] = self::elapsed_ms($started);
                 $result['url'] = $current;
                 $result['status_code'] = 0;
-                return self::fail($result, self::text('The site could not be reached. Check the address and try again.'));
+                return self::fail($result, self::sentence_for_transport_failure(self::throwable_text($e)));
             }
 
             $result['total_ms'] = self::elapsed_ms($started);
             $result['url'] = $current;
 
-            $transport_error = self::transport_error($response);
+            try {
+                $transport_error = self::transport_error($response);
+            } catch (\Throwable $e) {
+                $transport_error = self::sentence_for_transport_failure(self::throwable_text($e));
+            }
             if ($transport_error !== '') {
                 $result['status_code'] = 0;
                 return self::fail($result, $transport_error);
@@ -1287,6 +1291,156 @@ class Speed_Loader
     }
 
     /**
+     * One sentence for a page that did not answer within the request limit.
+     *
+     * @return string
+     */
+    private static function timeout_sentence()
+    {
+        return self::text('The site did not respond within 15 seconds, so the load time could not be measured.');
+    }
+
+    /**
+     * Choose a transport sentence, using the timeout sentence when that is the cause.
+     *
+     * @param string $text Raw transport or exception text.
+     * @return string
+     */
+    private static function sentence_for_transport_failure($text)
+    {
+        if (self::is_timeout_signal($text)) {
+            return self::timeout_sentence();
+        }
+
+        return self::text('The site could not be reached. Check the address and try again.');
+    }
+
+    /**
+     * True when the value is a WordPress error or another transport failure object.
+     *
+     * @param mixed $response Response.
+     * @return bool
+     */
+    private static function is_transport_failure($response)
+    {
+        if (!is_object($response)) {
+            return false;
+        }
+        try {
+            if (function_exists('is_wp_error') && is_wp_error($response)) {
+                return true;
+            }
+        } catch (\Throwable $e) {
+            return true;
+        }
+
+        return method_exists($response, 'get_error_message') || method_exists($response, 'get_error_code');
+    }
+
+    /**
+     * Text from an error object. A throwing getter does not escape.
+     *
+     * @param mixed $response Response.
+     * @return string
+     */
+    private static function error_object_text($response)
+    {
+        $bits = array();
+        if (!is_object($response)) {
+            return '';
+        }
+        $methods = array('get_error_code', 'get_error_codes', 'get_error_message', 'get_error_messages', 'get_error_data');
+        foreach ($methods as $method) {
+            if (!method_exists($response, $method)) {
+                continue;
+            }
+            try {
+                self::collect_error_text($response->$method(), $bits);
+            } catch (\Throwable $e) {
+                self::collect_error_text(self::throwable_text($e), $bits);
+            }
+        }
+
+        return implode(' ', $bits);
+    }
+
+    /**
+     * @param mixed    $value Error code, message, or nested data.
+     * @param string[] $bits  Collected text.
+     */
+    private static function collect_error_text($value, array &$bits)
+    {
+        if (is_string($value) || is_numeric($value)) {
+            $text = trim((string) $value);
+            if ($text !== '') {
+                $bits[] = $text;
+            }
+            return;
+        }
+        if (!is_array($value)) {
+            return;
+        }
+        foreach ($value as $item) {
+            if (is_string($item) || is_numeric($item) || is_array($item)) {
+                self::collect_error_text($item, $bits);
+            }
+        }
+    }
+
+    /**
+     * Exception message, or an empty string when the exception itself fails.
+     *
+     * @param \Throwable $error Caught failure.
+     * @return string
+     */
+    private static function throwable_text($error)
+    {
+        try {
+            $message = $error->getMessage();
+        } catch (\Throwable $e) {
+            return '';
+        }
+
+        return is_string($message) ? $message : '';
+    }
+
+    /**
+     * True when transport text describes a timeout.
+     *
+     * @param string $text Combined error code and message.
+     * @return bool
+     */
+    private static function is_timeout_signal($text)
+    {
+        $text = strtolower((string) $text);
+        if ($text === '') {
+            return false;
+        }
+        $needles = array(
+            'curl error 28',
+            'curl_error_28',
+            'curlerror28',
+            'error code 28',
+            'timed out',
+            'time-out',
+            'time out',
+            'operation timeout',
+            'timeout was reached',
+            'connection timeout',
+            'connect timeout',
+            'http_request_timed_out',
+            'request_timeout',
+        );
+        foreach ($needles as $needle) {
+            if (strpos($text, $needle) !== false) {
+                return true;
+            }
+        }
+
+        return preg_match('/\btimeout\b/', $text) === 1;
+    }
+
+    /**
      * Turn a transport failure into a sentence a site owner can act on.
      *
      * @param mixed $response Response from remote_get.
@@ -1298,14 +1452,8 @@ class Speed_Loader
             return self::text('WordPress could not load the page because the HTTP API is unavailable.');
         }
 
-        if (function_exists('is_wp_error') && is_wp_error($response)) {
-            $message = $response->get_error_message();
-            return self::friendly_transport_error(is_string($message) ? $message : '');
-        }
-
-        if (is_object($response) && method_exists($response, 'get_error_message')) {
-            $message = $response->get_error_message();
-            return self::friendly_transport_error(is_string($message) ? $message : '');
+        if (self::is_transport_failure($response)) {
+            return self::friendly_transport_error(self::error_object_text($response));
         }
 
         if (!is_array($response)) {
@@ -1328,12 +1476,8 @@ class Speed_Loader
         if ($text === '') {
             return self::text('The site could not be reached. Check the address and try again.');
         }
-        if (
-            strpos($text, 'timed out') !== false
-            || strpos($text, 'timeout') !== false
-            || strpos($text, 'curl error 28') !== false
-        ) {
-            return self::text('The site did not respond within 15 seconds. Check the address and try again.');
+        if (self::is_timeout_signal($text)) {
+            return self::timeout_sentence();
         }
         if (
             strpos($text, 'too many redirect') !== false
