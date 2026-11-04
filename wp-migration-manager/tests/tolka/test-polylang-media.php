@@ -1281,6 +1281,33 @@ class Test_Polylang_Media extends TestCase
         $this->assertSame('', $this->call('language_slug', array('12sv')));
     }
 
+    public function test_finalize_shares_sv_and_drops_a_numeric_key()
+    {
+        $item = $this->call('finalize_item', array(
+            10,
+            '2024/05/a.jpg',
+            array(
+                'SV' => 'Övre',
+                12 => 'Nope',
+                '12' => 'Also nope',
+            ),
+            array(
+                'sv' => 'Nedre',
+                'FR' => 'Visuel',
+            ),
+        ));
+
+        $this->assertSame(array('fr', 'sv'), array_keys($item['alt']));
+        $this->assertSame(array('fr', 'sv'), array_keys($item['title']));
+        $this->assertSame('Övre', $item['alt']['sv']);
+        $this->assertSame('Nedre', $item['title']['sv']);
+        $this->assertSame('Visuel', $item['title']['fr']);
+        $this->assertSame('', $item['alt']['fr']);
+        $this->assertArrayNotHasKey('SV', $item['alt']);
+        $this->assertArrayNotHasKey('12', $item['alt']);
+        $this->assertArrayNotHasKey(12, $item['title']);
+    }
+
     public function test_sv_and_uppercase_sv_share_one_lowercase_key()
     {
         $result = $this->itemsFrom(array(), array(
