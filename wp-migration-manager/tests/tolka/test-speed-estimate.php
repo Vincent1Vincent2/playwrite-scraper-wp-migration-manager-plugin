@@ -1222,6 +1222,29 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame('', $on_measurement['faster_label']);
         $this->assertNotSame(14.4, $on_measurement['faster_percent']);
         $this->assertNotSame('14.4% faster', $on_measurement['faster_label']);
+
+        $zero_on_measurement = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000, 'language_count' => 0, 'script_count' => 0),
+            array('language_count' => 3, 'has_polylang_switcher' => true, 'script_count' => 4),
+            $benchmarks
+        );
+        $this->assertTrue($zero_on_measurement['ok']);
+        $this->assertSame(14.4, $zero_on_measurement['faster_percent']);
+        $this->assertSame('14.4% faster', $zero_on_measurement['faster_label']);
+
+        $with_bad_ratio = self::contractBenchmarks();
+        $with_bad_ratio['max_overhead_ratio'] = 2;
+        $combined = Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => 1000),
+            array('language_count' => -1, 'has_polylang_switcher' => false, 'script_count' => 4),
+            $with_bad_ratio
+        );
+        $this->assertUnavailable(
+            $combined,
+            'A Tolka speed estimate is not available. The language count cannot be negative. The maximum overhead ratio (max_overhead_ratio) must be from 0 through 1.'
+        );
+        $this->assertSame('', $combined['faster_label']);
+        $this->assertSame(0.0, $combined['faster_percent']);
     }
 
     public function test_successful_faster_label_is_one_decimal_percent_faster()
@@ -1250,6 +1273,12 @@ class Test_Speed_Estimate extends TestCase
                 array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
                 9.7,
                 '9.7% faster',
+            ),
+            array(
+                array('ok' => true, 'total_ms' => 333),
+                array('language_count' => 10, 'has_polylang_switcher' => true, 'script_count' => 10),
+                52.0,
+                '52.0% faster',
             ),
         );
 
