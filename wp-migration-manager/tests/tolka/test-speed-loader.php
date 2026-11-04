@@ -1287,11 +1287,14 @@ class Speed_Loader_Test extends TestCase
         $null_body['body'] = null;
         $string_code = $this->http_response(200, '');
         $string_code['response']['code'] = '200';
+        $false_body = $this->http_response(200, '');
+        $false_body['body'] = false;
 
         $cases = array(
             'empty string' => $this->http_response(200, ''),
             'missing body' => $missing,
             'null body' => $null_body,
+            'false body' => $false_body,
             'string status' => $string_code,
         );
 
@@ -1325,6 +1328,15 @@ class Speed_Loader_Test extends TestCase
         $this->assertSame('', $followed['html']);
         $this->assertSame(0, $followed['html_bytes']);
         $this->assertSame('https://example.com/empty', $followed['url']);
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = $this->http_response(200, ' ');
+        $space = Speed_Loader_Harness::measure('https://example.com/');
+        $this->assertTrue($space['ok']);
+        $this->assertSame(200, $space['status_code']);
+        $this->assertSame(' ', $space['html']);
+        $this->assertSame(1, $space['html_bytes']);
 
         Speed_Loader_Harness::reset();
         Speed_Loader_Harness::$resolved = array('1.1.1.1');
