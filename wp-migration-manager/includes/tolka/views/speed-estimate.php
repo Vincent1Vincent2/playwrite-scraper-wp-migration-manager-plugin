@@ -154,6 +154,15 @@ $wmm_tolka_speed_view = array(
     'error' => '',
 );
 
+$wmm_tolka_speed_truncated = false;
+if (
+    isset($estimate) && is_array($estimate)
+    && isset($estimate['metrics']) && is_array($estimate['metrics'])
+    && isset($estimate['metrics']['truncated']) && true === $estimate['metrics']['truncated']
+) {
+    $wmm_tolka_speed_truncated = true;
+}
+
 $wmm_tolka_speed_payload = null;
 if (isset($estimate) && is_array($estimate)) {
     $wmm_tolka_speed_payload = $estimate;
@@ -396,6 +405,10 @@ if ($wmm_tolka_speed_view['show_note']) {
         <?php echo $wmm_tolka_speed_view['show_scope'] ? esc_html($wmm_tolka_speed_scope_text) : ''; ?>
     </p>
 
+    <?php if ($wmm_tolka_speed_truncated) : ?>
+        <p class="wmm-tolka-speed-truncated" id="wmm-tolka-speed-truncated"><?php esc_html_e('Only the first part of the page HTML was measured.', 'migration-manager'); ?></p>
+    <?php endif; ?>
+
     <p class="wmm-tolka-speed-basis-label"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>><?php esc_html_e('Basis', 'migration-manager'); ?></p>
     <p class="wmm-tolka-speed-basis wmm-tolka-value" id="wmm-tolka-basis" data-wmm-tolka="basis" data-field="basis"<?php echo ('' === $wmm_tolka_speed_view['basis']) ? ' hidden' : ''; ?>>
         <?php echo esc_html($wmm_tolka_speed_view['basis']); ?>
@@ -428,5 +441,6 @@ unset(
     $wmm_tolka_speed_detail,
     $wmm_tolka_speed_classes,
     $wmm_tolka_speed_summary_class,
-    $wmm_tolka_speed_described_by
+    $wmm_tolka_speed_described_by,
+    $wmm_tolka_speed_truncated
 );

@@ -156,6 +156,40 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         );
     }
 
+    public function test_truncated_measurement_says_only_part_of_the_page_was_measured()
+    {
+        $sentence = 'Only the first part of the page HTML was measured.';
+        $estimate = $this->ready_estimate();
+        $shown = $this->render(true, array(
+            'metrics' => array('truncated' => true),
+            'estimate' => $estimate,
+        ));
+        $hidden = $this->render(true, array(
+            'metrics' => array('truncated' => false),
+            'estimate' => $estimate,
+        ));
+        $loose = $this->render(true, array(
+            'metrics' => array('truncated' => 1),
+            'estimate' => $estimate,
+        ));
+        $empty = $this->render(false);
+
+        $this->assertStringContainsString($sentence, $shown);
+        $this->assertNotNull($this->document($shown)->getElementById('wmm-tolka-speed-truncated'));
+        $this->assertStringNotContainsString($sentence, $hidden);
+        $this->assertStringNotContainsString($sentence, $loose);
+        $this->assertStringNotContainsString($sentence, $empty);
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($this->document($shown)->getElementById($id), $id);
+        }
+    }
+
     public function test_direct_access_prints_nothing()
     {
         $view = dirname(__DIR__, 2) . '/includes/tolka/views/speed-estimate.php';
