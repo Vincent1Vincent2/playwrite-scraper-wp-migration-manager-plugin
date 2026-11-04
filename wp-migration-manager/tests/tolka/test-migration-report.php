@@ -90,7 +90,7 @@ class Test_Migration_Report extends TestCase
         $this->assertTrue($report['ok']);
         $this->assertSame('Nothing was found on this site.', $report['title']);
         $this->assertSame(
-            'Nothing was found on this site. No languages, posts, terms, strings, menus, or media were found. If this site should have translations, check that Polylang has languages, then run the migration again. An empty Tolka package was saved on this site. Polylang data was left in place.',
+            'Nothing was found on this site. No languages, posts, terms, strings, menus, or media items were found. If this site should have translations, check that Polylang has languages, then run the migration again. An empty Tolka package was saved on this site. Polylang data was left in place.',
             $report['summary']
         );
         $this->assertSame('0', $this->line($report, 'Posts'));
@@ -100,7 +100,10 @@ class Test_Migration_Report extends TestCase
             $this->line($report, 'Next')
         );
         $this->assertStringContainsString('Nothing was found', $report['summary']);
+        $this->assertStringContainsString('No languages, posts, terms, strings, menus, or media items were found.', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assert_section_order($report);
+        $this->assertNotSame('The migration finished with problems.', $report['title']);
     }
 
     public function test_clean_run_says_polylang_data_was_left_in_place()
@@ -139,7 +142,10 @@ class Test_Migration_Report extends TestCase
         $this->assertTrue($report['ok']);
         $this->assertSame('Nothing was found on this site.', $report['title']);
         $this->assertStringContainsString('Nothing was found', $report['summary']);
+        $this->assertStringContainsString('No languages, posts, terms, strings, menus, or media items were found.', $report['summary']);
         $this->assertStringContainsString('Polylang data was left in place.', $report['summary']);
+        $this->assertNotSame('The migration finished with problems.', $report['title']);
+        $this->assert_section_order($report);
         $this->assertSame('0', $this->line($report, 'Languages'));
         $this->assertSame('0', $this->line($report, 'Posts'));
         $this->assertSame('0', $this->line($report, 'Terms'));

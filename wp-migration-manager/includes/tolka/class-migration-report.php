@@ -730,6 +730,21 @@ class Migration_Report
     }
 
     /**
+     * Name the six sections in contract order when none of them were found.
+     *
+     * @return string
+     */
+    private static function nothing_found_sentence()
+    {
+        $groups = array();
+        foreach (self::section_catalog() as $meta) {
+            $groups[] = self::text($meta['group']);
+        }
+
+        return sprintf(self::text('No %s were found.'), self::join_or($groups));
+    }
+
+    /**
      * @param array $meta  Section copy.
      * @param int   $count Item count, at least 1.
      * @return string
@@ -1000,7 +1015,7 @@ class Migration_Report
         if ($status === 'empty') {
             $parts = array(
                 self::text('Nothing was found on this site.'),
-                self::text('No languages, posts, terms, strings, menus, or media were found.'),
+                self::nothing_found_sentence(),
                 $next,
             );
 
