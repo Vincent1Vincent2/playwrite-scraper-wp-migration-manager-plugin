@@ -700,6 +700,16 @@ class Polylang_Detector
             $errors[] = implode(' ', $parts);
         }
 
+        if ($active) {
+            $without_absent = array();
+            foreach ($errors as $error) {
+                if (!is_string($error) || stripos($error, 'not installed') === false) {
+                    $without_absent[] = $error;
+                }
+            }
+            $errors = $without_absent;
+        }
+
         return array(
             'active' => $active,
             'version' => $version,
