@@ -196,10 +196,10 @@ class Migration_Report
      */
     private static function collect_errors(array $run, $write)
     {
-        $raw = self::string_list(isset($run['errors']) ? $run['errors'] : array());
+        $raw = self::error_strings(isset($run['errors']) ? $run['errors'] : array());
 
         if (is_array($write) && isset($write['errors'])) {
-            $raw = array_merge($raw, self::string_list($write['errors']));
+            $raw = array_merge($raw, self::error_strings($write['errors']));
         }
 
         $seen = array();
@@ -484,20 +484,22 @@ class Migration_Report
     private static function title_for($status)
     {
         if ($status === 'empty') {
-            return self::text('Nothing to migrate');
+            return self::text('Nothing was found on this site.');
         }
 
-        if ($status === 'complete' || $status === 'unconfirmed') {
-            return ($status === 'complete')
-                ? self::text('Migration complete')
-                : self::text('Migration finished');
+        if ($status === 'complete') {
+            return self::text('The migration is complete.');
+        }
+
+        if ($status === 'unconfirmed') {
+            return self::text('The migration finished, but the save was not confirmed.');
         }
 
         if ($status === 'problems') {
-            return self::text('Migration finished with problems');
+            return self::text('The migration finished with problems.');
         }
 
-        return self::text('Migration did not finish');
+        return self::text('The migration did not finish.');
     }
 
     /**
@@ -1549,6 +1551,37 @@ class Migration_Report
         $base = end($parts);
 
         return is_string($base) ? $base : '';
+    }
+
+    /**
+     * Error text only. Numbers, lists, and objects are not sentences.
+     *
+     * @param mixed $value A string, a list of values, or something to ignore.
+     * @return string[]
+     */
+    private static function error_strings($value)
+    {
+        if (is_string($value)) {
+            $value = array($value);
+        }
+
+        if (!is_array($value)) {
+            return array();
+        }
+
+        $list = array();
+        foreach ($value as $item) {
+            if (!is_string($item)) {
+                continue;
+            }
+
+            $item = trim($item);
+            if ($item !== '') {
+                $list[] = $item;
+            }
+        }
+
+        return $list;
     }
 
     /**
