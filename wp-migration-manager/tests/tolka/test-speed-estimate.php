@@ -805,6 +805,21 @@ class Test_Speed_Estimate extends TestCase
         $this->assertSame(5.8, $two['faster_percent']);
         $this->assertSame('5.8% faster', $two['faster_label']);
         $this->assertNotSame($estimate['faster_percent'], $two['faster_percent']);
+
+        $ok_json = json_encode($estimate);
+        $this->assertIsString($ok_json);
+        $this->assertStringContainsString('971', $ok_json);
+        $this->assertStringContainsString('2.9% faster', $ok_json);
+
+        $bad_json = json_encode(Speed_Estimate::project(
+            array('ok' => true, 'total_ms' => INF),
+            array('language_count' => 1, 'has_polylang_switcher' => false, 'script_count' => 0),
+            $loaded
+        ));
+        $this->assertIsString($bad_json);
+        $this->assertStringContainsString('not a finite number', $bad_json);
+        $this->assertStringNotContainsString('2.9% faster', $bad_json);
+        $this->assertStringNotContainsString('971', $bad_json);
     }
 
     public function test_negative_measured_time_uses_one_millisecond()
