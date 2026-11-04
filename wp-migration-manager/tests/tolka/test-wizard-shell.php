@@ -649,6 +649,7 @@ namespace WMM\Tolka {
             $this->assertStringContainsString('username or password', $html);
             $this->assertStringContainsString('longer than 2000 characters', $html);
             $this->assertStringContainsString('javascript: and data:', $html);
+            $this->assertStringContainsString('Only a public http or https address can be measured.', $html);
             $this->assertStringContainsString('That address is on a local or private network, so it was not measured.', $html);
             $this->assertStringContainsString('That address has no host, so it was not measured.', $html);
             $this->assertStringContainsString('Enter', $html);
@@ -1009,10 +1010,13 @@ namespace WMM\Tolka {
                 preg_match('/\/\* wmm-tolka-url-checks:start \*\/(.*?)\/\* wmm-tolka-url-checks:end \*\//s', $html, $matches)
             );
             $call = strpos($html, 'if (urlIsLocal(url))');
+            $not_http = strpos($html, 'if (blocked === "notHttp")');
             $send = strpos($html, 'body.set("url", url)');
             $this->assertNotFalse($call);
+            $this->assertNotFalse($not_http);
             $this->assertNotFalse($send);
             $this->assertLessThan($send, $call);
+            $this->assertLessThan($send, $not_http);
 
             $cases = array(
                 'http://[fd00::1]/' => true,
@@ -1032,20 +1036,105 @@ namespace WMM\Tolka {
                 'http://[2001:db8::1]/' => false,
                 'http://[fec0::1]/' => false,
             );
+            $schemes = array(
+                'ftp://example.com/file' => 'notHttp',
+                'gopher://example.com/' => 'notHttp',
+                'file:///etc/passwd' => 'notHttp',
+                'javascript:alert(1)' => 'blockedScheme',
+                'https://example.com/path' => '',
+                'HTTP://example.com/path' => '',
+            );
             $runner = tempnam(sys_get_temp_dir(), 'wmm-url-');
             $script = "global.window = { URL: URL };\n" . $matches[1] . "\n";
             $script .= 'var cases = ' . json_encode(array_keys($cases)) . ";\n";
-            $script .= 'var results = {}; cases.forEach(function (url) { results[url] = urlIsLocal(url); }); process.stdout.write(JSON.stringify(results));';
+            $script .= 'var schemes = ' . json_encode(array_keys($schemes)) . ";\n";
+            $script .= 'var results = {}; cases.forEach(function (url) { results[url] = urlIsLocal(url); });';
+            $script .= 'var schemeResults = {}; schemes.forEach(function (url) { schemeResults[url] = blockedMeasureReason(url); });';
+            $script .= 'process.stdout.write(JSON.stringify({ local: results, scheme: schemeResults }));';
             file_put_contents($runner, $script);
 
             $output = shell_exec('node ' . escapeshellarg($runner) . ' 2>&1');
             unlink($runner);
 
             $this->assertIsString($output);
-            $results = json_decode($output, true);
-            $this->assertIsArray($results, $output);
+            $decoded = json_decode($output, true);
+            $this->assertIsArray($decoded, $output);
             foreach ($cases as $url => $local) {
-                $this->assertSame($local, $results[$url], $url);
+                $this->assertSame($local, $decoded['local'][$url], $url);
+            }
+            foreach ($schemes as $url => $reason) {
+                $this->assertSame($reason, $decoded['scheme'][$url], $url);
+            }
+        }
+
+        public function test_non_http_measure_urls_are_rejected()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
+            $GLOBALS['wmm_tolka_test_can'] = true;
+
+            $rejected = array(
+                'ftp://example.com/file',
+                'FTP://example.com/secret-file',
+                'ftps://example.com/',
+                'gopher://example.com/',
+                'file:///etc/passwd',
+                'php://filter/resource=/etc/passwd',
+                'feed://example.com/item',
+                'mailto:admin@example.com',
+                ' ftp://example.com/secret-file',
+                'ftp&#58;//example.com/secret-file',
+            );
+
+            foreach ($rejected as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+
+                ob_start();
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $output = ob_get_clean();
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+                $encoded = json_encode($payload);
+                $message = $payload['data']['message'];
+
+                $this->assertSame('', $output, $url);
+                $this->assertFalse($payload['success'], $url);
+                $this->assertSame('Only a public http or https address can be measured. Nothing was changed.', $message, $url);
+                $this->assertStringNotContainsString($url, $encoded);
+                $this->assertStringNotContainsString('secret-file', $encoded);
+                $this->assertStringNotContainsString('passwd', $encoded);
+                $this->assertDoesNotMatchRegularExpression('/stack trace|#\d+\s|Exception|Fatal error/i', $encoded);
+                $this->assertDoesNotMatchRegularExpression('/<\/?[a-z!]/i', $encoded);
+                $this->assertSame(0, $GLOBALS['wmm_tolka_measure_calls'], $url);
+                $this->assertNoSpeedPercent($payload);
+            }
+
+            $allowed = array(
+                'https://public.example.test/',
+                'HTTP://public.example.test/path',
+                'Https://public.example.test/path',
+            );
+
+            foreach ($allowed as $url) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = array(
+                    'nonce' => 'good-nonce',
+                    'url' => $url,
+                );
+                unset($GLOBALS['wmm_tolka_test_json']);
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success'], $url);
+                $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls'], $url);
             }
         }
 
