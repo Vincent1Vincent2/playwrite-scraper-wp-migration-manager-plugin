@@ -32,6 +32,39 @@ class Tolka_Schema
     const VERSION = 1;
 
     /**
+     * Current time as ISO-8601 GMT, with a Z suffix.
+     *
+     * @return string
+     */
+    public static function gmt_timestamp()
+    {
+        return gmdate('Y-m-d\TH:i:s\Z');
+    }
+
+    /**
+     * Whether a timestamp is ISO-8601 and in GMT.
+     *
+     * Accepts a Z suffix or an explicit +00:00 offset.
+     *
+     * @param mixed $value Candidate timestamp.
+     * @return bool
+     */
+    public static function is_gmt_timestamp($value)
+    {
+        if (!is_string($value)) {
+            return false;
+        }
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|\+00:00)$/', $value)) {
+            return false;
+        }
+
+        $stamp = strtotime($value);
+
+        return $stamp !== false;
+    }
+
+    /**
      * Section keys, in package order.
      *
      * @return string[]
@@ -63,7 +96,7 @@ class Tolka_Schema
         $package = array(
             'format' => self::FORMAT,
             'version' => self::VERSION,
-            'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'generated_at' => self::gmt_timestamp(),
         );
 
         foreach (self::sections() as $section) {

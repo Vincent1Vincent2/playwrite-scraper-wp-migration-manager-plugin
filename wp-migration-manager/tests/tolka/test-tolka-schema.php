@@ -61,7 +61,13 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
             'stored_package' => null,
             'post_meta' => array(),
             'term_meta' => array(),
+            'polylang_option' => array(
+                'default_lang' => 'en',
+                'force_lang' => 1,
+                'version' => '3.6.2',
+            ),
         );
+        $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'] = $GLOBALS['wmm_tolka_schema_driver']['polylang_option'];
     }
 
     /**
@@ -69,6 +75,13 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
      */
     protected function tearDown(): void
     {
+        if (isset($GLOBALS['wmm_tolka_schema_driver']['polylang_option'], $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'])) {
+            $this->assertSame(
+                $GLOBALS['wmm_tolka_schema_driver']['polylang_option_before'],
+                $GLOBALS['wmm_tolka_schema_driver']['polylang_option']
+            );
+        }
+
         unset($GLOBALS['wmm_tolka_schema_driver']);
     }
 
@@ -112,9 +125,76 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         }
 
         $this->assertSame(1, preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $package['generated_at']));
+        $this->assertTrue(Tolka_Schema::is_gmt_timestamp($package['generated_at']));
+        $parsed = new DateTimeImmutable($package['generated_at']);
+        $this->assertSame(0, $parsed->getOffset());
         $stamp = strtotime($package['generated_at']);
         $this->assertGreaterThanOrEqual($before, $stamp);
         $this->assertLessThanOrEqual($after, $stamp);
+    }
+
+    public function test_writer_stores_gmt_timestamp_and_leaves_polylang_option()
+    {
+        $polylang = $GLOBALS['wmm_tolka_schema_driver']['polylang_option'];
+        $before = time();
+        $result = Tolka_Writer::write(array(
+            'format' => 'tolka-migration',
+            'version' => 1,
+            'generated_at' => '2020-01-01T12:00:00+12:00',
+            'posts' => array(
+                array(
+                    'group' => 'post:9',
+                    'translations' => array(
+                        'en' => array('id' => 9, 'title' => 'Hello'),
+                    ),
+                ),
+            ),
+            'terms' => array(
+                array(
+                    'group' => 'term:3',
+                    'translations' => array(
+                        'en' => array('id' => 3, 'name' => 'News'),
+                    ),
+                ),
+            ),
+        ));
+        $after = time();
+
+        $this->assertTrue($result['ok']);
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+        $this->assertTrue(Tolka_Schema::is_gmt_timestamp($stored['generated_at']));
+        $this->assertSame(1, preg_match('/Z$/', $stored['generated_at']));
+        $parsed = new DateTimeImmutable($stored['generated_at']);
+        $this->assertSame(0, $parsed->getOffset());
+        $stamp = strtotime($stored['generated_at']);
+        $this->assertGreaterThanOrEqual($before, $stamp);
+        $this->assertLessThanOrEqual($after, $stamp);
+        $this->assertSame($polylang, $GLOBALS['wmm_tolka_schema_driver']['polylang_option']);
+
+        foreach ($GLOBALS['wmm_tolka_schema_driver']['calls'] as $call) {
+            if ($call['fn'] === 'update_option' || $call['fn'] === 'get_option') {
+                $this->assertSame('wmm_tolka_package', $call['option']);
+                $this->assertNotSame('polylang', $call['option']);
+            }
+            if ($call['fn'] === 'update_post_meta' || $call['fn'] === 'update_term_meta') {
+                $this->assertContains($call['key'], array('_wmm_tolka_lang', '_wmm_tolka_group'));
+            }
+        }
+
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'post:9',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][9]
+        );
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'term:3',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['term_meta'][3]
+        );
     }
 
     public function test_package_copies_items_and_drops_exporter_errors()

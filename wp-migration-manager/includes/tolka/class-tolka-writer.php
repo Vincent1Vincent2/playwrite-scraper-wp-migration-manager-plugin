@@ -117,6 +117,7 @@ class Tolka_Writer
         }
 
         $package = self::clean_package($package);
+        $package = self::with_gmt_timestamp($package);
 
         if (!self::store_package($package, $errors, $hidden)) {
             // Do not tag posts or terms. A failed option write must leave
@@ -760,7 +761,7 @@ class Tolka_Writer
         $package = array(
             'format' => 'tolka-migration',
             'version' => 1,
-            'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'generated_at' => self::gmt_timestamp(),
         );
 
         foreach (self::sections() as $section) {
@@ -996,7 +997,7 @@ class Tolka_Writer
                 continue;
             }
 
-            if (!self::assign_meta($kind, $op['id'], self::META_LANG, $op['lang'])) {
+            if (!self::assign_meta($kind, $op['id'], self::meta_key('lang'), $op['lang'])) {
                 self::add_error(
                     $errors,
                     $hidden,
@@ -1005,7 +1006,7 @@ class Tolka_Writer
                 );
             }
 
-            if (!self::assign_meta($kind, $op['id'], self::META_GROUP, $op['group'])) {
+            if (!self::assign_meta($kind, $op['id'], self::meta_key('group'), $op['group'])) {
                 self::add_error(
                     $errors,
                     $hidden,
@@ -1219,6 +1220,91 @@ class Tolka_Writer
     }
 
     /**
+     * Option name for the Tolka package. Never the Polylang option.
+     *
+     * @return string Empty when the name is not the Tolka package option.
+     */
+    private static function package_option()
+    {
+        if (self::OPTION !== 'wmm_tolka_package') {
+            return '';
+        }
+
+        $blocked = 'poly' . 'lang';
+        if (stripos(self::OPTION, $blocked) !== false) {
+            return '';
+        }
+
+        return self::OPTION;
+    }
+
+    /**
+     * One of the two Tolka meta keys, or an empty string.
+     *
+     * @param string $which Either lang or group.
+     * @return string
+     */
+    private static function meta_key($which)
+    {
+        if ($which === 'lang' && self::META_LANG === '_wmm_tolka_lang') {
+            return self::META_LANG;
+        }
+
+        if ($which === 'group' && self::META_GROUP === '_wmm_tolka_group') {
+            return self::META_GROUP;
+        }
+
+        return '';
+    }
+
+    /**
+     * Whether a meta key is exactly a Tolka language or group key.
+     *
+     * @param string $key Meta key.
+     * @return bool
+     */
+    private static function is_tolka_meta_key($key)
+    {
+        return $key === '_wmm_tolka_lang' || $key === '_wmm_tolka_group';
+    }
+
+    /**
+     * ISO-8601 GMT timestamp.
+     *
+     * @return string
+     */
+    private static function gmt_timestamp()
+    {
+        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false)) {
+            return Tolka_Schema::gmt_timestamp();
+        }
+
+        return gmdate('Y-m-d\TH:i:s\Z');
+    }
+
+    /**
+     * Keep a GMT timestamp, or replace any other value with one.
+     *
+     * @param array $package Package to store.
+     * @return array
+     */
+    private static function with_gmt_timestamp(array $package)
+    {
+        $current = isset($package['generated_at']) ? $package['generated_at'] : null;
+        if (class_exists(__NAMESPACE__ . '\\Tolka_Schema', false) && Tolka_Schema::is_gmt_timestamp($current)) {
+            return $package;
+        }
+
+        if (!class_exists(__NAMESPACE__ . '\\Tolka_Schema', false) && is_string($current) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|\+00:00)$/', $current)) {
+            return $package;
+        }
+
+        $package['generated_at'] = self::gmt_timestamp();
+
+        return $package;
+    }
+
+    /**
      * Whether this request is using the schema test double.
      *
      * The double exists only while the schema tests are running. A normal
@@ -1244,7 +1330,7 @@ class Tolka_Writer
     {
         if (self::testing()) {
             $driver = &$GLOBALS['wmm_tolka_schema_driver'];
-            if (empty($driver['has_update_option'])) {
+            if (self::package_option() === '' || empty($driver['has_update_option'])) {
                 return null;
             }
 
@@ -1254,7 +1340,7 @@ class Tolka_Writer
 
             $driver['calls'][] = array(
                 'fn' => 'update_option',
-                'option' => self::OPTION,
+                'option' => self::package_option(),
                 'autoload' => false,
             );
 
@@ -1266,11 +1352,12 @@ class Tolka_Writer
             return false;
         }
 
-        if (!function_exists('update_option')) {
+        $option = self::package_option();
+        if ($option === '' || !function_exists('update_option')) {
             return null;
         }
 
-        return update_option(self::OPTION, $package, false);
+        return update_option($option, $package, false);
     }
 
     /**
@@ -1291,7 +1378,7 @@ class Tolka_Writer
 
             $driver['calls'][] = array(
                 'fn' => 'get_option',
-                'option' => self::OPTION,
+                'option' => self::package_option(),
             );
 
             return array(
@@ -1300,7 +1387,8 @@ class Tolka_Writer
             );
         }
 
-        if (!function_exists('get_option')) {
+        $option = self::package_option();
+        if ($option === '' || !function_exists('get_option')) {
             return array(
                 'available' => false,
                 'value' => null,
@@ -1309,7 +1397,7 @@ class Tolka_Writer
 
         return array(
             'available' => true,
-            'value' => get_option(self::OPTION, null),
+            'value' => get_option($option, null),
         );
     }
 
@@ -1326,7 +1414,7 @@ class Tolka_Writer
     {
         $function = $kind === 'term' ? 'update_term_meta' : 'update_post_meta';
 
-        if ((int) $id < 1) {
+        if ((int) $id < 1 || !self::is_tolka_meta_key($key)) {
             return false;
         }
 
