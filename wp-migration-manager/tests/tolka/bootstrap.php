@@ -392,7 +392,7 @@ if (!function_exists('wmm_tolka_rewire_test_files')) {
             if (!empty($hidden_tests)) {
                 fwrite(
                     STDERR,
-                    $primary . ' is the test class PHPUnit ' . $version . ' will run from ' . basename($file) . '. These other test classes in that file will not run: ' . implode(', ', $hidden_tests) . '. Put each of them in its own test file.' . PHP_EOL
+                    $primary . ' is the test class PHPUnit ' . $version . ' will run from ' . basename($file) . '. These other test classes in that file will not run: ' . implode(', ', $hidden_tests) . '. Move their test methods onto ' . $primary . '. This PHPUnit release runs one test class from each test file.' . PHP_EOL
                 );
             }
 
