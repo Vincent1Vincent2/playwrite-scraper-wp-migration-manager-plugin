@@ -153,7 +153,7 @@ class Polylang_Strings
         }
 
         if ($unreadable) {
-            $errors[] = $this->text('String translations for one language could not be read and were skipped.');
+            $errors[] = $this->text('Some string translations could not be read and were skipped.');
         }
         if (!empty($snapshot['orphan_groups'])) {
             $errors[] = $this->text('String translations for a language that is no longer installed were skipped.');
@@ -615,7 +615,7 @@ class Polylang_Strings
             $catalogues[$slug] = array_values($pairs);
         }
         if ($damaged || $this->catalogue_query_failed || $lookup_failed) {
-            $errors[] = $this->text('String translations for one language could not be read and were skipped.');
+            $errors[] = $this->text('Some string translations could not be read and were skipped.');
         }
 
         return array(
@@ -1263,23 +1263,33 @@ class Polylang_Strings
     /**
      * Unserialize a catalogue without creating objects.
      *
+     * A catalogue is sometimes serialized twice, or stored with slashes, after
+     * an older export and import. Nested strings are unwrapped a few times.
+     *
      * @param string $value Serialized or JSON text.
-     * @return array|null
+     * @param int    $depth How many wrappers have already been removed.
+     * @return array|object|null
      */
-    protected function decode_stored($value)
+    protected function decode_stored($value, $depth = 0)
     {
-        if (!is_string($value)) {
+        if ($depth > 4 || !is_string($value) || $value === '') {
             return null;
         }
         $decoded = $this->safe_unserialize($value);
+        if (is_string($decoded) && $decoded !== '') {
+            $unwrapped = $this->decode_stored($decoded, $depth + 1);
+            if ($unwrapped !== null) {
+                return $unwrapped;
+            }
+        }
         if (is_array($decoded) || is_object($decoded)) {
             return $decoded;
         }
         $stripped = stripslashes($value);
         if ($stripped !== $value) {
-            $decoded = $this->safe_unserialize($stripped);
-            if (is_array($decoded) || is_object($decoded)) {
-                return $decoded;
+            $unwrapped = $this->decode_stored($stripped, $depth + 1);
+            if ($unwrapped !== null) {
+                return $unwrapped;
             }
         }
         $json = json_decode($value, true);

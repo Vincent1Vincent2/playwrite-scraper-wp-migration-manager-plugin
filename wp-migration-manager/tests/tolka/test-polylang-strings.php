@@ -619,6 +619,8 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
             'single pair' => array(array('Hello', 'Bonjour'), ''),
             'serialized' => array($serialized, ''),
             'slashed serialized' => array(addslashes($serialized), ''),
+            'serialized twice' => array(serialize($serialized), ''),
+            'slashed and serialized twice' => array(addslashes(serialize($serialized)), ''),
             'json map' => array('{"Hello":"Bonjour"}', ''),
             'plural forms' => array(array(array('Hello', array('', 'Bonjour'))), ''),
             'entry with a name' => array(
@@ -648,7 +650,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
         ));
 
         $this->assertSame(
-            array('String translations for one language could not be read and were skipped.'),
+            array('Some string translations could not be read and were skipped.'),
             $result['errors']
         );
         $this->assertCount(1, $result['items']);
@@ -1049,6 +1051,30 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     /**
      * @return void
      */
+    public function test_a_source_named_entries_is_not_treated_as_a_nested_catalogue()
+    {
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'mo' => array(
+                'fr' => array(
+                    'entries' => 'Valeurs',
+                    'Hello' => 'Bonjour',
+                ),
+            ),
+        ));
+
+        $by_string = array();
+        foreach ($result['items'] as $item) {
+            $by_string[$item['string']] = $item['translations']['fr'];
+        }
+        $this->assertSame('Valeurs', $by_string['entries']);
+        $this->assertSame('Bonjour', $by_string['Hello']);
+    }
+
+    /**
+     * @return void
+     */
     public function test_a_stored_mo_object_is_read_from_its_entries()
     {
         $entry = new stdClass();
@@ -1155,7 +1181,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
 
         $this->assertSame('Salut', $result['items'][0]['translations']['fr']);
         $this->assertContains(
-            'String translations for one language could not be read and were skipped.',
+            'Some string translations could not be read and were skipped.',
             $result['errors']
         );
     }
@@ -1180,7 +1206,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
 
         $this->assertSame('Bonjour', $result['items'][0]['translations']['fr']);
         $this->assertContains(
-            'String translations for one language could not be read and were skipped.',
+            'Some string translations could not be read and were skipped.',
             $result['errors']
         );
     }
@@ -1209,7 +1235,7 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
 
         $this->assertNotContains('Ghost', $strings);
         $this->assertContains(
-            'String translations for one language could not be read and were skipped.',
+            'Some string translations could not be read and were skipped.',
             $result['errors']
         );
         $this->assertNotContains(
