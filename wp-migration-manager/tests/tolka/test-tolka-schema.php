@@ -89,9 +89,15 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
     {
         $package = Tolka_Schema::package(array());
 
+        $this->assertSame('tolka-migration', Tolka_Schema::FORMAT);
+        $this->assertSame(1, Tolka_Schema::VERSION);
         $this->assertSame('tolka-migration', $package['format']);
         $this->assertSame(1, $package['version']);
         $this->assertSame('Z', substr($package['generated_at'], -1));
+        $header = Tolka_Schema::header('2024-05-06T07:08:09+00:00');
+        $this->assertSame('tolka-migration', $header['format']);
+        $this->assertSame(1, $header['version']);
+        $this->assertSame('2024-05-06T07:08:09Z', $header['generated_at']);
         $this->assertSame(
             array(
                 'format',
