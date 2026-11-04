@@ -1716,5 +1716,42 @@ namespace {
             $this->assertFalse($run['ok']);
             $this->assertNull($run['write']);
         }
+
+        public function test_constructor_failures_leave_the_other_sections()
+        {
+            $this->reset_doubles();
+            \WMM\Tolka\RunnerTest\Exporter::$items = array(array(
+                'title' => 'Middle',
+                'slug' => 'en',
+                'name' => 'English',
+            ));
+            \WMM\Tolka\RunnerTest\Writer::$throw = true;
+            Migration_Runner_Test_Double::$map['languages'] = 'WMM\\Tolka\\RunnerTest\\ThrowingConstructor';
+            Migration_Runner_Test_Double::$map['media'] = 'WMM\\Tolka\\RunnerTest\\ThrowingConstructor';
+
+            $preview = Migration_Runner_Test_Double::preview();
+
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Schema::$calls);
+            $this->assertSame(0, $preview['counts']['languages']);
+            $this->assertSame(1, $preview['counts']['posts']);
+            $this->assertSame(1, $preview['counts']['terms']);
+            $this->assertSame(0, $preview['counts']['media']);
+            $this->assertContains(
+                'Languages could not be read (constructor failed: constructor blew up).',
+                $preview['errors']
+            );
+            $this->assertContains(
+                'Media items could not be read (constructor failed: constructor blew up).',
+                $preview['errors']
+            );
+            $this->assertSame('Middle', $preview['sample']['posts'][0]['title']);
+            $this->assertSame(2, \WMM\Tolka\RunnerTest\ThrowingConstructor::$constructed);
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\ThrowingConstructor::$exports);
+            $this->assertSame(
+                'The preview finished with errors in Languages and Media. Review them before migrating. Existing Polylang data was not changed.',
+                $preview['message']
+            );
+        }
     }
 }
