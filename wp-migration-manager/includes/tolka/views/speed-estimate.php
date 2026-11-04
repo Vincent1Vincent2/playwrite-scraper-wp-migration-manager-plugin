@@ -76,32 +76,38 @@ $wmm_tolka_speed_format_ms = static function ($number) {
         }
 
         if (0 === $second_decimals && 1 === (int) round($seconds)) {
-            return sprintf(
+            $display = sprintf(
                 /* translators: %s: load time in milliseconds. */
                 __('%s ms (1 second)', 'migration-manager'),
                 $formatted
             );
-        }
-
-        if (function_exists('number_format_i18n')) {
-            $seconds_text = number_format_i18n($seconds, $second_decimals);
         } else {
-            $seconds_text = number_format($seconds, $second_decimals);
-        }
+            if (function_exists('number_format_i18n')) {
+                $seconds_text = number_format_i18n($seconds, $second_decimals);
+            } else {
+                $seconds_text = number_format($seconds, $second_decimals);
+            }
 
-        return sprintf(
-            /* translators: 1: load time in milliseconds, 2: the same load time in seconds. */
-            __('%1$s ms (%2$s seconds)', 'migration-manager'),
-            $formatted,
-            $seconds_text
+            $display = sprintf(
+                /* translators: 1: load time in milliseconds, 2: the same load time in seconds. */
+                __('%1$s ms (%2$s seconds)', 'migration-manager'),
+                $formatted,
+                $seconds_text
+            );
+        }
+    } else {
+        $display = sprintf(
+            /* translators: %s: load time in milliseconds. */
+            __('%s ms', 'migration-manager'),
+            $formatted
         );
     }
 
-    return sprintf(
-        /* translators: %s: load time in milliseconds. */
-        __('%s ms', 'migration-manager'),
-        $formatted
-    );
+    if (!preg_match('/\bms\b/i', $display)) {
+        $display .= ' ms';
+    }
+
+    return $display;
 };
 
 $wmm_tolka_speed_ms_attr = static function ($number) {

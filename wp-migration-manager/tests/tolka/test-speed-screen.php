@@ -585,6 +585,65 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         }
     }
 
+    public function test_successful_loads_use_an_ms_suffix_and_failure_stays_unavailable()
+    {
+        $pairs = array(
+            array(1842, 900, '1,842 ms', '900 ms'),
+            array(0, 0, '0 ms', '0 ms'),
+            array(400, 1500, '400 ms', '1,500 ms'),
+            array('1842', '900', '1,842 ms', '900 ms'),
+        );
+
+        foreach ($pairs as $pair) {
+            $html = $this->render(true, array(
+                'ok' => true,
+                'current_ms' => $pair[0],
+                'tolka_ms' => $pair[1],
+                'faster_percent' => 10,
+                'faster_label' => '10.0% faster',
+                'basis' => 'Basis <script>alert(1)</script>',
+                'provenance' => 'lab',
+                'error' => '',
+            ));
+            $current = $this->text($html, 'wmm-tolka-current-load');
+            $tolka = $this->text($html, 'wmm-tolka-tolka-load');
+            $this->assertStringStartsWith($pair[2], $current);
+            $this->assertStringStartsWith($pair[3], $tolka);
+            $this->assertMatchesRegularExpression('/\bms\b/', $current);
+            $this->assertMatchesRegularExpression('/\bms\b/', $tolka);
+            $this->assertStringNotContainsString('<script', $html);
+            $this->assertSame(0, $this->element_child_count($this->document($html)->getElementById('wmm-tolka-current-load')));
+            $this->assertSame(0, $this->element_child_count($this->document($html)->getElementById('wmm-tolka-tolka-load')));
+        }
+
+        $failed = $this->render(true, array(
+            'ok' => false,
+            'current_ms' => 1842,
+            'tolka_ms' => 900,
+            'faster_percent' => 51.1,
+            'faster_label' => '51.1% faster',
+            'basis' => 'Measured page load plus coefficients from benchmarks.json',
+            'provenance' => 'lab',
+            'error' => 'The page could not be loaded.',
+        ));
+        $document = $this->document($failed);
+        $faster = $this->text($failed, 'wmm-tolka-faster');
+        $this->assertSame('Unavailable', $faster);
+        $this->assertSame('', $document->getElementById('wmm-tolka-faster')->getAttribute('data-faster-percent'));
+        $this->assertDoesNotMatchRegularExpression('/\d+(?:\.\d+)?\s*%/', $faster);
+        $this->assertStringNotContainsString('51.1% faster', $failed);
+        $this->assertStringNotContainsString('0.0% faster', $failed);
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+        }
+    }
+
     public function test_successful_estimate_shows_the_milliseconds_and_the_faster_label()
     {
         $cases = array(
