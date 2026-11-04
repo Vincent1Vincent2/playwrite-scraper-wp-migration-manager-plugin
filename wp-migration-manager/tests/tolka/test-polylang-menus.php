@@ -912,6 +912,42 @@ HTML;
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_navigation_posts_are_read_from_the_database(): void
+    {
+        if (function_exists('get_option')) {
+            $this->markTestSkipped('WordPress is loaded.');
+        }
+
+        $database = $this->sample_database();
+        $database->navigation_posts = array(
+            array(
+                'id' => 30,
+                'name' => 'Header',
+                'slug' => 'header',
+                'content' => '<!-- wp:navigation-link {"label":"Home","type":"page","id":2,"url":"https://example.com/"} /-->',
+            ),
+        );
+
+        $previous = isset($GLOBALS['wpdb']) ? $GLOBALS['wpdb'] : null;
+        $GLOBALS['wpdb'] = $database;
+        try {
+            $result = Polylang_Menus::export();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['wpdb']);
+            } else {
+                $GLOBALS['wpdb'] = $previous;
+            }
+        }
+
+        $navigation = $this->location($result, 'navigation:header');
+        $this->assertSame('Header', $navigation['label']);
+        $this->assertSame(30, $navigation['translations']['en']['menu_id']);
+        $this->assertSame('navigation', $navigation['translations']['en']['kind']);
+        $this->assertSame('Home', $navigation['translations']['en']['items'][0]['title']);
+        $this->assertSame(2, $navigation['translations']['en']['items'][0]['object_id']);
+    }
+
     public function test_bad_rows_are_skipped_instead_of_throwing(): void
     {
         $fixture = $this->fixture(array(
@@ -1617,6 +1653,11 @@ class Tolka_Menus_Fake_Wpdb
     public $skipped = array();
 
     /**
+     * @var array<int, array<string, mixed>>
+     */
+    public $navigation_posts = array();
+
+    /**
      * @param string $query Query with placeholders.
      * @param mixed  ...$args Placeholder values.
      * @return string
@@ -1652,6 +1693,9 @@ class Tolka_Menus_Fake_Wpdb
         unset($output);
         $this->queries[] = $query;
 
+        if (strpos($query, "post_type = 'wp_navigation'") !== false) {
+            return $this->navigation_posts;
+        }
         if (strpos($query, 'COUNT(*)') !== false) {
             $menu_id = $this->number_after($query, 'tt.term_id = ');
             $total = isset($this->skipped[$menu_id]) ? (int) $this->skipped[$menu_id] : 0;
