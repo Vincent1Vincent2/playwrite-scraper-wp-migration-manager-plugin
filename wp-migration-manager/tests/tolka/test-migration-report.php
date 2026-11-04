@@ -1261,6 +1261,12 @@ echo json_encode($report);
 
         $this->assert_not_a_clean_finish($partial);
         $this->assert_partial_title($partial);
+        $this->assertSame('0', $this->line($partial, 'Languages'));
+        $this->assertSame('0', $this->line($partial, 'Terms'));
+        $this->assertSame('0', $this->line($partial, 'Strings'));
+        $this->assertSame('0', $this->line($partial, 'Menus'));
+        $this->assertSame('0', $this->line($partial, 'Media'));
+        $this->assertNotSame('', $this->line($partial, 'Languages'));
         $this->assertStringContainsString(
             'Saving did not finish. The package contained more than was stored. 4 of 6 posts were saved.',
             $partial['summary']
