@@ -1715,6 +1715,11 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertStringContainsString("'wmm_tolka_package'", $writer);
         $this->assertStringContainsString("'_wmm_tolka_lang'", $writer);
         $this->assertStringContainsString("'_wmm_tolka_group'", $writer);
+        preg_match_all("/'(_wmm[^']*)'/", $writer, $meta_keys);
+        $this->assertSame(
+            array('_wmm_tolka_lang', '_wmm_tolka_group'),
+            array_values(array_unique($meta_keys[1]))
+        );
         $this->assertSame(
             0,
             preg_match(

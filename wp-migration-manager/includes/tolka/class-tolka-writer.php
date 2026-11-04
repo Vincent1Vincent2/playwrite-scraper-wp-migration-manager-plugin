@@ -1369,7 +1369,7 @@ class Tolka_Writer
     {
         if (self::testing()) {
             $driver = &$GLOBALS['wmm_tolka_schema_driver'];
-            if (empty($driver['has_get_option'])) {
+            if (self::package_option() === '' || empty($driver['has_get_option'])) {
                 return array(
                     'available' => false,
                     'value' => null,
