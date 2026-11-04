@@ -100,6 +100,48 @@ PHP
             'Translated: Polylang languages could not be read. Nothing was changed. Preview the migration again.',
             $failed['errors'][0]
         );
+
+        $internal = $this->export_isolated(<<<'PHP'
+function __($text, $domain = 'default')
+{
+    if ($domain !== 'migration-manager') {
+        throw new RuntimeException('unexpected text domain');
+    }
+    return 'Translated: ' . $text;
+}
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false && strpos($query, "'term_language'") === false) {
+            return array((object) array(
+                'term_id' => 40,
+                'name' => 'pll_en',
+                'slug' => 'pll_en',
+                'term_group' => 0,
+                'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                'count' => 1,
+            ));
+        }
+        return array();
+    }
+    public function get_var($query)
+    {
+        return '';
+    }
+};
+PHP
+        );
+        $this->assertSame(
+            'Translated: No languages were found to migrate. Polylang internal rows were ignored, and nothing was changed.',
+            $internal['errors'][0]
+        );
     }
 
     public function test_loading_the_class_file_twice_does_not_stop_the_caller()
