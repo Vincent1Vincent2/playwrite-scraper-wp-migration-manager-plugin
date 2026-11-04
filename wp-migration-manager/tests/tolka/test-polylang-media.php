@@ -38,6 +38,25 @@ class Test_Polylang_Media extends TestCase
         $this->assertStringContainsString('Polylang', $result['errors'][0]);
     }
 
+    public function test_export_is_callable_on_an_instance()
+    {
+        $media = new Polylang_Media();
+        $method = new ReflectionMethod(Polylang_Media::class, 'export');
+
+        $this->assertTrue($method->isPublic());
+        $this->assertFalse($method->isStatic());
+        $this->assertTrue(is_callable(array($media, 'export')));
+
+        if ($this->call('polylang_is_present', array())) {
+            return;
+        }
+
+        $result = $media->export();
+        $this->assertSame(array('items', 'errors'), array_keys($result));
+        $this->assertIsArray($result['items']);
+        $this->assertIsArray($result['errors']);
+    }
+
     public function test_polylang_inactive()
     {
         if ($this->call('polylang_is_present', array())) {
@@ -54,6 +73,290 @@ class Test_Polylang_Media extends TestCase
         }
         $this->assertStringContainsString('Polylang', implode(' ', $result['errors']));
         $this->assertNotFalse(json_encode($result));
+    }
+
+    public function test_database_error_is_not_reported_as_polylang_being_inactive()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('pll_languages_list')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                unset($args);
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                unset($query);
+                $this->last_error = 'database read failed';
+                return null;
+            }
+        };
+        try {
+            $result = (new Polylang_Media())->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertCustomerSentence($result['errors'][0]);
+        $this->assertStringNotContainsString('not active', strtolower($result['errors'][0]));
+        $this->assertStringContainsString('Nothing was changed', $result['errors'][0]);
+        $this->assertSame(
+            'Media could not be read from this site. Nothing was changed.',
+            $result['errors'][0]
+        );
+    }
+
+    public function test_empty_polylang_tables_are_reported_as_inactive()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('pll_languages_list')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                unset($args);
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                unset($query);
+                return null;
+            }
+        };
+        try {
+            $media = new Polylang_Media();
+            $result = $media->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertStringContainsString('not active', strtolower($result['errors'][0]));
+    }
+
+    public function test_shared_file_keeps_the_default_language_attachment()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 4, 'lang' => 'fr'),
+            array('id' => 20, 'lang' => 'en'),
+        ), array(4, 20), array('en', 'fr'), 'en', array(
+            4 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+            20 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(20, $result['items'][0]['attachment_id']);
+        $this->assertSame(array('en' => 'Harbor', 'fr' => 'Port'), $result['items'][0]['alt']);
+    }
+
+    public function test_found_polylang_row_with_a_failed_library_read_is_not_inactive()
+    {
+        if (isset($GLOBALS['wpdb']) || function_exists('get_option') || function_exists('pll_languages_list') || function_exists('get_posts')) {
+            $this->markTestSkipped('WordPress or Polylang is already loaded.');
+        }
+
+        $GLOBALS['wpdb'] = new class {
+            public $term_taxonomy = 'wp_term_taxonomy';
+            public $last_error = '';
+
+            public function prepare($query, ...$args)
+            {
+                unset($args);
+                return $query;
+            }
+
+            public function get_var($query)
+            {
+                unset($query);
+                return '15';
+            }
+        };
+        try {
+            $result = (new Polylang_Media())->export();
+        } finally {
+            unset($GLOBALS['wpdb']);
+        }
+
+        $this->assertSame(array(), $result['items']);
+        $this->assertNotEmpty($result['errors']);
+        $this->assertStringNotContainsString('not active', strtolower($result['errors'][0]));
+        $this->assertStringContainsString('Nothing was changed', $result['errors'][0]);
+    }
+
+    public function test_two_attachments_that_share_one_file_are_one_item()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 11, 'lang' => 'fr'),
+            array('id' => 10, 'lang' => 'en'),
+        ), array(11, 10), array('en', 'fr'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 10, '2024/05/hero.jpg', array(
+            'en' => 'Harbor',
+            'fr' => 'Port',
+        ), array(
+            'en' => 'Hero',
+            'fr' => 'Visuel',
+        ));
+        $encoded = json_encode($result['items']);
+        $this->assertIsString($encoded);
+        $this->assertStringStartsWith('[', $encoded);
+    }
+
+    public function test_shared_server_path_and_relative_path_are_one_item()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'fr'),
+        ), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => '/var/www/html/wp-content/uploads/2024/05/hero.jpg',
+                'alt' => 'Harbor',
+                'title' => 'Hero',
+            ),
+            11 => array(
+                'file' => '2024/05/hero.jpg',
+                'alt' => '',
+                'title' => 'Visuel',
+            ),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame('2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame('Harbor', $result['items'][0]['alt']['en']);
+        $this->assertSame('Visuel', $result['items'][0]['title']['fr']);
+    }
+
+    public function test_same_filename_in_different_months_stays_two_items()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'en'),
+        ), array(10, 11), array('en'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => 'May', 'title' => 'May'),
+            11 => array('file' => '2024/06/hero.jpg', 'alt' => 'June', 'title' => 'June'),
+        ));
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame('2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame('2024/06/hero.jpg', $result['items'][1]['file']);
+    }
+
+    public function test_third_copy_of_a_shared_file_joins_the_group()
+    {
+        $result = $this->itemsFrom(array(
+            array(
+                'description' => array('en' => 10, 'fr' => 11),
+                'members' => array(10 => 'en', 11 => 'fr'),
+            ),
+        ), array(
+            array('id' => 12, 'lang' => 'de'),
+        ), array(10, 11, 12), array('de', 'en', 'fr'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+            12 => array('file' => '2024/05/hero.jpg', 'alt' => 'Hafen', 'title' => 'Titel'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertMediaItem($result['items'][0], 10, '2024/05/hero.jpg', array(
+            'de' => 'Hafen',
+            'en' => 'Harbor',
+            'fr' => 'Port',
+        ), array(
+            'de' => 'Titel',
+            'en' => 'Hero',
+            'fr' => 'Visuel',
+        ));
+    }
+
+    public function test_shared_file_keeps_text_the_leading_copy_left_blank()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'en'),
+        ), array(10, 11), array('en'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => '', 'title' => ''),
+            11 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+        ));
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame(array('en' => 'Harbor'), $result['items'][0]['alt']);
+        $this->assertSame(array('en' => 'Hero'), $result['items'][0]['title']);
+    }
+
+    public function test_remote_url_and_local_path_stay_separate_items()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'fr'),
+        ), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array(
+                'file' => 'https://cdn.example/2024/05/hero.jpg',
+                'alt' => 'Harbor',
+                'title' => 'Hero',
+            ),
+            11 => array(
+                'file' => '2024/05/hero.jpg',
+                'alt' => 'Port',
+                'title' => 'Visuel',
+            ),
+        ));
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame('https://cdn.example/2024/05/hero.jpg', $result['items'][0]['file']);
+        $this->assertSame('2024/05/hero.jpg', $result['items'][1]['file']);
+    }
+
+    public function test_attachments_with_different_files_stay_separate()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'fr'),
+        ), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => '2024/05/hero.jpg', 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '2024/06/other.jpg', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(10, $result['items'][0]['attachment_id']);
+        $this->assertSame(11, $result['items'][1]['attachment_id']);
+    }
+
+    public function test_attachments_without_a_file_are_not_treated_as_the_same_file()
+    {
+        $result = $this->itemsFrom(array(), array(
+            array('id' => 10, 'lang' => 'en'),
+            array('id' => 11, 'lang' => 'fr'),
+        ), array(10, 11), array('en', 'fr'), 'en', array(
+            10 => array('file' => '', 'alt' => 'Harbor', 'title' => 'Hero'),
+            11 => array('file' => '', 'alt' => 'Port', 'title' => 'Visuel'),
+        ));
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(array(10, 11), array(
+            $result['items'][0]['attachment_id'],
+            $result['items'][1]['attachment_id'],
+        ));
     }
 
     public function test_untranslated_attachment_keeps_a_remote_file_url()
