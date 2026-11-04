@@ -704,6 +704,23 @@ HTML;
         $this->assertSame(0, $result['stylesheet_count']);
     }
 
+    public function test_mentioning_hreflang_in_text_does_not_add_a_language()
+    {
+        $html = <<<'HTML'
+<p>The theme can add an hreflang="de" attribute for you.</p>
+<a title='hreflang="fr"' href="/">Home</a>
+<link title="rel=stylesheet" href="/not-a-stylesheet.css">
+<link href="/theme.css" rel="stylesheet">
+HTML;
+
+        $result = $this->analyze($html);
+
+        $this->assertSame(0, $result['hreflang_count']);
+        $this->assertSame(1, $result['language_count']);
+        $this->assertFalse($result['has_polylang_switcher']);
+        $this->assertSame(1, $result['stylesheet_count']);
+    }
+
     public function test_blank_hreflang_is_not_a_language()
     {
         $html = '<link rel="alternate" hreflang="   " href="/"><link rel="alternate" hreflang="" href="/empty">';
