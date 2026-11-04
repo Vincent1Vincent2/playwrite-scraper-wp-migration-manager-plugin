@@ -520,7 +520,7 @@ class Polylang_Languages
         if (isset($data['flag_code']) && is_string($data['flag_code']) && trim($data['flag_code']) !== '') {
             return true;
         }
-        if (isset($data['flag']) && is_string($data['flag']) && trim($data['flag']) !== '') {
+        if (isset($data['flag']) && is_string($data['flag']) && $this->is_flag_code($this->normalize_flag($data['flag']))) {
             return true;
         }
 

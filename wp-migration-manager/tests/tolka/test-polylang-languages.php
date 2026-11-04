@@ -1055,6 +1055,82 @@ PHP
         $this->assertTrue($result['items'][0]['is_default']);
     }
 
+    public function test_an_inactive_language_with_no_posts_is_still_exported()
+    {
+        $english = $this->language_term(4, 'English', 'en', 'en_US', 'us', 0, 0);
+        $english->description = serialize(array(
+            'locale' => 'en_US',
+            'flag_code' => 'us',
+            'active' => false,
+        ));
+        $GLOBALS['wpdb'] = $this->database_with_languages(array($english), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
+    public function test_flag_markup_does_not_hide_the_stored_flag_code()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function get_terms($args = array())
+{
+    if (!is_array($args) || !isset($args['taxonomy']) || $args['taxonomy'] !== 'language') {
+        return array();
+    }
+    return array((object) array(
+        'term_id' => 4,
+        'name' => 'English',
+        'slug' => 'en',
+        'term_group' => 0,
+        'description' => serialize(array('flag' => '<img alt="" />')),
+        'count' => 0,
+    ));
+}
+
+$GLOBALS['wpdb'] = new class {
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $options = 'wp_options';
+
+    public function prepare($query, $value)
+    {
+        return str_replace('%s', "'" . $value . "'", $query);
+    }
+
+    public function get_results($query)
+    {
+        if (strpos($query, "'language'") !== false) {
+            return array((object) array(
+                'term_id' => 4,
+                'name' => 'English',
+                'slug' => 'en',
+                'term_group' => 0,
+                'description' => 'a:2:{s:6:"locale";s:5:"en_US";s:9:"flag_code";s:2:"us";}',
+                'count' => 0,
+            ));
+        }
+        return array();
+    }
+
+    public function get_var($query)
+    {
+        return 'a:1:{s:12:"default_lang";s:2:"en";}';
+    }
+};
+PHP
+        );
+
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertSame('us', $result['items'][0]['flag']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_empty_serialized_description_is_replaced_by_the_stored_row()
     {
         $result = $this->export_isolated(<<<'PHP'
