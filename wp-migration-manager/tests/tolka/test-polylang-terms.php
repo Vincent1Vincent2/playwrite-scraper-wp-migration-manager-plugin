@@ -541,6 +541,32 @@ class Polylang_Terms_Test extends TestCase
         $this->assertSame(array(), $result['errors']);
     }
 
+    public function test_stale_group_language_uses_the_language_stored_on_the_term(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $database = new Polylang_Terms_Database();
+        $database->descriptions = array(serialize(array('xx' => 10, 'de' => 11)));
+        $database->catalog = array(
+            $this->term(10, 'News', 'news', 'category', 'en'),
+            $this->term(11, 'Nachrichten', 'nachrichten', 'category', 'de'),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $result = (new Polylang_Terms())->export();
+        $item = $this->itemByGroup($result['items'], 'term:10');
+
+        $this->assertSame(array('de', 'en'), array_keys($item['translations']));
+        $this->assertSame(10, $item['translations']['en']['id']);
+        $this->assertSame('News', $item['translations']['en']['name']);
+        $this->assertContains(
+            'Term 10 is stored as xx in its translation group, but its language is en. It was exported as en.',
+            $result['errors']
+        );
+    }
+
     public function test_large_translation_groups_are_read_in_batches(): void
     {
         if (!$this->canUseDatabaseStub()) {
