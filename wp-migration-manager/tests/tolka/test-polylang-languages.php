@@ -957,6 +957,21 @@ PHP
         $this->assertArrayNotHasKey('pll_sv', $by_slug);
     }
 
+    public function test_an_uppercase_internal_name_is_not_shown()
+    {
+        $GLOBALS['wpdb'] = $this->database_with_languages(array(
+            $this->language_term(4, 'PLL_EN', 'en', 'en_US', 'us', 0, 1),
+        ), 'en');
+
+        $result = Polylang_Languages::export();
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame('en', $result['items'][0]['slug']);
+        $this->assertSame('en', $result['items'][0]['name']);
+        $this->assertSame('en_US', $result['items'][0]['locale']);
+        $this->assertTrue($result['items'][0]['is_default']);
+    }
+
     public function test_an_uppercase_internal_slug_is_not_a_language()
     {
         $GLOBALS['wpdb'] = $this->database_with_languages(array(
