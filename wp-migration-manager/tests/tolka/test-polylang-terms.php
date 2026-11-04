@@ -925,6 +925,57 @@ class Polylang_Terms_Test extends TestCase
         $this->assertCount(1, $second['items']);
     }
 
+    public function test_a_null_byte_inside_a_swedish_slug_does_not_change_the_letters(): void
+    {
+        if (!$this->canUseDatabaseStub()) {
+            $this->markTestSkipped('WordPress functions are loaded.');
+        }
+
+        $html = "<p>å\0äö</p> &amp; <em>News</em>";
+        $database = new Polylang_Terms_Database();
+        $database->hasLanguages = true;
+        $database->catalog = array(
+            $this->term(80, "H\0öst", "H\0ÖST", 'category', 'sv', "\0 4 \0", $html),
+            $this->term(81, 'Äpple', 'ÄPPLE', 'category', 'sv', 0),
+            $this->term(70, 'Main', "MA\0IN", 'nav_menu', 'sv', 0, $html),
+        );
+        $GLOBALS['wpdb'] = $database;
+
+        $exporter = new Polylang_Terms();
+        $first = $exporter->export();
+        $second = $exporter->export();
+        $third = $exporter->export();
+        $encoded = json_encode($second['items']);
+
+        $this->assertSame($first, $second);
+        $this->assertSame($second, $third);
+        $this->assertSame(array('term:80', 'term:81'), $this->groupIds($second['items']));
+
+        $host = $this->itemByGroup($second['items'], 'term:80');
+        $this->assertSame('höst', $host['translations']['sv']['slug']);
+        $this->assertSame('Höst', $host['translations']['sv']['name']);
+        $this->assertNotSame('höst', $host['translations']['sv']['name']);
+        $this->assertSame('<p>åäö</p> &amp; <em>News</em>', $host['translations']['sv']['description']);
+        $this->assertStringNotContainsString("\0", $host['translations']['sv']['description']);
+        $this->assertSame(4, $host['translations']['sv']['parent']);
+        $this->assertIsInt($host['translations']['sv']['parent']);
+
+        $apple = $this->itemByGroup($second['items'], 'term:81');
+        $this->assertSame('äpple', $apple['translations']['sv']['slug']);
+        $this->assertSame('Äpple', $apple['translations']['sv']['name']);
+        $this->assertSame('', $apple['translations']['sv']['description']);
+        $this->assertIsString($apple['translations']['sv']['description']);
+        $this->assertSame(0, $apple['translations']['sv']['parent']);
+        $this->assertIsInt($apple['translations']['sv']['parent']);
+
+        $this->assertNotContains('term:70', $this->groupIds($second['items']));
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('nav_menu', $encoded);
+        $this->assertStringNotContainsString('Main', $encoded);
+        $this->assertStringNotContainsString("\0", $encoded);
+        $this->assertCount(2, $second['items']);
+    }
+
     public function test_a_whitespace_slug_becomes_empty_and_the_parent_stays_an_integer(): void
     {
         if (!$this->canUseDatabaseStub()) {
