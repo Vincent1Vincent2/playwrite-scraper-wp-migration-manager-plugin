@@ -47,8 +47,11 @@ class Tolka_Writer
      *
      * `ok` is true when the package itself was stored. Skipped rows and tags
      * that could not be written are complete sentences in `errors`, and the
-     * package can still be saved. This method does not delete existing meta
-     * or Polylang rows. An empty package is a successful save with zero items.
+     * package can still be saved. If the package option cannot be saved,
+     * `ok` is false and Tolka meta from an earlier run is left unchanged.
+     * Post id 0 and term id 0 are skipped. This method does not delete
+     * existing meta or Polylang rows. An empty package is a successful save
+     * with zero items.
      *
      * @param array $package Package from Tolka_Schema::package().
      * @return array

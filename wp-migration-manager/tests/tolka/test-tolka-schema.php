@@ -40,7 +40,9 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
      */
     protected function setUp(): void
     {
-        if (!class_exists(Tolka_Schema::class) || !class_exists(Tolka_Writer::class)) {
+        if (function_exists('wmm_tolka_skip_without_class')) {
+            wmm_tolka_skip_without_class(array('Tolka_Schema', 'Tolka_Writer'));
+        } elseif (!class_exists(Tolka_Schema::class) || !class_exists(Tolka_Writer::class)) {
             $this->markTestSkipped('Tolka schema classes are not loaded.');
         }
 
@@ -698,6 +700,40 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(0, $this->call_count('update_post_meta'));
         $this->assertSame(0, $this->call_count('update_term_meta'));
         $this->assertFunctionsStayInsideTolka();
+    }
+
+    public function test_failed_save_reports_post_id_zero_without_retagging()
+    {
+        $GLOBALS['wmm_tolka_schema_driver']['option_result'] = false;
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12] = array(
+            '_wmm_tolka_lang' => 'en',
+            '_wmm_tolka_group' => 'post:12',
+        );
+
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:12',
+                    'translations' => array(
+                        'en' => array('id' => 0, 'title' => 'Missing'),
+                        'sv' => array('id' => 12, 'title' => 'Real'),
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($result['ok']);
+        $joined = implode("\n", $result['errors']);
+        $this->assertStringContainsString('Post id 0 for language "en" in group "post:12" was skipped because it is not a saved post.', $joined);
+        $this->assertStringContainsString('existing Tolka language tags were left unchanged', $joined);
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'post:12',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12]
+        );
+        $this->assertSame(0, $this->call_count('update_post_meta'));
     }
 
     public function test_option_exception_does_not_change_existing_tolka_meta()
