@@ -868,6 +868,11 @@ class Tolka_Writer
         }
 
         foreach ($ops as $op) {
+            if ($op['id'] < 1) {
+                self::add_error($errors, $hidden, $copy['zero_id'], array($op['lang'], $op['group']));
+                continue;
+            }
+
             if (!self::assign_meta($kind, $op['id'], self::META_LANG, $op['lang'])) {
                 self::add_error(
                     $errors,

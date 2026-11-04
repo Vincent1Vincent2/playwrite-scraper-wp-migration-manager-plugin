@@ -469,6 +469,7 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         );
         $this->assertArrayNotHasKey(0, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
         $this->assertArrayNotHasKey(0, $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
+        $this->assertSame(0, $GLOBALS['wmm_tolka_schema_driver']['stored_package']['posts'][0]['translations']['en']['id']);
         $this->assertSame('es', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12]['_wmm_tolka_lang']);
         $this->assertSame('post:10', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][12]['_wmm_tolka_group']);
         $this->assertSame('sv', $GLOBALS['wmm_tolka_schema_driver']['term_meta'][4]['_wmm_tolka_lang']);
