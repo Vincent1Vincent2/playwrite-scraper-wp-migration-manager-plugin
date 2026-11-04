@@ -1933,6 +1933,75 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(1, array_count_values($this->locations($second))['primary']);
     }
 
+    public function test_sv_siblings_follow_position_and_keep_swedish_classes(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'en',
+            'languages' => array('en', 'sv'),
+            'menus' => array(8 => 'R&auml;ksm&ouml;rg&aring;s'),
+            'term_languages' => array(8 => 'sv'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('sv' => 8),
+                    ),
+                ),
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => 31,
+                        'parent' => '10',
+                        'title' => "Fågel\0",
+                        'url' => 'https://example.com/fågel',
+                        'object' => 'custom',
+                        'object_id' => 6,
+                        'position' => 8,
+                        'classes' => array("sen\0", 'meny-fågel', 'meny-fågel'),
+                    ),
+                    array(
+                        'id' => 30,
+                        'parent' => '10',
+                        'title' => 'R&auml;ksm&ouml;rg&aring;s',
+                        'url' => '',
+                        'object' => 'page',
+                        'object_id' => 4,
+                        'position' => 2,
+                        'classes' => "meny-r&auml;tt current\0",
+                    ),
+                    array(
+                        'id' => 10,
+                        'parent' => '0',
+                        'title' => 'Mat',
+                        'url' => 'https://example.com/mat',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 9,
+                    ),
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $translation = $this->location($second, 'primary')['translations']['sv'];
+        $items = $translation['items'];
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame('Räksmörgås', $translation['name']);
+        $this->assertSame(array('Mat'), array($items[0]['title']));
+        $this->assertSame('Räksmörgås', $items[0]['children'][0]['title']);
+        $this->assertSame(array('meny-rätt', 'current'), $items[0]['children'][0]['classes']);
+        $this->assertSame(10, $items[0]['children'][0]['parent']);
+        $this->assertSame('Fågel', $items[0]['children'][1]['title']);
+        $this->assertSame('https://example.com/fågel', $items[0]['children'][1]['url']);
+        $this->assertSame(array('sen', 'meny-fågel'), $items[0]['children'][1]['classes']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
+    }
+
     public function test_database_child_row_before_parent_stays_nested_under_sv(): void
     {
         if (function_exists('get_option')) {
@@ -1954,6 +2023,13 @@ class Polylang_Menus_Test extends TestCase
         $database->menu_posts = array(
             12 => array(
                 array(
+                    'id' => 31,
+                    'title' => 'Öl',
+                    'attr_title' => '',
+                    'description' => '',
+                    'position' => 2,
+                ),
+                array(
                     'id' => 32,
                     'title' => 'Sm&ouml;rg&aring;s',
                     'attr_title' => '',
@@ -1966,13 +2042,6 @@ class Polylang_Menus_Test extends TestCase
                     'attr_title' => '',
                     'description' => '',
                     'position' => 1,
-                ),
-                array(
-                    'id' => 31,
-                    'title' => 'Öl',
-                    'attr_title' => '',
-                    'description' => '',
-                    'position' => 2,
                 ),
                 array(
                     'id' => 10,
@@ -2000,7 +2069,7 @@ class Polylang_Menus_Test extends TestCase
             '_menu_item_menu_item_parent' => '10',
             '_menu_item_url' => '',
             '_menu_item_target' => '',
-            '_menu_item_classes' => '',
+            '_menu_item_classes' => serialize(array('meny-r&auml;tt', "current\0-item", 'meny-rätt', '')),
             '_menu_item_xfn' => '',
         );
         $database->meta[31] = array(
@@ -2010,7 +2079,7 @@ class Polylang_Menus_Test extends TestCase
             '_menu_item_menu_item_parent' => '10',
             '_menu_item_url' => 'https://example.com/öl',
             '_menu_item_target' => '',
-            '_menu_item_classes' => '',
+            '_menu_item_classes' => "meny-öl\0 sen",
             '_menu_item_xfn' => '',
         );
         $database->meta[10] = array(
@@ -2058,11 +2127,13 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame('Räksmörgås', $items[0]['children'][0]['title']);
         $this->assertSame('', $items[0]['children'][0]['url']);
         $this->assertSame(10, $items[0]['children'][0]['parent']);
+        $this->assertSame(array('meny-rätt', 'current-item'), $items[0]['children'][0]['classes']);
         $this->assertSame('Smörgås', $items[0]['children'][0]['children'][0]['title']);
         $this->assertSame('', $items[0]['children'][0]['children'][0]['url']);
         $this->assertSame(30, $items[0]['children'][0]['children'][0]['parent']);
         $this->assertSame('Öl', $items[0]['children'][1]['title']);
         $this->assertSame('https://example.com/öl', $items[0]['children'][1]['url']);
+        $this->assertSame(array('meny-öl', 'sen'), $items[0]['children'][1]['classes']);
         $this->assertSame(array(), $second['errors']);
         $this->assertSame(1, $counts['primary']);
     }

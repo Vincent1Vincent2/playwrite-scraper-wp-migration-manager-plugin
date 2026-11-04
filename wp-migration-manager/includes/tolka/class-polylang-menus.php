@@ -1821,6 +1821,12 @@ class Polylang_Menus
     }
 
     /**
+     * Class list as stored on a menu item.
+     *
+     * A serialized list is unpacked. A plain string is split on whitespace.
+     * Swedish letters stay. Entities are decoded once. A null byte is removed,
+     * and an empty class is dropped.
+     *
      * @param mixed $value Raw classes.
      * @return string[]
      */
@@ -1846,7 +1852,7 @@ class Polylang_Menus
             if (! is_string($class) && ! is_numeric($class)) {
                 continue;
             }
-            $class = trim((string) $class);
+            $class = trim($this->entity_text($class));
             if ($class === '' || in_array($class, $classes, true)) {
                 continue;
             }
