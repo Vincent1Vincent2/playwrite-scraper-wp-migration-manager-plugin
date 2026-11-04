@@ -1278,6 +1278,76 @@ class Speed_Loader_Test extends TestCase
         }
     }
 
+    public function test_http_200_with_an_empty_body_is_success()
+    {
+        $this->requireHarness();
+        $missing = $this->http_response(200, '');
+        unset($missing['body']);
+        $null_body = $this->http_response(200, '');
+        $null_body['body'] = null;
+        $string_code = $this->http_response(200, '');
+        $string_code['response']['code'] = '200';
+
+        $cases = array(
+            'empty string' => $this->http_response(200, ''),
+            'missing body' => $missing,
+            'null body' => $null_body,
+            'string status' => $string_code,
+        );
+
+        foreach ($cases as $label => $response) {
+            Speed_Loader_Harness::reset();
+            Speed_Loader_Harness::$resolved = array('1.1.1.1');
+            Speed_Loader_Harness::$response = $response;
+            $result = Speed_Loader_Harness::measure('https://example.com/');
+
+            $this->assertTrue($result['ok'], $label);
+            $this->assertSame(200, $result['status_code'], $label);
+            $this->assertIsInt($result['status_code'], $label);
+            $this->assertSame('', $result['html'], $label);
+            $this->assertSame(0, $result['html_bytes'], $label);
+            $this->assertIsInt($result['html_bytes'], $label);
+            $this->assertSame('', $result['error'], $label);
+            $this->assertNull($result['ttfb_ms'], $label);
+            $this->assertIsInt($result['total_ms'], $label);
+            $this->assertGreaterThanOrEqual(0, $result['total_ms'], $label);
+        }
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$queue = array(
+            $this->http_response(302, '<html>hop</html>', 'https://example.com/empty'),
+            $this->http_response(200, ''),
+        );
+        $followed = Speed_Loader_Harness::measure('https://example.com/start');
+        $this->assertTrue($followed['ok']);
+        $this->assertSame(200, $followed['status_code']);
+        $this->assertSame('', $followed['html']);
+        $this->assertSame(0, $followed['html_bytes']);
+        $this->assertSame('https://example.com/empty', $followed['url']);
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = $this->http_response(200, '0');
+        $zero = Speed_Loader_Harness::measure('https://example.com/');
+        $this->assertTrue($zero['ok']);
+        $this->assertSame('0', $zero['html']);
+        $this->assertSame(1, $zero['html_bytes']);
+
+        Speed_Loader_Harness::reset();
+        Speed_Loader_Harness::$resolved = array('1.1.1.1');
+        Speed_Loader_Harness::$response = new Speed_Loader_Transport_Error(
+            'cURL error 28: Operation timed out after 15000 milliseconds'
+        );
+        $timeout = $this->measureWithoutThrowing('https://example.com/');
+        $this->assertTimeoutResult($timeout);
+        $this->assertSame(0, $timeout['status_code']);
+        $this->assertSame('', $timeout['html']);
+        $this->assertSame(0, $timeout['html_bytes']);
+        $this->assertIsInt($timeout['total_ms']);
+        $this->assertGreaterThanOrEqual(0, $timeout['total_ms']);
+    }
+
     public function test_empty_success_page_keeps_the_timing()
     {
         $this->requireHarness();
