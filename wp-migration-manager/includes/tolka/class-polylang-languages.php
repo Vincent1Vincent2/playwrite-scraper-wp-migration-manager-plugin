@@ -225,9 +225,9 @@ class Polylang_Languages
             $is_default = ($slug === $default);
             if (array_key_exists($index, $columns['is_default'])) {
                 $flag_default = $columns['is_default'][$index];
-                if ($flag_default === true || $flag_default === 1 || $flag_default === '1') {
+                if ($this->is_truthy_flag($flag_default)) {
                     $is_default = true;
-                } elseif ($flag_default === false || $flag_default === 0 || $flag_default === '0') {
+                } elseif ($this->is_false_flag($flag_default)) {
                     $is_default = false;
                 }
             }
@@ -342,9 +342,9 @@ class Polylang_Languages
         $is_default_prop = $this->read_field($language, 'is_default');
         if ($is_default_prop === null && $default !== '') {
             $is_default = ($slug !== '' && $slug === $default);
-        } elseif ($is_default_prop === true || $is_default_prop === 1 || $is_default_prop === '1') {
+        } elseif ($this->is_truthy_flag($is_default_prop)) {
             $is_default = true;
-        } elseif ($is_default_prop === false || $is_default_prop === 0 || $is_default_prop === '0') {
+        } elseif ($this->is_false_flag($is_default_prop)) {
             $is_default = false;
         } else {
             $is_default = ($slug !== '' && $slug === $default);
@@ -1089,6 +1089,38 @@ class Polylang_Languages
             return (int) $value;
         }
         return 0;
+    }
+
+    /**
+     * Whether a stored flag means the language is the default.
+     *
+     * Polylang uses booleans. Some copies of the data use 1, "1", or "true".
+     *
+     * @param mixed $value Raw flag.
+     * @return bool
+     */
+    private function is_truthy_flag($value)
+    {
+        if ($value === true || $value === 1 || $value === '1') {
+            return true;
+        }
+
+        return is_string($value) && strcasecmp($value, 'true') === 0;
+    }
+
+    /**
+     * Whether a stored flag means the language is not the default.
+     *
+     * @param mixed $value Raw flag.
+     * @return bool
+     */
+    private function is_false_flag($value)
+    {
+        if ($value === false || $value === 0 || $value === '0') {
+            return true;
+        }
+
+        return is_string($value) && strcasecmp($value, 'false') === 0;
     }
 
     /**

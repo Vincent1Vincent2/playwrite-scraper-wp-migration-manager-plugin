@@ -717,6 +717,40 @@ PHP
         $this->assertSame($static, $instance);
     }
 
+    public function test_string_booleans_still_mark_the_default_language()
+    {
+        $result = $this->export_isolated(<<<'PHP'
+function pll_languages_list($args = array())
+{
+    return array(
+        (object) array(
+            'slug' => 'en',
+            'name' => 'English',
+            'locale' => 'en_US',
+            'term_id' => 4,
+            'flag_code' => 'us',
+            'is_default' => 'false',
+        ),
+        (object) array(
+            'slug' => 'fr',
+            'name' => 'Français',
+            'locale' => 'fr_FR',
+            'term_id' => 6,
+            'flag_code' => 'fr',
+            'is_default' => 'true',
+        ),
+    );
+}
+PHP
+        );
+
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame('fr', $result['items'][0]['slug']);
+        $this->assertTrue($result['items'][0]['is_default']);
+        $this->assertSame('en', $result['items'][1]['slug']);
+        $this->assertFalse($result['items'][1]['is_default']);
+    }
+
     public function test_a_broken_api_row_does_not_drop_the_other_languages()
     {
         $result = $this->export_isolated(<<<'PHP'
