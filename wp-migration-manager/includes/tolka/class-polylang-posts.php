@@ -690,7 +690,7 @@ class Polylang_Posts
      * @param array<int, array> $items
      * @return array<int, array>
      */
-    private function unique_groups(array $items)
+    protected function unique_groups(array $items)
     {
         $unique = array();
         $seen = array();
@@ -699,10 +699,25 @@ class Polylang_Posts
                 continue;
             }
             $group = (string) $item['group'];
-            if ($group === '' || isset($seen[$group])) {
+            if ($group === '') {
                 continue;
             }
-            $seen[$group] = true;
+            if (isset($seen[$group])) {
+                $index = $seen[$group];
+                if (!isset($item['translations']) || !is_array($item['translations'])) {
+                    continue;
+                }
+                if (!isset($unique[$index]['translations']) || !is_array($unique[$index]['translations'])) {
+                    $unique[$index]['translations'] = array();
+                }
+                foreach ($item['translations'] as $lang => $translation) {
+                    if (!isset($unique[$index]['translations'][$lang])) {
+                        $unique[$index]['translations'][$lang] = $translation;
+                    }
+                }
+                continue;
+            }
+            $seen[$group] = count($unique);
             $unique[] = $item;
         }
         return $unique;
