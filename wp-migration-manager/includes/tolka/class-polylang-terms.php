@@ -48,7 +48,7 @@ class Polylang_Terms
      * Each item has taxonomy, group (`term:{id}`), and translations.
      * A translation is keyed by language slug and has id, name, slug, description, and parent.
      * HTML in a name is kept. Letters such as å, ä, and ö are kept in names and slugs.
-     * Null bytes are removed from names, slugs, and parents. Slug case is normalized, and å, ä, and ö stay letters.
+     * Null bytes are removed from names, slugs, parents, and language slugs. Slug case is normalized, and å, ä, and ö stay letters.
      * A slug of only whitespace becomes empty. A missing description is an empty string, not null.
      * An empty name is still exported. The term is not dropped when its slug is empty.
      * HTML in a description is kept. A null byte in a description is removed.
@@ -1010,7 +1010,8 @@ class Polylang_Terms
         if (!is_string($value)) {
             return '';
         }
-        return strtolower(trim($value));
+        $key = $this->languageKey($value);
+        return $key === null ? '' : $key;
     }
 
     /**
