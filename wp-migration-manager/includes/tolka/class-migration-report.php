@@ -69,6 +69,7 @@ class Migration_Report
         $description['mismatch'] = $gap['sentence'];
         $description['shortfall'] = $gap['shortfall'];
         $description['writer_missing'] = $write_is_null;
+        $description['polylang_kept'] = !self::writer_deleted_polylang($write);
         $total = self::total_items($counts);
         $has_problems = !empty($errors) || !empty($missing['labels']) || $description['mismatch'] !== '';
         $status = self::decide($run_ok, $package, $has_problems, $total);
@@ -91,7 +92,7 @@ class Migration_Report
             'ok' => $ok,
             'title' => $title,
             'summary' => $summary,
-            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch'], $description['shortfall'], $missing_sentence),
+            'lines' => self::lines_for($run, $title, $counts, $unavailable, $package, $total, $next, $missing['lines'], $errors, $description['mismatch'], $description['shortfall'], $missing_sentence, $description['polylang_kept']),
         );
     }
 
@@ -238,10 +239,24 @@ class Migration_Report
      */
     private static function collect_errors(array $run, $write)
     {
-        $raw = self::error_strings(isset($run['errors']) ? $run['errors'] : array());
+        $raw = self::gather_error_text(isset($run['errors']) ? $run['errors'] : array());
 
-        if (is_array($write) && isset($write['errors'])) {
-            $raw = array_merge($raw, self::error_strings($write['errors']));
+        if (is_array($write)) {
+            if (isset($write['errors'])) {
+                $raw = array_merge($raw, self::gather_error_text($write['errors']));
+            }
+        }
+
+        foreach (array_keys(self::section_catalog()) as $section) {
+            if (isset($run[$section])) {
+                $raw = array_merge($raw, self::envelope_errors($run[$section]));
+            }
+            if (isset($run['package']) && is_array($run['package']) && isset($run['package'][$section])) {
+                $raw = array_merge($raw, self::envelope_errors($run['package'][$section]));
+            }
+            if (is_array($write) && isset($write[$section])) {
+                $raw = array_merge($raw, self::envelope_errors($write[$section]));
+            }
         }
 
         $seen = array();
@@ -263,6 +278,68 @@ class Migration_Report
         }
 
         return $errors;
+    }
+
+    /**
+     * Strings from a list, plus strings nested under a section name.
+     *
+     * @param mixed $errors Error list or section map.
+     * @return string[]
+     */
+    private static function gather_error_text($errors)
+    {
+        $raw = self::error_strings($errors);
+        if (!is_array($errors)) {
+            return $raw;
+        }
+
+        $sections = array_keys(self::section_catalog());
+        foreach ($errors as $key => $value) {
+            if (!is_string($key) || !in_array($key, $sections, true)) {
+                continue;
+            }
+            $raw = array_merge($raw, self::error_strings($value));
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Errors stored on one section envelope.
+     *
+     * @param mixed $section Section value.
+     * @return string[]
+     */
+    private static function envelope_errors($section)
+    {
+        if (!is_array($section) || !isset($section['errors'])) {
+            return array();
+        }
+
+        return self::error_strings($section['errors']);
+    }
+
+    /**
+     * True only when the writer says it deleted Polylang data.
+     *
+     * @param array|null $write Writer result.
+     * @return bool
+     */
+    private static function writer_deleted_polylang($write)
+    {
+        if (!is_array($write)) {
+            return false;
+        }
+
+        if (isset($write['polylang_deleted']) && $write['polylang_deleted'] === true) {
+            return true;
+        }
+
+        if (isset($write['deleted_polylang']) && $write['deleted_polylang'] === true) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -578,7 +655,9 @@ class Migration_Report
      */
     private static function summary_for($status, $package, array $description, $total, array $labels, array $bases, array $errors, $next, $run_ok, $default_language)
     {
-        $closing = self::text('Polylang data was left in place.');
+        $closing = !isset($description['polylang_kept']) || $description['polylang_kept']
+            ? self::text('Polylang data was left in place.')
+            : self::text('Polylang data was removed.');
         $missing_sentence = self::missing_sentence($labels, $bases);
         $problem_lead = self::problem_lead($errors);
 
@@ -1033,9 +1112,10 @@ class Migration_Report
      * @param string                $mismatch     Saved-count warning, or empty.
      * @param bool                  $shortfall         Stored fewer items than the package contained.
      * @param string               $missing_sentence  One sentence naming every missing class.
+     * @param bool                 $polylang_kept     Writer did not delete Polylang data.
      * @return array<int, array{label: string, value: string}>
      */
-    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors, $mismatch, $shortfall, $missing_sentence)
+    private static function lines_for(array $run, $title, array $counts, array $unavailable, $package, $total, $next, array $missing_lines, array $errors, $mismatch, $shortfall, $missing_sentence, $polylang_kept)
     {
         $lines = array(
             self::line(self::text('Outcome'), $title),
@@ -1065,7 +1145,12 @@ class Migration_Report
         if ($mismatch !== '') {
             $lines[] = self::line(self::text('Saved counts'), $mismatch);
         }
-        $lines[] = self::line(self::text('Polylang data'), self::text('Polylang data was left in place.'));
+        $lines[] = self::line(
+            self::text('Polylang data'),
+            $polylang_kept
+                ? self::text('Polylang data was left in place.')
+                : self::text('Polylang data was removed.')
+        );
 
         if ($next !== '') {
             $lines[] = self::line(self::text('Next'), $next);
