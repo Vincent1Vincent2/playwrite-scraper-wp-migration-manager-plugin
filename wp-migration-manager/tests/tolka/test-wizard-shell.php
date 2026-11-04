@@ -113,7 +113,11 @@ namespace {
 
         function esc_url_raw($url, $protocols = null)
         {
-            return is_string($url) ? $url : '';
+            if (!is_string($url) || !preg_match('#^https?://#i', $url)) {
+                return '';
+            }
+
+            return $url;
         }
 
         function esc_url($url, $protocols = null, $context = 'display')
@@ -616,6 +620,11 @@ namespace WMM\Tolka {
                 'wmm-tolka-preview',
                 'wmm-tolka-run',
                 'wmm-tolka-speed',
+                'wmm-tolka-current-load',
+                'wmm-tolka-tolka-load',
+                'wmm-tolka-faster',
+                'wmm-tolka-basis',
+                'wmm-tolka-provenance-note',
                 'wmm-tolka-preview-result',
                 'wmm-tolka-report',
             );
@@ -759,26 +768,54 @@ namespace WMM\Tolka {
             $this->assertSame(array('Empty_Method_Slice'), $missing);
         }
 
-        public function test_non_string_url_does_not_fatal()
+        public function test_empty_measure_url_does_not_call_speed_loader()
         {
             $this->requireStubs();
             $this->defineSliceStubs();
 
             $GLOBALS['wmm_tolka_test_nonce_valid'] = true;
-            $_POST = array(
-                'nonce' => 'good-nonce',
-                'url' => array('https://public.example.test/'),
+            $GLOBALS['wmm_tolka_test_can'] = true;
+
+            $cases = array(
+                array('nonce' => 'good-nonce'),
+                array('nonce' => 'good-nonce', 'url' => ''),
+                array('nonce' => 'good-nonce', 'url' => '   '),
+                array('nonce' => 'good-nonce', 'url' => "\n\t"),
+                array('nonce' => 'good-nonce', 'url' => array('https://public.example.test/')),
+                array('nonce' => 'good-nonce', 'url' => 'javascript:alert(1)'),
+                array('nonce' => 'good-nonce', 'url' => 'not a url'),
             );
 
-            ob_start();
+            foreach ($cases as $post) {
+                $GLOBALS['wmm_tolka_measure_calls'] = 0;
+                $_POST = $post;
+                unset($GLOBALS['wmm_tolka_test_json']);
+
+                ob_start();
+                $this->capture(function () {
+                    \wmm_tolka_ajax_measure();
+                });
+                $output = ob_get_clean();
+                $payload = $GLOBALS['wmm_tolka_test_json'];
+
+                $this->assertSame('', $output);
+                $this->assertFalse($payload['success']);
+                $this->assertStringContainsString('Enter a public site URL', $payload['data']['message']);
+                $this->assertStringContainsString('Nothing was changed.', $payload['data']['message']);
+                $this->assertSame(0, $GLOBALS['wmm_tolka_measure_calls']);
+                $this->assertNoSpeedPercent($payload);
+            }
+
+            $GLOBALS['wmm_tolka_measure_calls'] = 0;
+            $_POST = array(
+                'nonce' => 'good-nonce',
+                'url' => '  https://public.example.test/  ',
+            );
             $this->capture(function () {
                 \wmm_tolka_ajax_measure();
             });
-            $output = ob_get_clean();
-
-            $this->assertSame('', $output);
             $this->assertTrue($GLOBALS['wmm_tolka_test_json']['success']);
-            $this->assertArrayHasKey('estimate', $GLOBALS['wmm_tolka_test_json']['data']);
+            $this->assertSame(1, $GLOBALS['wmm_tolka_measure_calls']);
         }
 
         public function test_saved_report_is_shown()
@@ -1027,6 +1064,43 @@ PHP
             } finally {
                 $this->restoreOwnedFile($speed, $speedOwned);
                 $this->restoreOwnedFile($help, $helpOwned);
+            }
+        }
+
+        public function test_speed_partial_fields_are_not_duplicated()
+        {
+            $this->requireStubs();
+            $this->defineSliceStubs();
+
+            $directory = MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/views/';
+            if (!is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            $speed = $directory . 'speed-estimate.php';
+            $markup = '<p id="wmm-tolka-current-load">1 ms</p>'
+                . '<p id="wmm-tolka-tolka-load">1 ms</p>'
+                . '<p id="wmm-tolka-faster">0% faster</p>'
+                . '<p id="wmm-tolka-basis">From the partial.</p>'
+                . '<p id="wmm-tolka-provenance-note">Partial note.</p>';
+            file_put_contents($speed, $markup);
+            clearstatcache();
+
+            try {
+                $html = $this->render();
+                foreach (array(
+                    'wmm-tolka-current-load',
+                    'wmm-tolka-tolka-load',
+                    'wmm-tolka-faster',
+                    'wmm-tolka-basis',
+                    'wmm-tolka-provenance-note',
+                ) as $id) {
+                    $this->assertSame(1, substr_count($html, 'id="' . $id . '"'), $id);
+                }
+                $this->assertStringContainsString('From the partial.', $html);
+            } finally {
+                unlink($speed);
+                clearstatcache();
             }
         }
 
@@ -1283,6 +1357,10 @@ PHP
 namespace WMM\Tolka;
 class Speed_Loader {
     public static function measure($url) {
+        if (!isset($GLOBALS['wmm_tolka_measure_calls'])) {
+            $GLOBALS['wmm_tolka_measure_calls'] = 0;
+        }
+        $GLOBALS['wmm_tolka_measure_calls']++;
         if (!empty($GLOBALS['wmm_tolka_stub_throw'])) {
             throw new \RuntimeException('boom');
         }
