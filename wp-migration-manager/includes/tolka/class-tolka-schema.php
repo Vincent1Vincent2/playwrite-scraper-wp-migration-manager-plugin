@@ -113,9 +113,12 @@ class Tolka_Schema
             $copy = array();
             foreach ($value as $key => $item) {
                 if (is_string($key)) {
-                    $key = self::text($key);
+                    $key = trim(self::text($key));
                 }
                 $copy[$key] = self::snapshot($item, $seen, $depth + 1);
+                if ($key === 'group' && is_string($copy[$key])) {
+                    $copy[$key] = trim($copy[$key]);
+                }
             }
             return $copy;
         }

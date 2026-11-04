@@ -924,6 +924,68 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         }
     }
 
+    public function test_schema_package_is_stored_unchanged()
+    {
+        $package = $this->sample_package();
+        $result = Tolka_Writer::write($package);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame($package, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+    }
+
+    public function test_language_tags_are_trimmed_and_content_whitespace_is_kept()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => ' post:21 ',
+                    'type' => 'post',
+                    'translations' => array(
+                        ' en ' => array(
+                            'id' => 21,
+                            'title' => 'Hello',
+                            'content' => '  keep  ',
+                        ),
+                    ),
+                ),
+            ),
+        ));
+
+        $stored = $GLOBALS['wmm_tolka_schema_driver']['stored_package'];
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][21]['_wmm_tolka_lang']);
+        $this->assertSame('post:21', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][21]['_wmm_tolka_group']);
+        $this->assertSame('post:21', $stored['posts'][0]['group']);
+        $this->assertSame('  keep  ', $stored['posts'][0]['translations']['en']['content']);
+    }
+
+    public function test_repeated_language_keeps_the_last_copy()
+    {
+        $result = Tolka_Writer::write(array(
+            'posts' => array(
+                array(
+                    'group' => 'post:30',
+                    'translations' => array(
+                        'en' => 30,
+                        ' en ' => 31,
+                    ),
+                ),
+            ),
+        ));
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame(
+            array(
+                'Translation group "post:30" lists the language "en" more than once, so Tolka kept the last copy. Nothing was deleted, and your Polylang content is still in place.',
+            ),
+            $result['errors']
+        );
+        $this->assertArrayNotHasKey(30, $GLOBALS['wmm_tolka_schema_driver']['post_meta']);
+        $this->assertSame('en', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_lang']);
+        $this->assertSame('post:30', $GLOBALS['wmm_tolka_schema_driver']['post_meta'][31]['_wmm_tolka_group']);
+    }
+
     public function test_database_unsafe_text_is_removed_before_save()
     {
         $package = Tolka_Schema::package(array(
