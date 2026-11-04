@@ -1694,6 +1694,103 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(1, array_count_values($this->locations($second))['primary']);
     }
 
+    public function test_default_language_slug_for_an_unlabeled_menu_is_lowercase(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'SV',
+            'languages' => array('SV', 'EN'),
+            'registered' => array(
+                'primary' => 'Primär',
+            ),
+            'menus' => array(
+                8 => 'Förrätter',
+                9 => 'Extra',
+            ),
+            'theme_locations' => array(
+                'primary' => 8,
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Fågel',
+                        'url' => 'https://example.com/öl',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                    ),
+                ),
+            ),
+            'navigations' => array(
+                array(
+                    'id' => 40,
+                    'name' => 'Sidhuvud',
+                    'slug' => 'sidhuvud',
+                    'language' => '',
+                    'content' => '<!-- wp:navigation-link {"label":"Ärtor","url":"https://example.com/ärtor"} /-->',
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $primary = $this->location($second, 'primary')['translations'];
+        $extra = $this->location($second, '');
+        $navigation = $this->location($second, 'navigation:sidhuvud')['translations'];
+        $counts = array_count_values($this->locations($second));
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(array('sv', 'EN'), array_keys($primary));
+        $this->assertArrayNotHasKey('SV', $primary);
+        $this->assertSame(8, $primary['sv']['menu_id']);
+        $this->assertSame('Förrätter', $primary['sv']['name']);
+        $this->assertSame('Fågel', $primary['sv']['items'][0]['title']);
+        $this->assertSame('https://example.com/öl', $primary['sv']['items'][0]['url']);
+        $this->assertSame(9, $extra['translations']['sv']['menu_id']);
+        $this->assertArrayNotHasKey('SV', $extra['translations']);
+        $this->assertSame(40, $navigation['sv']['menu_id']);
+        $this->assertSame('Ärtor', $navigation['sv']['items'][0]['title']);
+        $this->assertSame('https://example.com/ärtor', $navigation['sv']['items'][0]['url']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, $counts['primary']);
+        $this->assertSame(1, $counts['navigation:sidhuvud']);
+    }
+
+    public function test_hyphenated_default_language_slug_is_lowercase(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'default_language' => 'PT-BR',
+            'languages' => array('PT-BR'),
+            'menus' => array(3 => 'Cardápio'),
+            'items' => array(
+                3 => array(
+                    array(
+                        'id' => 1,
+                        'parent' => 0,
+                        'title' => 'Pão',
+                        'url' => '',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                    ),
+                ),
+            ),
+        ));
+
+        $first = $fixture->export();
+        $second = $fixture->export();
+        $menu = $this->location($second, '');
+
+        $this->assertSame($this->locations($first), $this->locations($second));
+        $this->assertSame(3, $menu['translations']['pt-br']['menu_id']);
+        $this->assertArrayNotHasKey('PT-BR', $menu['translations']);
+        $this->assertSame('Pão', $menu['translations']['pt-br']['items'][0]['title']);
+        $this->assertSame('', $menu['translations']['pt-br']['items'][0]['url']);
+        $this->assertSame(array(), $second['errors']);
+    }
+
     public function test_option_table_is_read_when_wordpress_functions_are_missing(): void
     {
         if (function_exists('get_option')) {
