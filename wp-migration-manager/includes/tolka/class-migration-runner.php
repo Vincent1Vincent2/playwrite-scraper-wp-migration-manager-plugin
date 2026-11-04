@@ -505,8 +505,8 @@ class Migration_Runner
                 'status' => $status,
                 'message' => $message,
                 'labels' => $labels,
-                'more' => max(0, $count - count($presented)),
-                'more_label' => self::more_label(max(0, $count - count($presented))),
+                'more' => (int) max(0, $count - count($presented)),
+                'more_label' => self::more_label((int) max(0, $count - count($presented))),
                 'error_count' => count($section_errors),
             );
             foreach ($section_errors as $error) {
