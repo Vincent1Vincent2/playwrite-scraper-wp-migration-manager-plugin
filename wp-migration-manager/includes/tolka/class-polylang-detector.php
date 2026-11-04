@@ -391,12 +391,44 @@ class Polylang_Detector
             }
         }
 
+        $other_label = '';
+        $other_version = '';
+        $other_rank = PHP_INT_MAX;
+        $other_missing_label = '';
+        $other_missing_rank = PHP_INT_MAX;
+        if ($best_version !== '') {
+            foreach ($pool as $entry) {
+                if (!isset($entry['file']) || !is_string($entry['file'])) {
+                    continue;
+                }
+                $entry_version = (isset($entry['version']) && is_string($entry['version'])) ? $entry['version'] : '';
+                $entry_label = (isset($entry['label']) && $entry['label'] === 'Polylang Pro') ? 'Polylang Pro' : 'Polylang';
+                if ($entry_label === $label) {
+                    continue;
+                }
+                $rank = static::rank_plugin_file($entry['file']);
+                if ($entry_version !== '' && $rank < $other_rank) {
+                    $other_rank = $rank;
+                    $other_label = $entry_label;
+                    $other_version = $entry_version;
+                    continue;
+                }
+                if ($entry_version === '' && $rank < $other_missing_rank) {
+                    $other_missing_rank = $rank;
+                    $other_missing_label = $entry_label;
+                }
+            }
+        }
+
         return array(
             'version' => $best_version,
             'header_found' => $header_found,
             'version_missing' => $header_found && $best_version === '',
             'listed_active' => !empty($listed),
             'label' => $label,
+            'other_label' => $other_label,
+            'other_version' => $other_version,
+            'other_missing_label' => $other_version === '' ? $other_missing_label : '',
         );
     }
 
@@ -499,6 +531,7 @@ class Polylang_Detector
         $header_found = !empty($inspection['header_found']);
         $listed_active = !empty($inspection['listed_active']);
         $pro = self::product_name($inspection) === 'Polylang Pro';
+        $also = self::also_installed($inspection) . self::also_missing($inspection);
         $errors = array();
 
         if (!$active && $version !== '' && $listed_active) {
@@ -509,7 +542,7 @@ class Polylang_Detector
                         : 'Polylang %s is listed as active, but it is not loaded yet. Reload this screen. If Polylang is switched off, activate it, then return to Migrate to Tolka.'
                 ),
                 $version
-            );
+            ) . $also;
         } elseif (!$active && $version !== '') {
             $errors[] = self::fill_version(
                 self::translate(
@@ -518,7 +551,7 @@ class Polylang_Detector
                         : 'Polylang %s is installed but not active. Activate Polylang, then return to Migrate to Tolka.'
                 ),
                 $version
-            );
+            ) . $also;
         } elseif (!$active && $header_found && $listed_active) {
             $errors[] = self::translate(
                 $pro
@@ -1020,6 +1053,64 @@ class Polylang_Detector
         }
 
         return 'Polylang';
+    }
+
+    /**
+     * Second sentence when the other Polylang edition is also on disk.
+     */
+    private static function also_installed(array $inspection): string
+    {
+        if (!isset($inspection['other_version']) || !is_string($inspection['other_version'])) {
+            return '';
+        }
+        $other_version = self::sanitize_version($inspection['other_version']);
+        if ($other_version === '') {
+            return '';
+        }
+        $other_label = (isset($inspection['other_label']) && $inspection['other_label'] === 'Polylang Pro')
+            ? 'Polylang Pro'
+            : 'Polylang';
+        if ($other_label === self::product_name($inspection)) {
+            return '';
+        }
+
+        $sentence = self::fill_version(
+            self::translate(
+                $other_label === 'Polylang Pro'
+                    ? 'Polylang Pro %s is also installed.'
+                    : 'Polylang %s is also installed.'
+            ),
+            $other_version
+        );
+
+        return ' ' . $sentence;
+    }
+
+    /**
+     * Second sentence when the other edition is present but has no Version line.
+     */
+    private static function also_missing(array $inspection): string
+    {
+        if (isset($inspection['other_version']) && is_string($inspection['other_version']) && self::sanitize_version($inspection['other_version']) !== '') {
+            return '';
+        }
+        $other_label = (isset($inspection['other_missing_label']) && $inspection['other_missing_label'] === 'Polylang Pro')
+            ? 'Polylang Pro'
+            : '';
+        if ($other_label === '' && isset($inspection['other_missing_label']) && $inspection['other_missing_label'] === 'Polylang') {
+            $other_label = 'Polylang';
+        }
+        if ($other_label === '' || $other_label === self::product_name($inspection)) {
+            return '';
+        }
+
+        $sentence = self::translate(
+            $other_label === 'Polylang Pro'
+                ? 'A Polylang Pro plugin file was also found, but it has no readable Version header.'
+                : 'A Polylang plugin file was also found, but it has no readable Version header.'
+        );
+
+        return ' ' . $sentence;
     }
 
     private static function fill_version(string $template, string $version): string
