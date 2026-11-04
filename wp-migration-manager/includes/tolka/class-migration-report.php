@@ -44,29 +44,153 @@ class Migration_Report
         }
 
         $report['lines'] = self::string_lines(isset($report['lines']) ? $report['lines'] : array());
-        $report = self::keep_clean_title($report);
+        $report['lines'] = self::arrange_section_lines($report['lines']);
+        $report = self::pin_titles($report);
 
         return $report;
     }
 
     /**
-     * A clean run keeps its title. The save error is never written there.
+     * Keep the title that matches this run, and keep the outcome line in step.
+     *
+     * A partial finish stays “The migration finished with problems.” A clean
+     * run stays “The migration is complete.” The save error is never written
+     * into either title.
      *
      * @param array $report Formatted report.
      * @return array
      */
-    private static function keep_clean_title(array $report)
+    private static function pin_titles(array $report)
     {
-        if (empty($report['ok']) || !isset($report['title']) || !is_string($report['title'])) {
+        $partial = self::partial_title();
+        $clean = self::text('The migration is complete.');
+        $outcome = self::outcome_value($report);
+
+        if (is_string($outcome) && $outcome === $partial && empty($report['ok'])) {
+            $report['title'] = $partial;
+        }
+
+        if (!empty($report['ok']) && isset($report['title']) && is_string($report['title'])) {
+            if (stripos($report['title'], 'could not be saved') !== false) {
+                $report['title'] = $clean;
+            }
+        }
+
+        return self::sync_outcome($report);
+    }
+
+    /**
+     * @param array $report Formatted report.
+     * @return string|null
+     */
+    private static function outcome_value(array $report)
+    {
+        if (!isset($report['lines']) || !is_array($report['lines'])) {
+            return null;
+        }
+
+        $label = self::text('Outcome');
+        foreach ($report['lines'] as $line) {
+            if (!is_array($line) || !isset($line['label']) || $line['label'] !== $label) {
+                continue;
+            }
+
+            return isset($line['value']) && is_string($line['value']) ? $line['value'] : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array $report Formatted report.
+     * @return array
+     */
+    private static function sync_outcome(array $report)
+    {
+        if (!isset($report['title']) || !is_string($report['title']) || !isset($report['lines']) || !is_array($report['lines'])) {
             return $report;
         }
 
-        $clean = self::text('The migration is complete.');
-        if (stripos($report['title'], 'could not be saved') !== false) {
-            $report['title'] = $clean;
+        $label = self::text('Outcome');
+        foreach ($report['lines'] as $index => $line) {
+            if (!is_array($line) || !isset($line['label']) || $line['label'] !== $label) {
+                continue;
+            }
+
+            $report['lines'][$index]['value'] = $report['title'];
+            break;
         }
 
         return $report;
+    }
+
+    /**
+     * The six section lines stay in contract order, one of each.
+     *
+     * @param array $lines Report lines.
+     * @return array<int, array{label: string, value: string}>
+     */
+    private static function arrange_section_lines(array $lines)
+    {
+        $order = array();
+        foreach (self::section_catalog() as $meta) {
+            $order[] = self::text($meta['label']);
+        }
+
+        $found = array();
+        $seen_section = false;
+        $before = 0;
+
+        foreach ($lines as $line) {
+            $label = (is_array($line) && isset($line['label']) && is_string($line['label'])) ? $line['label'] : '';
+            if (!in_array($label, $order, true)) {
+                if (!$seen_section) {
+                    $before++;
+                }
+                continue;
+            }
+
+            $seen_section = true;
+            if (!isset($found[$label])) {
+                $found[$label] = $line;
+            }
+        }
+
+        $rest = array();
+        foreach ($lines as $line) {
+            $label = (is_array($line) && isset($line['label']) && is_string($line['label'])) ? $line['label'] : '';
+            if (in_array($label, $order, true)) {
+                continue;
+            }
+            $rest[] = $line;
+        }
+
+        $section_lines = array();
+        foreach ($order as $label) {
+            if (isset($found[$label])) {
+                $section_lines[] = $found[$label];
+                continue;
+            }
+
+            $made = self::line($label, '0');
+            if ($made !== null) {
+                $section_lines[] = $made;
+            }
+        }
+
+        if (!$seen_section) {
+            $before = 0;
+            foreach ($rest as $index => $line) {
+                $label = (isset($line['label']) && is_string($line['label'])) ? $line['label'] : '';
+                if ($label === self::text('Outcome') || $label === self::text('When')) {
+                    $before = $index + 1;
+                }
+            }
+        }
+
+        array_splice($rest, $before, 0, $section_lines);
+
+        return array_values($rest);
     }
 
     /**
