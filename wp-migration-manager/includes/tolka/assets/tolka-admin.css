@@ -72,6 +72,7 @@
     line-height: 1.3;
 }
 
+#wmm-tolka-wizard,
 .wmm-tolka-wizard {
     margin: 0;
     container-type: inline-size;
@@ -2313,14 +2314,20 @@ dl.wmm-tolka-speed-fields > #wmm-tolka-faster {
 }
 
 @media (max-width: 782px) {
-    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load):has(> #wmm-tolka-tolka-load):has(> #wmm-tolka-faster),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures,
+    #wmm-tolka-wizard .wmm-tolka-compare,
+    #wmm-tolka-wizard .wmm-tolka-metrics,
+    #wmm-tolka-wizard .wmm-tolka-speed__compare {
         grid-template-columns: 1fr;
     }
 
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load,
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
-    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load,
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
         grid-column: 1 / -1;
     }
 
@@ -2330,18 +2337,29 @@ dl.wmm-tolka-speed-fields > #wmm-tolka-faster {
 
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
         grid-row: 6;
+    }
+
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+        grid-row: auto;
     }
 }
 
 @container wmm-tolka-wizard (max-width: 720px) {
-    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load):has(> #wmm-tolka-tolka-load):has(> #wmm-tolka-faster),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures,
+    #wmm-tolka-wizard .wmm-tolka-compare,
+    #wmm-tolka-wizard .wmm-tolka-metrics,
+    #wmm-tolka-wizard .wmm-tolka-speed__compare {
         grid-template-columns: 1fr;
     }
 
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load,
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
-    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load,
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
         grid-column: 1 / -1;
     }
 
@@ -2351,6 +2369,11 @@ dl.wmm-tolka-speed-fields > #wmm-tolka-faster {
 
     #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
         grid-row: 6;
+    }
+
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+        grid-row: auto;
     }
 }
 
