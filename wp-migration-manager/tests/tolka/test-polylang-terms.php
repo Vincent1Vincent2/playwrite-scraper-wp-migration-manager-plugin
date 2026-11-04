@@ -480,6 +480,7 @@ class Polylang_Terms_Test extends TestCase
         ));
 
         $this->assertSame('<em>News</em> &amp; Notes', $result['items'][0]['translations']['en']['name']);
+        $this->assertNotSame('<em>News</em> & Notes', $result['items'][0]['translations']['en']['name']);
         $this->assertSame('news-notes', $result['items'][0]['translations']['en']['slug']);
         $this->assertStringNotContainsString("\0", $result['items'][0]['translations']['en']['name']);
         $this->assertStringNotContainsString("\0", $result['items'][0]['translations']['en']['slug']);

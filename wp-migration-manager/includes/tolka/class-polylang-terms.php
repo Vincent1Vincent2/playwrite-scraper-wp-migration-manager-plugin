@@ -47,8 +47,10 @@ class Polylang_Terms
      *
      * Each item has taxonomy, group (`term:{id}`), and translations.
      * A translation is keyed by language slug and has id, name, slug, description, and parent.
+     * HTML in a name is kept. Null bytes are removed from names and slugs.
      * description is the term description in that language.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
+     * Calling export() again on the same instance does not append duplicate groups.
      * The group id is the default-language term when that translation exists,
      * otherwise the lowest term id in the group.
      *
