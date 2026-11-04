@@ -2487,5 +2487,63 @@ namespace {
             $this->assertSame(425, strlen(\WMM\Tolka\RunnerTest\Writer::$package['posts'][0]['content']));
             $this->assertSame(str_repeat('n', 400) . '...', $failed['sample']['posts'][0]['content']);
         }
+
+        public function test_preview_counts_samples_and_writer_text_stay_distinct()
+        {
+            $this->reset_doubles();
+            $first = str_repeat('a', 500);
+            $last = str_repeat('b', 450);
+            $posts = array();
+            for ($i = 0; $i < 25; $i++) {
+                $posts[] = array(
+                    'title' => 'Post ' . $i,
+                    'content' => ($i === 0) ? $first : (($i === 24) ? $last : 'short'),
+                );
+            }
+            \WMM\Tolka\RunnerTest\Exporter::$script = array(
+                0 => array('items' => array(), 'errors' => array()),
+                1 => array('items' => $posts, 'errors' => array()),
+                2 => array('items' => array(), 'errors' => array()),
+                3 => array('items' => array(), 'errors' => array()),
+                4 => array('items' => array(), 'errors' => array()),
+                5 => array('items' => array(), 'errors' => array()),
+            );
+            \WMM\Tolka\RunnerTest\Writer::$throw = true;
+
+            $preview = Migration_Runner_Test_Double::preview();
+            $this->assertSame(0, \WMM\Tolka\RunnerTest\Writer::$calls);
+            foreach (array('languages', 'posts', 'terms', 'strings', 'menus', 'media') as $section) {
+                $this->assertIsInt($preview['counts'][$section]);
+                $this->assertIsInt($preview['sections'][$section]['count']);
+                $this->assertLessThanOrEqual(20, count($preview['sample'][$section]));
+            }
+            $this->assertSame(0, $preview['counts']['languages']);
+            $this->assertSame(0, $preview['counts']['terms']);
+            $this->assertSame(0, $preview['counts']['media']);
+            $this->assertCount(0, $preview['sample']['languages']);
+            $this->assertSame(25, $preview['counts']['posts']);
+            $this->assertNotSame(20, $preview['counts']['posts']);
+            $this->assertCount(20, $preview['sample']['posts']);
+            $this->assertSame(str_repeat('a', 400) . '...', $preview['sample']['posts'][0]['content']);
+            $this->assertSame('Post 19', $preview['sample']['posts'][19]['title']);
+
+            \WMM\Tolka\RunnerTest\Writer::$throw = false;
+            \WMM\Tolka\RunnerTest\Exporter::$calls = 0;
+            $run = Migration_Runner_Test_Double::run();
+            $this->assertSame(1, \WMM\Tolka\RunnerTest\Writer::$calls);
+            $this->assertTrue($run['ok']);
+            $this->assertIsInt($run['counts']['posts']);
+            $this->assertSame(25, $run['counts']['posts']);
+            $this->assertIsInt($run['counts']['languages']);
+            $this->assertSame(0, $run['counts']['languages']);
+            $this->assertCount(20, $run['sample']['posts']);
+            $written = \WMM\Tolka\RunnerTest\Writer::$package['posts'];
+            $this->assertCount(25, $written);
+            $this->assertSame($first, $written[0]['content']);
+            $this->assertSame($last, $written[24]['content']);
+            $this->assertSame(500, strlen($written[0]['content']));
+            $this->assertSame(450, strlen($written[24]['content']));
+            $this->assertNotSame($preview['sample']['posts'][0]['content'], $written[0]['content']);
+        }
     }
 }
