@@ -286,6 +286,9 @@ class Migration_Runner
         $errors = array();
         $dropped = 0;
         foreach ($raw_errors as $error) {
+            if (self::is_blank_error($error)) {
+                continue;
+            }
             $text = self::clean_error_text($error);
             if ($text === '') {
                 $dropped++;
@@ -1201,6 +1204,20 @@ class Migration_Runner
             }
         }
         return $out;
+    }
+
+    /**
+     * An empty or whitespace-only section error is not a failure.
+     *
+     * @param mixed $error
+     * @return bool
+     */
+    private static function is_blank_error($error)
+    {
+        if (!is_string($error)) {
+            return false;
+        }
+        return trim($error) === '';
     }
 
     /**
