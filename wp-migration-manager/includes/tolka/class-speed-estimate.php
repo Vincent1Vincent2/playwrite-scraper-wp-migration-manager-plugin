@@ -102,8 +102,9 @@ class Speed_Estimate
             if ($total_issue !== '') {
                 $reasons[] = $total_issue;
             }
-            $language_issue = self::count_issue(
+            $language_issue = self::combined_count_issue(
                 $metrics,
+                $measurement,
                 'language_count',
                 'The language count is not a usable number.',
                 'The language count cannot be negative.'
@@ -111,8 +112,9 @@ class Speed_Estimate
             if ($language_issue !== '') {
                 $reasons[] = $language_issue;
             }
-            $script_issue = self::count_issue(
+            $script_issue = self::combined_count_issue(
                 $metrics,
+                $measurement,
                 'script_count',
                 'The script count is not a usable number.',
                 'The script count cannot be negative.'
@@ -695,6 +697,36 @@ class Speed_Estimate
         }
 
         return '';
+    }
+
+    /**
+     * A negative count on the metrics or the measurement fails the estimate.
+     *
+     * @param array  $metrics
+     * @param array  $measurement
+     * @param string $key
+     * @param string $unusable
+     * @param string $negative
+     * @return string
+     */
+    private static function combined_count_issue(array $metrics, array $measurement, $key, $unusable, $negative)
+    {
+        $problem = '';
+        foreach (array($metrics, $measurement) as $source) {
+            $issue = self::count_issue($source, $key, $unusable, $negative);
+            if ($issue === '') {
+                continue;
+            }
+            if ($problem === '') {
+                $problem = $issue;
+                continue;
+            }
+            if ($problem !== $issue) {
+                return $problem . ' ' . $issue;
+            }
+        }
+
+        return $problem;
     }
 
     /**
