@@ -1414,7 +1414,7 @@ class Polylang_Strings
             return '';
         }
 
-        return $slug;
+        return $this->utf8($slug);
     }
 
     /**
@@ -1424,13 +1424,47 @@ class Polylang_Strings
     protected function to_text($value)
     {
         if (is_string($value)) {
-            return $value;
+            return $this->utf8($value);
         }
         if (is_int($value) || is_float($value)) {
-            return (string) $value;
+            return $this->utf8((string) $value);
         }
 
         return null;
+    }
+
+    /**
+     * Keep exported text in UTF-8 so the migration preview can be encoded as JSON.
+     *
+     * @param string $text Raw stored text.
+     * @return string
+     */
+    protected function utf8($text)
+    {
+        if ($text === '') {
+            return $text;
+        }
+        if (function_exists('wp_check_invalid_utf8')) {
+            $clean = wp_check_invalid_utf8($text, true);
+            return is_string($clean) ? $clean : '';
+        }
+        if (function_exists('mb_check_encoding') && mb_check_encoding($text, 'UTF-8')) {
+            return $text;
+        }
+        if (function_exists('mb_convert_encoding')) {
+            $clean = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+        if (function_exists('iconv')) {
+            $clean = iconv('UTF-8', 'UTF-8//IGNORE', $text);
+            if (is_string($clean)) {
+                return $clean;
+            }
+        }
+
+        return $text;
     }
 
     /**

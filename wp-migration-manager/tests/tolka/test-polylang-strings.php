@@ -1288,6 +1288,36 @@ class Test_Polylang_Strings extends PHPUnit\Framework\TestCase
     /**
      * @return void
      */
+    public function test_invalid_utf8_is_cleaned_so_the_preview_can_be_encoded()
+    {
+        $broken = "caf\xC3";
+        $result = $this->probe()->build_snapshot(array(
+            'active' => true,
+            'languages' => array('fr'),
+            'registered' => array(
+                array(
+                    'name' => $broken,
+                    'string' => $broken,
+                    'context' => $broken,
+                ),
+            ),
+            'mo' => array(
+                'fr' => array(array($broken, $broken)),
+            ),
+        ));
+
+        $item = $result['items'][0];
+        $this->assertSame($item['string'], $item['name']);
+        $this->assertSame($item['string'], $item['translations']['fr']);
+        $this->assertTrue(mb_check_encoding($item['string'], 'UTF-8'));
+        $this->assertTrue(mb_check_encoding($item['context'], 'UTF-8'));
+        $this->assertNotFalse(json_encode($result));
+        $this->assertStringContainsString('caf', $item['string']);
+    }
+
+    /**
+     * @return void
+     */
     public function test_string_zero_is_not_dropped()
     {
         $result = $this->probe()->build_snapshot(array(
