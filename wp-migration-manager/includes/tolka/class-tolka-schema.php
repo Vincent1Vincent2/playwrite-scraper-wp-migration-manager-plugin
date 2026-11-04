@@ -52,18 +52,27 @@ class Tolka_Schema
     /**
      * ISO-8601 GMT timestamp that ends with Z.
      *
+     * Only a whole timestamp is rewritten. A timestamp inside string text,
+     * a title, or a translation is left unchanged.
+     *
      * @param mixed $value Candidate timestamp.
      * @return string
      */
     public static function zulu($value)
     {
-        if (is_string($value)) {
-            $value = trim(self::text($value));
-            if (substr($value, -6) === '+00:00') {
-                $value = substr($value, 0, -6) . 'Z';
-            } elseif (substr($value, -1) === 'z') {
-                $value = substr($value, 0, -1) . 'Z';
-            }
+        if (!is_string($value)) {
+            return self::gmt_timestamp();
+        }
+
+        $value = trim(self::text($value));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|z|\+00:00)$/', $value)) {
+            return self::gmt_timestamp();
+        }
+
+        if (substr($value, -6) === '+00:00') {
+            $value = substr($value, 0, -6) . 'Z';
+        } elseif (substr($value, -1) === 'z') {
+            $value = substr($value, 0, -1) . 'Z';
         }
 
         if (self::is_gmt_timestamp($value)) {
@@ -179,7 +188,8 @@ class Tolka_Schema
      * Copy values into plain data so the package is a stable snapshot.
      *
      * Objects become arrays of their public properties. Cycles and very deep
-     * values are dropped instead of hanging the migration.
+     * values are dropped instead of hanging the migration. String text is
+     * copied as text: a timestamp inside it is not rewritten.
      *
      * @param mixed $value Value to copy.
      * @param array $seen  Object ids already visited.
@@ -252,7 +262,9 @@ class Tolka_Schema
      *
      * Null bytes are removed so MySQL does not cut the value short. Bytes
      * that are not UTF-8 are removed. HTML tags, entities, and comments in
-     * post content, titles, and strings are kept.
+     * post content, titles, and strings are kept. A timestamp written in
+     * that text, including one that ends with +00:00 or a lowercase z, is
+     * not changed. Only the package generated_at field is normalized.
      *
      * @param mixed $value Raw text.
      * @return string
