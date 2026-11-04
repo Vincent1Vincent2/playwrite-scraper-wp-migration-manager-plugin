@@ -734,20 +734,9 @@
     var trimmed = String(text == null ? "" : text)
       .replace(/^\uFEFF/, "")
       .trim();
-
-    if (trimmed === "-1") {
-      return {
-        ok: false,
-        malformed: true,
-        error: "The security check failed, so reload the page and try again.",
-      };
-    }
-    if (trimmed === "0") {
-      return {
-        ok: false,
-        malformed: true,
-        error: "The migration request was not recognized, so reload the page and try again.",
-      };
+    var dieSentence = wordpressDieSentence(trimmed);
+    if (dieSentence) {
+      return { ok: false, malformed: true, error: dieSentence };
     }
 
     var json;
@@ -775,6 +764,20 @@
     }
 
     return { ok: true, data: json.data == null ? {} : json.data };
+  }
+
+  function wordpressDieSentence(body) {
+    var token = String(body == null ? "" : body)
+      .replace(/\uFEFF/g, "")
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+      .replace(/^\s+|\s+$/g, "");
+    if (token === "-1") {
+      return "The security check failed, so reload the page and try again.";
+    }
+    if (token === "0") {
+      return "The request was not recognized, so reload the page and try again.";
+    }
+    return "";
   }
 
   function isJsonObject(value) {
