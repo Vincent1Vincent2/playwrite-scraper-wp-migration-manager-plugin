@@ -1564,9 +1564,21 @@ class Polylang_Strings
         if ($text === '') {
             return $text;
         }
+        if (strpos($text, "\0") !== false) {
+            $text = str_replace("\0", '', $text);
+        }
+        if ($text === '') {
+            return $text;
+        }
         if (function_exists('wp_check_invalid_utf8')) {
             $clean = wp_check_invalid_utf8($text, true);
-            return is_string($clean) ? $clean : '';
+            if (!is_string($clean)) {
+                return '';
+            }
+            if (strpos($clean, "\0") !== false) {
+                $clean = str_replace("\0", '', $clean);
+            }
+            return $clean;
         }
         if (function_exists('mb_check_encoding') && mb_check_encoding($text, 'UTF-8')) {
             return $text;
