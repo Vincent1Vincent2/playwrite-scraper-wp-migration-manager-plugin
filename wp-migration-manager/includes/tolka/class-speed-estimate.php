@@ -74,7 +74,14 @@ class Speed_Estimate
     /**
      * Project a Tolka load time.
      *
-     * @param array $measurement Loader measurement. `ok` must be true.
+     * The returned array always has ok, current_ms, tolka_ms, faster_percent,
+     * faster_label, overhead_ms, basis, provenance, provenance_note,
+     * coefficients, and error. On success, faster_label is "{percent}% faster"
+     * with one decimal, and error is empty. On failure, the three times are 0,
+     * faster_percent is 0, faster_label is empty, and error is the sentence
+     * to show the admin. basis is always the benchmarks.json sentence.
+     *
+     * @param array $measurement Loader measurement. `ok` must be boolean true.
      * @param array $metrics     Metrics from Speed_Metrics::analyze().
      * @param array $benchmarks  Coefficients, normally from benchmarks().
      * @return array
@@ -183,7 +190,7 @@ class Speed_Estimate
      */
     private static function read_benchmarks($path)
     {
-        if (!is_string($path) || !is_readable($path)) {
+        if (!is_string($path) || !is_file($path) || !is_readable($path)) {
             return array();
         }
 
@@ -243,9 +250,16 @@ class Speed_Estimate
      */
     private static function measurement_failure_sentence(array $measurement)
     {
+        $url = self::public_url(isset($measurement['url']) ? $measurement['url'] : '');
         $detail = self::plain_detail(isset($measurement['error']) ? $measurement['error'] : '');
-        if ($detail === '' || preg_match('/[\p{L}\p{N}]/u', $detail) !== 1) {
-            return self::translate('The page could not be measured.');
+        $has_detail = $detail !== '' && preg_match('/[\p{L}\p{N}]/u', $detail) === 1;
+
+        if (!$has_detail) {
+            if ($url === '') {
+                return self::translate('The page could not be measured.');
+            }
+
+            return sprintf(self::translate('The page at %s could not be measured.'), $url);
         }
 
         if (preg_match('/\s/u', $detail) === 1) {
@@ -253,12 +267,59 @@ class Speed_Estimate
                 $detail .= '.';
             }
 
-            return self::translate('The page could not be measured.') . ' ' . $detail;
+            $lead = $url === ''
+                ? self::translate('The page could not be measured.')
+                : sprintf(self::translate('The page at %s could not be measured.'), $url);
+
+            return $lead . ' ' . $detail;
         }
 
         $detail = rtrim($detail, '.');
+        if ($url === '') {
+            return sprintf(self::translate('The page could not be measured (%s).'), $detail);
+        }
 
-        return sprintf(self::translate('The page could not be measured (%s).'), $detail);
+        return sprintf(self::translate('The page at %s could not be measured (%s).'), $url, $detail);
+    }
+
+    /**
+     * HTTP(S) URL safe to repeat in an admin sentence.
+     *
+     * Credentials are left out so a failed measurement cannot echo them.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private static function public_url($value)
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        $url = trim($value);
+        if ($url === '' || $url !== trim(strip_tags($url))) {
+            return '';
+        }
+
+        if (strlen($url) > 200 || preg_match('/\s/u', $url) === 1) {
+            return '';
+        }
+
+        if (preg_match('#\Ahttps?://#i', $url) !== 1 || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return '';
+        }
+
+        $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : '';
+        if (($scheme !== 'http' && $scheme !== 'https') || isset($parts['user']) || isset($parts['pass'])) {
+            return '';
+        }
+
+        return $url;
     }
 
     /**
@@ -443,9 +504,44 @@ class Speed_Estimate
             'basis' => self::BASIS,
             'provenance' => self::text_field($benchmarks, 'provenance'),
             'provenance_note' => self::text_field($benchmarks, 'provenance_note'),
-            'coefficients' => $benchmarks,
+            'coefficients' => self::json_safe_array($benchmarks),
             'error' => $error,
         );
+    }
+
+    /**
+     * Copy coefficients into a shape wp_send_json can encode.
+     *
+     * INF, NAN, and resources would make the whole admin response fail.
+     *
+     * @param array $value
+     * @param int   $depth
+     * @return array
+     */
+    private static function json_safe_array(array $value, $depth = 0)
+    {
+        if ($depth > 8) {
+            return array();
+        }
+
+        $safe = array();
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $safe[$key] = self::json_safe_array($item, $depth + 1);
+                continue;
+            }
+            if (is_string($item) || is_int($item) || is_bool($item) || $item === null) {
+                $safe[$key] = $item;
+                continue;
+            }
+            if (is_float($item)) {
+                $safe[$key] = is_finite($item) ? $item : null;
+                continue;
+            }
+            $safe[$key] = null;
+        }
+
+        return $safe;
     }
 
     /**
@@ -589,7 +685,7 @@ class Speed_Estimate
         if (is_string($value)) {
             $normalized = strtolower(trim($value));
 
-            return in_array($normalized, array('1', 'true', 'yes'), true);
+            return in_array($normalized, array('1', 'true', 'yes', 'on'), true);
         }
 
         return false;
@@ -645,8 +741,16 @@ class Speed_Estimate
      */
     private static function plain_detail($value)
     {
+        if (is_int($value) || (is_float($value) && is_finite($value))) {
+            $value = (string) $value;
+        }
+
         if (!is_string($value)) {
             return '';
+        }
+
+        if (strlen($value) > 4000) {
+            $value = self::byte_prefix($value, 4000);
         }
 
         $detail = strip_tags($value);
@@ -673,6 +777,37 @@ class Speed_Estimate
     }
 
     /**
+     * First $bytes of a string, backed up so a multibyte character is not split.
+     *
+     * @param string $value
+     * @param int    $bytes
+     * @return string
+     */
+    private static function byte_prefix($value, $bytes)
+    {
+        if (strlen($value) <= $bytes) {
+            return $value;
+        }
+
+        $prefix = substr($value, 0, $bytes);
+        if (!is_string($prefix)) {
+            return '';
+        }
+        if (preg_match('//u', $prefix) === 1) {
+            return $prefix;
+        }
+
+        for ($trim = 1; $trim <= 3; $trim++) {
+            $candidate = substr($prefix, 0, -$trim);
+            if (is_string($candidate) && preg_match('//u', $candidate) === 1) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    /**
      * Keep a measurement error inside one short fragment.
      *
      * Prefer the last whole word so the admin does not see a cut-off token.
@@ -688,13 +823,40 @@ class Speed_Estimate
             return $detail;
         }
 
-        $slice = self::string_slice($detail, $limit - 1);
-        $space = self::string_last_space($slice);
-        if ($space !== null && $space >= 80) {
-            $slice = self::string_slice($detail, $space);
+        $room = $limit - 1;
+        $slice = self::string_slice($detail, $room);
+        $extended = self::string_slice($detail, $room + 1);
+        $next = self::string_length($extended) > $room ? self::string_last_character($extended) : '';
+        $ends_on_boundary = $next === '' || $next === ' ' || substr($slice, -1) === ' ';
+        if (!$ends_on_boundary) {
+            $space = self::string_last_space($slice);
+            if ($space !== null && $space >= 80) {
+                $slice = self::string_slice($slice, $space);
+            }
         }
 
         return rtrim($slice) . '…';
+    }
+
+    /**
+     * @param string $text
+     * @return string
+     */
+    private static function string_last_character($text)
+    {
+        if ($text === '') {
+            return '';
+        }
+
+        if (function_exists('mb_substr')) {
+            return (string) mb_substr($text, -1);
+        }
+
+        if (preg_match('/.$/us', $text, $matches) === 1) {
+            return $matches[0];
+        }
+
+        return (string) substr($text, -1);
     }
 
     /**
@@ -707,6 +869,11 @@ class Speed_Estimate
             return (int) mb_strlen($text);
         }
 
+        $count = preg_match_all('/./u', $text, $matches);
+        if ($count !== false) {
+            return (int) $count;
+        }
+
         return strlen($text);
     }
 
@@ -717,8 +884,17 @@ class Speed_Estimate
      */
     private static function string_slice($text, $length)
     {
+        if ($length < 1) {
+            return '';
+        }
+
         if (function_exists('mb_substr')) {
             return (string) mb_substr($text, 0, $length);
+        }
+
+        $pattern = '/^.{0,' . $length . '}/us';
+        if (preg_match($pattern, $text, $matches) === 1) {
+            return $matches[0];
         }
 
         return substr($text, 0, $length);
