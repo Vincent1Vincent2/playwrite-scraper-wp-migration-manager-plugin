@@ -521,6 +521,7 @@ class Polylang_Menus
             $by_lang = isset($assignments[$slug]) && is_array($assignments[$slug])
                 ? $assignments[$slug]
                 : array();
+            // The same menu id is copied under every location that points at it.
             $item = $this->location_item((string) $slug, $by_lang, $languages);
             foreach ($item['translations'] as $translation) {
                 if (! empty($translation['menu_id'])) {
