@@ -1,0 +1,2324 @@
+<?php
+
+/**
+ * Read Polylang term translations for the Tolka migration.
+ *
+ * The class only reads. It does not delete terms, options, or Polylang rows.
+ *
+ * @package MigrationManager
+ */
+
+namespace WMM\Tolka;
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+if (class_exists(__NAMESPACE__ . '\\Polylang_Terms', false)) {
+    return;
+}
+
+class Polylang_Terms
+{
+    /**
+     * Optional snapshot reader used by tests. Production leaves this unset.
+     *
+     * @var callable|null
+     */
+    private $reader = null;
+
+    /**
+     * How many terms to read per query.
+     *
+     * @var int
+     */
+    private $pageSize = 500;
+
+    /**
+     * @param callable|null $reader
+     */
+    public function __construct($reader = null)
+    {
+        $this->reader = $reader;
+    }
+
+    /**
+     * Export term translation groups and terms Polylang never linked.
+     *
+     * Each item has taxonomy, group (`term:{id}`), and translations.
+     * A translation is keyed by language slug and has id, name, slug, description, and parent.
+     * HTML in a name is kept. Letters such as å, ä, and ö are kept in names and slugs.
+     * Null bytes are removed from names, slugs, parents, and language slugs. Slug case is normalized, and å, ä, and ö stay letters.
+     * A slug of only whitespace becomes empty. A missing description is an empty string, not null.
+     * An empty name is still exported. The term is not dropped when its slug is empty.
+     * HTML in a description is kept. A null byte in a description is removed.
+     * parent is that language's WordPress parent term id, or 0 when the term has none.
+     * Calling export() again on the same instance returns the same groups after slug case is normalized.
+     * The group id is the default-language term when that translation exists,
+     * otherwise the lowest term id in the group.
+     *
+     * @return array{items: array<int, array<string, mixed>>, errors: array<int, string>}
+     */
+    public function export()
+    {
+        try {
+            $snapshot = $this->loadSnapshot();
+            return $this->packageSnapshot(is_array($snapshot) ? $snapshot : array('state' => 'failed'));
+        } catch (\Throwable $e) {
+            return array(
+                'items' => array(),
+                'errors' => array($this->failureSentence()),
+            );
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function loadSnapshot()
+    {
+        if (is_callable($this->reader)) {
+            $snapshot = call_user_func($this->reader);
+            return is_array($snapshot) ? $snapshot : array('state' => 'failed');
+        }
+
+        $default = $this->defaultLanguage();
+        $api = null;
+
+        if ($this->apiReady()) {
+            $api = $this->readFromApi($default);
+            if (is_array($api) && $this->hasSnapshotItems($api)) {
+                return $api;
+            }
+        }
+
+        if ($this->databaseReady()) {
+            $stored = $this->readFromStorage($default);
+            if (is_array($stored) && ($this->hasSnapshotItems($stored) || !is_array($api))) {
+                return $stored;
+            }
+            if (!is_array($stored) && !is_array($api)) {
+                return $this->emptySnapshot($default, 'failed');
+            }
+        } elseif (!is_array($api)) {
+            $state = ($this->apiReady() || $this->polylangEvidence(array())) ? 'failed' : 'inactive';
+            return $this->emptySnapshot($default, $state);
+        }
+
+        return $api;
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     * @return array{items: array<int, array<string, mixed>>, errors: array<int, string>}
+     */
+    private function packageSnapshot($snapshot)
+    {
+        $errors = array();
+        if (isset($snapshot['errors']) && is_array($snapshot['errors'])) {
+            $errors = $this->uniqueStrings($snapshot['errors']);
+        }
+
+        $default = '';
+        if (isset($snapshot['default_lang']) && is_string($snapshot['default_lang'])) {
+            $default = strtolower(trim($snapshot['default_lang']));
+        }
+        $fallback = '';
+        if (isset($snapshot['fallback_lang']) && is_string($snapshot['fallback_lang'])) {
+            $fallback = strtolower(trim($snapshot['fallback_lang']));
+        }
+        $assignLanguage = $default !== '' ? $default : $fallback;
+        $assignKind = $default !== '' ? 'default' : ($fallback !== '' ? 'stored' : '');
+
+        $state = 'ok';
+        if (isset($snapshot['state']) && is_string($snapshot['state']) && $snapshot['state'] !== '') {
+            $state = $snapshot['state'];
+        }
+
+        $items = array();
+        $used = array();
+        $duplicateIds = array();
+        $caseNotes = array();
+        $unassigned = 0;
+        $groups = isset($snapshot['groups']) && is_array($snapshot['groups']) ? $snapshot['groups'] : array();
+
+        foreach ($groups as $group) {
+            $item = $this->itemFromGroup($group, $default, $used, $duplicateIds, $caseNotes);
+            if ($item === null) {
+                continue;
+            }
+            $items[] = $item;
+            if ($default !== '' && !isset($item['translations'][$default]) && count($item['translations']) > 1) {
+                $errors[] = sprintf(
+                    $this->text('Translation group %1$s does not include the default language (%2$s). The group is named after term %3$d.'),
+                    $item['group'],
+                    $default,
+                    $this->groupNumber($item['group'])
+                );
+            }
+        }
+
+        $loose = isset($snapshot['untranslated']) && is_array($snapshot['untranslated']) ? $snapshot['untranslated'] : array();
+        foreach ($loose as $term) {
+            $item = $this->itemFromUntranslated($term, $assignLanguage, $used, $unassigned);
+            if ($item !== null) {
+                $items[] = $item;
+            }
+        }
+
+        $duplicateSentences = array();
+        foreach ($duplicateIds as $duplicateId) {
+            $duplicateSentences[] = sprintf(
+                $this->text('Term %d belongs to more than one translation group. The extra copy was skipped.'),
+                (int) $duplicateId
+            );
+        }
+        $this->appendCapped($errors, $duplicateSentences);
+        $this->appendCapped($errors, $this->languageCaseSentences($caseNotes));
+        if ($unassigned > 0 && $assignKind === 'default') {
+            $errors[] = $this->unassignedSentence($unassigned, $assignLanguage, 'default');
+        } elseif ($unassigned > 0 && $assignKind === 'stored') {
+            $errors[] = $this->unassignedSentence($unassigned, $assignLanguage, 'stored');
+        } elseif ($unassigned > 0) {
+            $errors[] = $this->countSentence(
+                $unassigned,
+                'A term has no Polylang language. It is included with a blank language so it is not dropped.',
+                '%d terms have no Polylang language. They are included with a blank language so they are not dropped.'
+            );
+        }
+
+        if ($items === array() && $state === 'inactive') {
+            $errors[] = $this->inactiveSentence();
+        }
+        if ($items === array() && $state === 'failed') {
+            $errors[] = $this->failureSentence();
+        }
+
+        foreach ($items as $index => $item) {
+            if (!isset($item['translations']) || !is_array($item['translations'])) {
+                continue;
+            }
+            foreach ($item['translations'] as $lang => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $row['name'] = $this->stringValue(isset($row['name']) ? $row['name'] : '');
+                $row['slug'] = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
+                $description = array_key_exists('description', $row) ? $row['description'] : '';
+                $row['description'] = $this->descriptionValue($description);
+                $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
+                $items[$index]['translations'][$lang] = $row;
+            }
+        }
+
+        $seenGroups = array();
+        $deduped = array();
+        foreach ($items as $item) {
+            $taxonomy = isset($item['taxonomy']) ? (string) $item['taxonomy'] : '';
+            if ($this->isInternalTaxonomy($taxonomy)) {
+                continue;
+            }
+            $group = isset($item['group']) ? (string) $item['group'] : '';
+            if ($group === '' || isset($seenGroups[$group])) {
+                continue;
+            }
+            $seenGroups[$group] = true;
+            $deduped[] = $item;
+        }
+        $items = $deduped;
+
+        usort($items, function ($left, $right) {
+            return $this->compareItems($left, $right);
+        });
+
+        return array(
+            'items' => array_values($items),
+            'errors' => $this->uniqueStrings($errors),
+        );
+    }
+
+    /**
+     * @param mixed $group
+     * @param array<int, bool> $used
+     * @param bool $duplicate
+     * @return array<string, mixed>|null
+     */
+    private function itemFromGroup($group, $default, array &$used, array &$duplicateIds, array &$caseNotes)
+    {
+        if (!is_array($group)) {
+            return null;
+        }
+
+        $taxonomy = isset($group['taxonomy']) && is_string($group['taxonomy']) ? $group['taxonomy'] : '';
+        if ($taxonomy === '' || $this->isInternalTaxonomy($taxonomy)) {
+            return null;
+        }
+
+        $raw = isset($group['translations']) && is_array($group['translations']) ? $group['translations'] : array();
+        $translations = array();
+        $seenHere = array();
+
+        foreach ($raw as $lang => $row) {
+            $key = $this->languageKey($lang);
+            $normalized = $this->normalizeTranslationRow($row);
+            if ($key === null || $normalized === null) {
+                continue;
+            }
+            if (isset($translations[$key])) {
+                $existingId = (int) $translations[$key]['id'];
+                $newId = (int) $normalized['id'];
+                if ($existingId === $newId) {
+                    continue;
+                }
+                $incomingLower = $this->spellingWasLowercase($lang, $key);
+                if ($incomingLower) {
+                    $caseNotes[] = array('kept' => $newId, 'dropped' => $existingId, 'lang' => $key);
+                    $used[$existingId] = true;
+                    $seenHere[$newId] = true;
+                    $translations[$key] = $normalized;
+                } else {
+                    $caseNotes[] = array('kept' => $existingId, 'dropped' => $newId, 'lang' => $key);
+                    $used[$newId] = true;
+                }
+                continue;
+            }
+            if (isset($used[$normalized['id']]) || isset($seenHere[$normalized['id']])) {
+                $duplicateIds[$normalized['id']] = (int) $normalized['id'];
+                continue;
+            }
+            $seenHere[$normalized['id']] = true;
+            $translations[$key] = $normalized;
+        }
+
+        if ($translations === array()) {
+            return null;
+        }
+
+        foreach ($translations as $row) {
+            $used[$row['id']] = true;
+        }
+
+        $translations = $this->orderTranslations($translations, $default);
+        $anchor = $this->anchorId($translations, $default);
+        if ($anchor <= 0) {
+            return null;
+        }
+
+        return array(
+            'taxonomy' => $taxonomy,
+            'group' => 'term:' . $anchor,
+            'translations' => $translations,
+        );
+    }
+
+    /**
+     * @param mixed $term
+     * @param array<int, bool> $used
+     * @param int $unassigned
+     * @return array<string, mixed>|null
+     */
+    private function itemFromUntranslated($term, $default, array &$used, &$unassigned)
+    {
+        if (!is_array($term)) {
+            return null;
+        }
+
+        $taxonomy = isset($term['taxonomy']) && is_string($term['taxonomy']) ? $term['taxonomy'] : '';
+        $id = isset($term['id']) ? (int) $term['id'] : 0;
+        if ($taxonomy === '' || $this->isInternalTaxonomy($taxonomy) || $id <= 0 || isset($used[$id])) {
+            return null;
+        }
+
+        $lang = '';
+        if (isset($term['lang']) && is_string($term['lang'])) {
+            $lang = strtolower(trim($term['lang']));
+        }
+        if ($lang === '') {
+            $unassigned++;
+            $lang = $default;
+        }
+
+        $used[$id] = true;
+
+        return array(
+            'taxonomy' => $taxonomy,
+            'group' => 'term:' . $id,
+            'translations' => array(
+                $lang => array(
+                    'id' => $id,
+                    'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
+                    'slug' => $this->slugValue(isset($term['slug']) ? $term['slug'] : ''),
+                    'description' => $this->descriptionValue(isset($term['description']) ? $term['description'] : ''),
+                    'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
+                ),
+            ),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function readFromApi($default)
+    {
+        $taxonomies = $this->translatedTaxonomies();
+        $listed = $this->listTerms($taxonomies);
+        if ($listed === null) {
+            return null;
+        }
+
+        $errors = array();
+        if (!empty($listed['failed'])) {
+            $errors[] = $this->listFailureSentence($listed['failed']);
+        }
+
+        $index = array();
+        foreach ($listed['terms'] as $term) {
+            $index[$term['id']] = $term;
+        }
+
+        $groups = array();
+        $groupedIds = array();
+        $seenMaps = array();
+        $apiFailures = 0;
+        $missing = array();
+        $mismatched = array();
+        $caseNotes = array();
+
+        foreach ($listed['terms'] as $term) {
+            $termId = (int) $term['id'];
+            if ($termId <= 0 || isset($groupedIds[$termId])) {
+                continue;
+            }
+
+            $map = $this->apiTranslationMap($termId);
+            if ($map === null) {
+                $apiFailures++;
+                continue;
+            }
+            if ($map === array()) {
+                continue;
+            }
+
+            $folded = $this->foldLanguageIds($map);
+            $clean = $folded['map'];
+            foreach ($folded['dropped'] as $droppedId) {
+                $groupedIds[(int) $droppedId] = true;
+            }
+            foreach ($folded['notes'] as $note) {
+                $caseNotes[] = $note;
+            }
+            if ($clean === array()) {
+                continue;
+            }
+
+            ksort($clean);
+            $signature = array();
+            foreach ($clean as $key => $translatedId) {
+                $signature[] = $key . ':' . $translatedId;
+            }
+            $signature = implode('|', $signature);
+            if (isset($seenMaps[$signature])) {
+                continue;
+            }
+            $seenMaps[$signature] = true;
+
+            $built = $this->translationsFromMap($clean, $term['taxonomy'], $index, $groupedIds);
+            if ($built['group'] !== null) {
+                $groups[] = $built['group'];
+            }
+            $missing = array_merge($missing, $built['missing']);
+            $mismatched = array_merge($mismatched, $built['mismatched']);
+        }
+
+        $this->appendTermProblems($errors, $missing, $mismatched);
+        $this->appendCapped($errors, $this->languageCaseSentences($caseNotes));
+        if ($apiFailures > 0) {
+            $errors[] = $this->countSentence(
+                $apiFailures,
+                'Polylang could not return one term translation. The export continued with the terms it could read.',
+                'Polylang could not return %d term translations. The export continued with the terms it could read.'
+            );
+        }
+
+        $languageMap = array();
+        if ($this->databaseReady()) {
+            $languageMap = $this->fetchLanguageMap();
+        }
+        $notes = array();
+        $groups = $this->applyActualLanguages($groups, $languageMap, $notes);
+        $this->appendCapped($errors, $notes);
+
+        $untranslated = array();
+        foreach ($listed['terms'] as $term) {
+            $termId = (int) $term['id'];
+            if ($termId <= 0 || isset($groupedIds[$termId])) {
+                continue;
+            }
+            $lang = $this->apiTermLanguage($termId);
+            if ($lang === '' && isset($languageMap[$termId])) {
+                $lang = $languageMap[$termId];
+            }
+            $untranslated[] = array(
+                'taxonomy' => $term['taxonomy'],
+                'lang' => $lang,
+                'id' => $termId,
+                'name' => $term['name'],
+                'slug' => $term['slug'],
+                'description' => isset($term['description']) ? $term['description'] : '',
+                'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
+            );
+        }
+
+        return array(
+            'state' => 'ok',
+            'default_lang' => $default,
+            'fallback_lang' => $default === '' ? $this->fallbackLanguage() : '',
+            'groups' => $groups,
+            'untranslated' => $untranslated,
+            'errors' => $this->uniqueStrings($errors),
+        );
+    }
+
+    /**
+     * @param array<string, int> $clean
+     * @param array<int, array<string, mixed>> $index
+     * @param array<int, bool> $groupedIds
+     * @param bool $authoritativeIndex
+     * @return array{group: array<string, mixed>|null, missing: array<int, int>, mismatched: array<int, array<string, mixed>>}
+     */
+    private function translationsFromMap($clean, $fallbackTaxonomy, array $index, array &$groupedIds, $authoritativeIndex = false)
+    {
+        $translations = array();
+        $taxonomy = is_string($fallbackTaxonomy) ? $fallbackTaxonomy : '';
+        $missing = array();
+        $mismatched = array();
+
+        foreach ($clean as $lang => $translatedId) {
+            $details = $this->detailsForId($translatedId, $index, $authoritativeIndex);
+            if ($details === null) {
+                $missing[] = $translatedId;
+                continue;
+            }
+            if ($this->isInternalTaxonomy($details['taxonomy'])) {
+                $groupedIds[$translatedId] = true;
+                continue;
+            }
+            if ($taxonomy === '') {
+                $taxonomy = $details['taxonomy'];
+            } elseif ($details['taxonomy'] !== $taxonomy) {
+                $mismatched[] = array(
+                    'id' => $translatedId,
+                    'taxonomy' => $details['taxonomy'],
+                    'group_taxonomy' => $taxonomy,
+                );
+                $groupedIds[$translatedId] = true;
+                continue;
+            }
+            $groupedIds[$translatedId] = true;
+            $translations[$lang] = array(
+                'id' => $translatedId,
+                'name' => $this->stringValue(isset($details['name']) ? $details['name'] : ''),
+                'slug' => $this->slugValue(isset($details['slug']) ? $details['slug'] : ''),
+                'description' => $this->descriptionValue(isset($details['description']) ? $details['description'] : ''),
+                'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
+            );
+        }
+
+        $group = null;
+        if ($translations !== array() && $taxonomy !== '' && !$this->isInternalTaxonomy($taxonomy)) {
+            $group = array(
+                'taxonomy' => $taxonomy,
+                'translations' => $translations,
+            );
+        }
+
+        return array(
+            'group' => $group,
+            'missing' => $missing,
+            'mismatched' => $mismatched,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function readFromStorage($default)
+    {
+        $groupRows = $this->fetchGroupRows();
+        if ($groupRows === null) {
+            return null;
+        }
+
+        $errors = array();
+        $decodedGroups = array();
+        $neededIds = array();
+        $corrupt = 0;
+
+        foreach ($groupRows as $row) {
+            if (!is_array($row) || !array_key_exists('description', $row)) {
+                $corrupt++;
+                continue;
+            }
+            $map = $this->decodeMap($row['description']);
+            if ($map === null) {
+                $corrupt++;
+                $termTaxonomyId = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
+                if ($termTaxonomyId > 0) {
+                    $decodedGroups[] = array(
+                        'map' => array(),
+                        'term_taxonomy_id' => $termTaxonomyId,
+                    );
+                }
+                continue;
+            }
+
+            $folded = $this->foldLanguageIds($map);
+            $clean = $folded['map'];
+            foreach ($clean as $id) {
+                $neededIds[(int) $id] = (int) $id;
+            }
+            $termTaxonomyId = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
+            if ($clean !== array() || $termTaxonomyId > 0) {
+                $decodedGroups[] = array(
+                    'map' => $clean,
+                    'dropped' => $folded['dropped'],
+                    'notes' => $folded['notes'],
+                    'term_taxonomy_id' => $termTaxonomyId,
+                );
+            }
+        }
+
+        if ($corrupt === 1) {
+            $errors[] = $this->text('A term translation group\'s stored description was invalid and was ignored. Terms linked to that group are still included.');
+        } elseif ($corrupt > 1) {
+            $errors[] = sprintf(
+                $this->text('%d term translation groups had invalid stored descriptions. Those descriptions were ignored. Terms linked to those groups are still included.'),
+                $corrupt
+            );
+        }
+
+        $evidence = $this->polylangEvidence($groupRows);
+        $languageMap = array();
+        if ($decodedGroups !== array() || $evidence) {
+            $languageMap = $this->fetchLanguageMap();
+        }
+        $ttIds = array();
+        foreach ($decodedGroups as $group) {
+            if ($group['term_taxonomy_id'] > 0) {
+                $ttIds[] = $group['term_taxonomy_id'];
+            }
+        }
+        $linkNotes = array();
+        $links = $this->fetchGroupLinks($ttIds, $errors);
+        foreach ($decodedGroups as $index => $group) {
+            $linked = array();
+            if ($group['term_taxonomy_id'] > 0 && isset($links[$group['term_taxonomy_id']])) {
+                $linked = $links[$group['term_taxonomy_id']];
+            }
+            $map = $this->mergeLinkedTerms($group['map'], $linked, $languageMap, $linkNotes);
+            $decodedGroups[$index]['map'] = $map;
+            foreach ($map as $id) {
+                $neededIds[(int) $id] = (int) $id;
+            }
+        }
+        $this->appendCapped($errors, $linkNotes);
+
+        $details = array();
+        if ($neededIds !== array()) {
+            $fetched = $this->fetchTermsByIds(array_values($neededIds));
+            if ($fetched === null) {
+                return null;
+            }
+            foreach ($fetched as $row) {
+                $normalized = $this->normalizeListedTerm($row, true);
+                if ($normalized === null) {
+                    continue;
+                }
+                $existing = isset($details[$normalized['id']]) ? $details[$normalized['id']] : null;
+                $details[$normalized['id']] = $this->preferListedTerm($existing, $normalized);
+            }
+        }
+
+        $taxonomies = array();
+        if ($evidence) {
+            foreach ($this->translatedTaxonomies() as $taxonomy) {
+                $taxonomies[$taxonomy] = $taxonomy;
+            }
+        }
+
+        $groups = array();
+        $groupedIds = array();
+        $missing = array();
+        $mismatched = array();
+        $caseNotes = array();
+        foreach ($decodedGroups as $group) {
+            $clean = isset($group['map']) && is_array($group['map']) ? $group['map'] : array();
+            if (isset($group['dropped']) && is_array($group['dropped'])) {
+                foreach ($group['dropped'] as $droppedId) {
+                    $groupedIds[(int) $droppedId] = true;
+                }
+            }
+            if (isset($group['notes']) && is_array($group['notes'])) {
+                foreach ($group['notes'] as $note) {
+                    $caseNotes[] = $note;
+                }
+            }
+            if ($clean === array()) {
+                continue;
+            }
+            $built = $this->translationsFromMap($clean, '', $details, $groupedIds, true);
+            $missing = array_merge($missing, $built['missing']);
+            $mismatched = array_merge($mismatched, $built['mismatched']);
+            if ($built['group'] === null) {
+                continue;
+            }
+            $groups[] = $built['group'];
+            $taxonomies[$built['group']['taxonomy']] = $built['group']['taxonomy'];
+        }
+        $this->appendTermProblems($errors, $missing, $mismatched);
+        $this->appendCapped($errors, $this->languageCaseSentences($caseNotes));
+
+        $notes = array();
+        $groups = $this->applyActualLanguages($groups, $languageMap, $notes);
+        $this->appendCapped($errors, $notes);
+
+        $untranslated = array();
+        if ($evidence) {
+            foreach ($taxonomies as $taxonomy) {
+                if ($this->isInternalTaxonomy($taxonomy)) {
+                    continue;
+                }
+                $rows = $this->fetchTermsForTaxonomy($taxonomy);
+                if ($rows === null) {
+                    $errors[] = sprintf(
+                        $this->text('The %s terms could not be listed and were skipped.'),
+                        $taxonomy
+                    );
+                    continue;
+                }
+                foreach ($rows as $term) {
+                    if (!is_array($term) || empty($term['id']) || isset($groupedIds[(int) $term['id']])) {
+                        continue;
+                    }
+                    $termId = (int) $term['id'];
+                    $untranslated[] = array(
+                        'taxonomy' => $term['taxonomy'],
+                        'lang' => isset($languageMap[$termId]) ? $languageMap[$termId] : '',
+                        'id' => $termId,
+                        'name' => $term['name'],
+                        'slug' => $term['slug'],
+                        'description' => isset($term['description']) ? $term['description'] : '',
+                        'parent' => isset($term['parent']) ? $this->parentId($term['parent']) : 0,
+                    );
+                }
+            }
+        }
+
+        $state = 'ok';
+        if (!$evidence && $groups === array() && $untranslated === array()) {
+            $state = 'inactive';
+        }
+
+        return array(
+            'state' => $state,
+            'default_lang' => $default,
+            'fallback_lang' => $default === '' ? $this->fallbackLanguage() : '',
+            'groups' => $groups,
+            'untranslated' => $untranslated,
+            'errors' => $this->uniqueStrings($errors),
+        );
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $index
+     * @return array<string, mixed>|null
+     */
+    private function detailsForId($id, array $index, $authoritativeIndex = false)
+    {
+        $id = (int) $id;
+        if ($id <= 0) {
+            return null;
+        }
+        if (isset($index[$id])) {
+            return $index[$id];
+        }
+        if ($authoritativeIndex) {
+            return null;
+        }
+        if (function_exists('get_term')) {
+            try {
+                $term = get_term($id);
+            } catch (\Throwable $e) {
+                $term = null;
+            }
+            $normalized = $this->normalizeListedTerm($term, true);
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+        if ($this->databaseReady()) {
+            $rows = $this->fetchTermsByIds(array($id));
+            if (is_array($rows)) {
+                $preferred = null;
+                foreach ($rows as $row) {
+                    $normalized = $this->normalizeListedTerm($row, true);
+                    if ($normalized === null || $normalized['id'] !== $id) {
+                        continue;
+                    }
+                    $preferred = $this->preferListedTerm($preferred, $normalized);
+                }
+                if ($preferred !== null && !$this->isInternalTaxonomy($preferred['taxonomy'])) {
+                    return $preferred;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return array{terms: array<int, array<string, mixed>>, failed: array<int, string>}|null
+     */
+    private function listTerms(array $taxonomies)
+    {
+        $terms = array();
+        $seen = array();
+        $failed = array();
+        $queried = 0;
+
+        foreach ($taxonomies as $taxonomy) {
+            if (!is_string($taxonomy) || $taxonomy === '' || $this->isInternalTaxonomy($taxonomy)) {
+                continue;
+            }
+            $queried++;
+            $batch = $this->listTaxonomyTerms($taxonomy);
+            if ($batch === null) {
+                $failed[] = $taxonomy;
+                continue;
+            }
+            foreach ($batch as $term) {
+                if (isset($seen[$term['id']])) {
+                    continue;
+                }
+                $seen[$term['id']] = true;
+                $terms[] = $term;
+            }
+        }
+
+        if ($queried > 0 && count($failed) === $queried) {
+            return null;
+        }
+
+        return array(
+            'terms' => $terms,
+            'failed' => $failed,
+        );
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>|null
+     */
+    protected function listTaxonomyTerms($taxonomy)
+    {
+        if (function_exists('get_terms')) {
+            $listed = $this->listTaxonomyTermsWithApi($taxonomy);
+            if ($listed !== null) {
+                return $listed;
+            }
+        }
+        if ($this->databaseReady()) {
+            return $this->fetchTermsForTaxonomy($taxonomy);
+        }
+        return null;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function listTaxonomyTermsWithApi($taxonomy)
+    {
+        $offset = 0;
+        $all = array();
+        $seen = array();
+        $guard = 0;
+
+        do {
+            $guard++;
+            if ($guard > 10000) {
+                break;
+            }
+
+            try {
+                $batch = get_terms(array(
+                    'taxonomy' => $taxonomy,
+                    'hide_empty' => false,
+                    'lang' => '',
+                    'number' => $this->pageSize,
+                    'offset' => $offset,
+                    'orderby' => 'term_id',
+                    'order' => 'ASC',
+                    'update_term_meta_cache' => false,
+                    'fields' => 'all',
+                ));
+            } catch (\Throwable $e) {
+                return $offset === 0 ? null : $all;
+            }
+
+            if (function_exists('is_wp_error') && is_wp_error($batch)) {
+                return $offset === 0 ? null : $all;
+            }
+            if (!is_array($batch)) {
+                return $offset === 0 ? null : $all;
+            }
+
+            $added = 0;
+            foreach ($batch as $term) {
+                $normalized = $this->normalizeListedTerm($term, false);
+                if ($normalized === null || isset($seen[$normalized['id']])) {
+                    continue;
+                }
+                $seen[$normalized['id']] = true;
+                $all[] = $normalized;
+                $added++;
+            }
+            if ($added === 0) {
+                break;
+            }
+            $offset += $this->pageSize;
+        } while (count($batch) === $this->pageSize);
+
+        return $all;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function translatedTaxonomies()
+    {
+        $fromModel = $this->taxonomiesFromModel();
+        if ($fromModel !== array()) {
+            $names = $fromModel;
+        } else {
+            $names = array('category', 'post_tag');
+            $names = array_merge($names, $this->taxonomiesFromOption());
+        }
+
+        $unique = array();
+        foreach ($names as $taxonomy) {
+            if (!is_string($taxonomy) || $taxonomy === '' || $this->isInternalTaxonomy($taxonomy)) {
+                continue;
+            }
+            $unique[$taxonomy] = $taxonomy;
+        }
+        return array_values($unique);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function taxonomiesFromModel()
+    {
+        if (!function_exists('PLL')) {
+            return array();
+        }
+        try {
+            $pll = PLL();
+        } catch (\Throwable $e) {
+            return array();
+        }
+        if (!is_object($pll) || !isset($pll->model->term) || !is_object($pll->model->term)) {
+            return array();
+        }
+        if (!method_exists($pll->model->term, 'get_translated_object_types')) {
+            return array();
+        }
+        try {
+            $types = $pll->model->term->get_translated_object_types(false);
+        } catch (\Throwable $e) {
+            return array();
+        }
+        return $this->stringList($types);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function taxonomiesFromOption()
+    {
+        if (!function_exists('get_option')) {
+            return array();
+        }
+        $options = get_option('polylang');
+        if (!is_array($options) || !isset($options['taxonomies']) || !is_array($options['taxonomies'])) {
+            return array();
+        }
+        return $this->stringList($options['taxonomies']);
+    }
+
+    /**
+     * @param mixed $values
+     * @return array<int, string>
+     */
+    private function stringList($values)
+    {
+        if (!is_array($values)) {
+            return array();
+        }
+        $names = array();
+        foreach ($values as $value) {
+            if (is_string($value) && $value !== '') {
+                $names[] = $value;
+            }
+        }
+        return $names;
+    }
+
+    /**
+     * @return array<string, int>|null
+     */
+    protected function apiTranslationMap($termId)
+    {
+        if (!function_exists('pll_get_term_translations')) {
+            return array();
+        }
+        try {
+            $map = pll_get_term_translations((int) $termId);
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if (function_exists('is_wp_error') && is_wp_error($map)) {
+            return null;
+        }
+        if (!is_array($map)) {
+            return array();
+        }
+        return $map;
+    }
+
+    /**
+     * @return string
+     */
+    protected function apiTermLanguage($termId)
+    {
+        if (!function_exists('pll_get_term_language')) {
+            return '';
+        }
+        try {
+            $value = pll_get_term_language((int) $termId, 'slug');
+        } catch (\Throwable $e) {
+            return '';
+        }
+        if (!is_string($value)) {
+            return '';
+        }
+        $key = $this->languageKey($value);
+        return $key === null ? '' : $key;
+    }
+
+    /**
+     * @return string
+     */
+    protected function defaultLanguage()
+    {
+        if (function_exists('pll_default_language')) {
+            try {
+                $slug = pll_default_language('slug');
+            } catch (\Throwable $e) {
+                $slug = '';
+            }
+            if (is_string($slug) && trim($slug) !== '') {
+                return strtolower(trim($slug));
+            }
+            try {
+                $slug = pll_default_language();
+            } catch (\Throwable $e) {
+                $slug = '';
+            }
+            if (is_string($slug) && trim($slug) !== '') {
+                return strtolower(trim($slug));
+            }
+        }
+
+        if (!function_exists('get_option')) {
+            return '';
+        }
+        $options = get_option('polylang');
+        if (!is_array($options) || !isset($options['default_lang']) || !is_string($options['default_lang'])) {
+            return '';
+        }
+        return strtolower(trim($options['default_lang']));
+    }
+
+    /**
+     * @param array<int, mixed> $groupRows
+     * @return bool
+     */
+    private function polylangEvidence($groupRows)
+    {
+        if (function_exists('pll_languages_list') || function_exists('pll_get_term_translations') || function_exists('pll_default_language')) {
+            return true;
+        }
+        if (class_exists('PLL', false) || class_exists('Polylang', false)) {
+            return true;
+        }
+        if (function_exists('get_option')) {
+            $options = get_option('polylang');
+            if (is_array($options) && $options !== array()) {
+                return true;
+            }
+        }
+        if (is_array($groupRows) && $groupRows !== array()) {
+            return true;
+        }
+        return $this->languageTaxonomyExists();
+    }
+
+    /**
+     * @return bool
+     */
+    private function languageTaxonomyExists()
+    {
+        if (!$this->databaseReady()) {
+            return false;
+        }
+        $table = $this->table('term_taxonomy');
+        $rows = $this->dbResults(
+            "SELECT tt.term_taxonomy_id FROM {$table} AS tt WHERE tt.taxonomy = 'language' LIMIT 1"
+        );
+        return is_array($rows) && $rows !== array();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function fetchGroupRows()
+    {
+        $table = $this->table('term_taxonomy');
+        if ($table === '') {
+            return null;
+        }
+        return $this->dbResults(
+            "SELECT tt.term_taxonomy_id, tt.description FROM {$table} AS tt WHERE tt.taxonomy = 'term_translations'"
+        );
+    }
+
+    /**
+     * Terms linked to a translation group in term_relationships.
+     *
+     * @param array<int, int> $ttIds
+     * @param array<int, string> $errors
+     * @return array<int, array<int, int>>
+     */
+    private function fetchGroupLinks(array $ttIds, array &$errors)
+    {
+        $clean = array();
+        foreach ($ttIds as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        $clean = array_values($clean);
+        if ($clean === array()) {
+            return array();
+        }
+        $relationships = $this->table('term_relationships');
+        if ($relationships === '') {
+            return array();
+        }
+
+        $map = array();
+        foreach (array_chunk($clean, $this->pageSize) as $chunk) {
+            if (count($chunk) === 1) {
+                $sql = "SELECT tr.term_taxonomy_id, tr.object_id
+                    FROM {$relationships} AS tr
+                    WHERE tr.term_taxonomy_id = %d";
+                $args = array($chunk[0]);
+            } else {
+                $placeholders = implode(', ', array_fill(0, count($chunk), '%d'));
+                $sql = "SELECT tr.term_taxonomy_id, tr.object_id
+                    FROM {$relationships} AS tr
+                    WHERE tr.term_taxonomy_id IN ({$placeholders})";
+                $args = $chunk;
+            }
+            $rows = $this->dbResults($sql, $args);
+            if ($rows === null) {
+                $errors[] = $this->text('Some term translation links could not be read. Groups were built from their stored descriptions.');
+                break;
+            }
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $tt = isset($row['term_taxonomy_id']) ? (int) $row['term_taxonomy_id'] : 0;
+                $objectId = isset($row['object_id']) ? (int) $row['object_id'] : 0;
+                if ($tt <= 0 || $objectId <= 0) {
+                    continue;
+                }
+                $map[$tt][$objectId] = $objectId;
+            }
+        }
+
+        $lists = array();
+        foreach ($map as $tt => $ids) {
+            $lists[$tt] = array_values($ids);
+        }
+        return $lists;
+    }
+
+    /**
+     * Add terms that are linked to the group but missing from its description.
+     *
+     * @param array<string, int> $map
+     * @param array<int, int> $objectIds
+     * @param array<int, string> $languageMap
+     * @param array<int, string> $notes
+     * @return array<string, int>
+     */
+    private function mergeLinkedTerms(array $map, array $objectIds, array $languageMap, array &$notes)
+    {
+        $present = array();
+        foreach ($map as $id) {
+            $present[(int) $id] = true;
+        }
+        foreach ($objectIds as $id) {
+            $id = (int) $id;
+            if ($id <= 0 || isset($present[$id])) {
+                continue;
+            }
+            $lang = $this->apiTermLanguage($id);
+            if ($lang === '' && isset($languageMap[$id])) {
+                $lang = $languageMap[$id];
+            }
+            if ($lang === '') {
+                $notes[] = sprintf(
+                    $this->text('Term %d is linked to a translation group but has no language, so it was left out of that group.'),
+                    $id
+                );
+                continue;
+            }
+            if (isset($map[$lang]) && (int) $map[$lang] !== $id) {
+                $notes[] = sprintf(
+                    $this->text('Term %1$d is linked to a translation group but was missing from its stored description. It was left out because %2$s is already used in that group.'),
+                    $id,
+                    $lang
+                );
+                continue;
+            }
+            $map[$lang] = $id;
+            $present[$id] = true;
+            $notes[] = sprintf(
+                $this->text('Term %1$d is linked to a translation group but was missing from its stored description. It was added as %2$s.'),
+                $id,
+                $lang
+            );
+        }
+        return $map;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function fetchTermsByIds(array $ids)
+    {
+        $clean = array();
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        $clean = array_values($clean);
+        if ($clean === array()) {
+            return array();
+        }
+
+        $all = array();
+        foreach (array_chunk($clean, $this->pageSize) as $chunk) {
+            $rows = $this->fetchTermChunk($chunk);
+            if ($rows === null) {
+                return null;
+            }
+            foreach ($rows as $row) {
+                $all[] = $row;
+            }
+        }
+        return $all;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function fetchTermChunk(array $ids)
+    {
+        $terms = $this->table('terms');
+        $taxonomy = $this->table('term_taxonomy');
+        if ($terms === '' || $taxonomy === '' || $ids === array()) {
+            return null;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($ids), '%d'));
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent, tt.description
+            FROM {$terms} AS t
+            INNER JOIN {$taxonomy} AS tt ON tt.term_id = t.term_id
+            WHERE t.term_id IN ({$placeholders})";
+
+        return $this->dbResults($sql, $ids);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function fetchTermsForTaxonomy($taxonomy)
+    {
+        if (!is_string($taxonomy) || $taxonomy === '' || $this->isInternalTaxonomy($taxonomy)) {
+            return array();
+        }
+        $terms = $this->table('terms');
+        $taxonomyTable = $this->table('term_taxonomy');
+        if ($terms === '' || $taxonomyTable === '') {
+            return null;
+        }
+
+        $offset = 0;
+        $all = array();
+        $seen = array();
+        $guard = 0;
+        $sql = "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.parent, tt.description
+            FROM {$terms} AS t
+            INNER JOIN {$taxonomyTable} AS tt ON tt.term_id = t.term_id
+            WHERE tt.taxonomy = %s
+            ORDER BY t.term_id ASC
+            LIMIT %d OFFSET %d";
+
+        do {
+            $guard++;
+            if ($guard > 10000) {
+                break;
+            }
+            $rows = $this->dbResults($sql, array($taxonomy, $this->pageSize, $offset));
+            if ($rows === null) {
+                return $offset === 0 ? null : $all;
+            }
+            if ($rows === array()) {
+                break;
+            }
+
+            $added = 0;
+            foreach ($rows as $row) {
+                $normalized = $this->normalizeListedTerm($row, false);
+                if ($normalized === null || isset($seen[$normalized['id']])) {
+                    continue;
+                }
+                $seen[$normalized['id']] = true;
+                $all[] = $normalized;
+                $added++;
+            }
+            if ($added === 0) {
+                break;
+            }
+            $offset += $this->pageSize;
+        } while (count($rows) === $this->pageSize);
+
+        return $all;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function fetchLanguageMap()
+    {
+        $terms = $this->table('terms');
+        $taxonomy = $this->table('term_taxonomy');
+        $relationships = $this->table('term_relationships');
+        if ($terms === '' || $taxonomy === '' || $relationships === '') {
+            return array();
+        }
+
+        $rows = $this->dbResults(
+            "SELECT tr.object_id, pll_lang.slug
+            FROM {$relationships} AS tr
+            INNER JOIN {$taxonomy} AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+            INNER JOIN {$terms} AS pll_lang ON pll_lang.term_id = tt.term_id
+            WHERE tt.taxonomy = 'term_language'"
+        );
+        if (!is_array($rows)) {
+            return array();
+        }
+
+        $map = array();
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $id = isset($row['object_id']) ? (int) $row['object_id'] : 0;
+            $slug = isset($row['slug']) ? $this->languageFromRelationshipSlug($row['slug']) : '';
+            if ($id > 0 && $slug !== '') {
+                $map[$id] = $slug;
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * @param string $sql
+     * @param array<int, mixed> $args
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function dbResults($sql, array $args = array())
+    {
+        global $wpdb;
+
+        if (!is_object($wpdb) || !method_exists($wpdb, 'get_results') || !is_string($sql) || $sql === '') {
+            return null;
+        }
+        if ($args !== array()) {
+            if (!method_exists($wpdb, 'prepare')) {
+                return null;
+            }
+            $prepared = call_user_func_array(array($wpdb, 'prepare'), array_merge(array($sql), $args));
+            if (!is_string($prepared) || $prepared === '') {
+                return null;
+            }
+            $sql = $prepared;
+        }
+
+        $errorBefore = (isset($wpdb->last_error) && is_string($wpdb->last_error)) ? $wpdb->last_error : '';
+        $output = defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A';
+        $rows = $wpdb->get_results($sql, $output);
+        $errorAfter = (isset($wpdb->last_error) && is_string($wpdb->last_error)) ? $wpdb->last_error : '';
+        if ($errorAfter !== '' && $errorAfter !== $errorBefore) {
+            return null;
+        }
+        if (!is_array($rows)) {
+            return null;
+        }
+
+        $normalized = array();
+        foreach ($rows as $row) {
+            if (is_object($row)) {
+                $row = get_object_vars($row);
+            }
+            if (is_array($row)) {
+                $normalized[] = $row;
+            }
+        }
+        return $normalized;
+    }
+
+    /**
+     * @param mixed $description
+     * @return array<mixed>|null
+     */
+    private function decodeMap($description)
+    {
+        if (is_array($description)) {
+            return $this->translationMap($description);
+        }
+        if ($description === null || $description === '') {
+            return array();
+        }
+        if (!is_string($description)) {
+            return null;
+        }
+
+        $value = $description;
+        if (function_exists('maybe_unserialize')) {
+            $value = maybe_unserialize($value);
+        } else {
+            $value = $this->unserializeValue($value);
+        }
+        if (is_array($value)) {
+            return $this->translationMap($value);
+        }
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
+            $decoded = json_decode($trimmed, true);
+            if (is_array($decoded)) {
+                return $this->translationMap($decoded);
+            }
+        }
+        if ($value !== $description) {
+            $nested = $this->decodeMap($value);
+            if (is_array($nested)) {
+                return $nested;
+            }
+        }
+
+        $again = $this->unserializeValue($value);
+        if (is_array($again)) {
+            return $this->translationMap($again);
+        }
+        return null;
+    }
+
+    /**
+     * A translation group is a language map. A plain list is not a group.
+     *
+     * @param array<mixed, mixed> $value
+     * @return array<mixed, mixed>|null
+     */
+    private function translationMap(array $value)
+    {
+        if ($this->isListArray($value)) {
+            return null;
+        }
+        return $value;
+    }
+
+    /**
+     * @param array<mixed, mixed> $value
+     * @return bool
+     */
+    private function isListArray(array $value)
+    {
+        if ($value === array()) {
+            return false;
+        }
+        $index = 0;
+        foreach (array_keys($value) as $key) {
+            if ($key !== $index) {
+                return false;
+            }
+            $index++;
+        }
+        return true;
+    }
+
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    private function unserializeValue($value)
+    {
+        if (!is_string($value) || $value === '') {
+            return $value;
+        }
+        if (!preg_match('/^(a|s|i|b|d|N|O|C):/', $value)) {
+            return $value;
+        }
+        $decoded = @unserialize($value, array('allowed_classes' => false));
+        if ($decoded === false && $value !== 'b:0;') {
+            return $value;
+        }
+        return $decoded;
+    }
+
+    /**
+     * @param mixed $term
+     * @param bool $allowInternal
+     * @return array{id: int, name: string, slug: string, taxonomy: string}|null
+     */
+    private function normalizeListedTerm($term, $allowInternal)
+    {
+        if (is_object($term)) {
+            $id = isset($term->term_id) ? (int) $term->term_id : 0;
+            $name = $this->stringValue(isset($term->name) ? $term->name : '');
+            $slug = $this->stringValue(isset($term->slug) ? $term->slug : '');
+            $taxonomy = $this->stringValue(isset($term->taxonomy) ? $term->taxonomy : '');
+            $description = $this->descriptionValue(isset($term->description) ? $term->description : '');
+            $parent = $this->parentId(isset($term->parent) ? $term->parent : 0);
+        } elseif (is_array($term)) {
+            if (isset($term['term_id'])) {
+                $id = (int) $term['term_id'];
+            } elseif (isset($term['id'])) {
+                $id = (int) $term['id'];
+            } else {
+                $id = 0;
+            }
+            $name = $this->stringValue(isset($term['name']) ? $term['name'] : '');
+            $slug = $this->stringValue(isset($term['slug']) ? $term['slug'] : '');
+            $taxonomy = $this->stringValue(isset($term['taxonomy']) ? $term['taxonomy'] : '');
+            $description = $this->descriptionValue(array_key_exists('description', $term) ? $term['description'] : '');
+            $parent = $this->parentId(isset($term['parent']) ? $term['parent'] : 0);
+        } else {
+            return null;
+        }
+
+        if ($id <= 0 || $taxonomy === '') {
+            return null;
+        }
+        if (!$allowInternal && $this->isInternalTaxonomy($taxonomy)) {
+            return null;
+        }
+
+        return array(
+            'id' => $id,
+            'name' => $name,
+            'slug' => $slug,
+            'taxonomy' => $taxonomy,
+            'description' => $description,
+            'parent' => $parent,
+        );
+    }
+
+    /**
+     * @param mixed $row
+     * @return array{id: int, name: string, slug: string}|null
+     */
+    private function normalizeTranslationRow($row)
+    {
+        if (is_array($row)) {
+            $id = isset($row['id']) ? (int) $row['id'] : 0;
+            $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
+            $slug = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
+            $description = $this->descriptionValue(isset($row['description']) ? $row['description'] : '');
+            $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
+        } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
+            $id = (int) $row;
+            $name = '';
+            $slug = '';
+            $description = '';
+            $parent = 0;
+        } else {
+            return null;
+        }
+        if ($id <= 0) {
+            return null;
+        }
+        return array(
+            'id' => $id,
+            'name' => $name,
+            'slug' => $slug,
+            'description' => $description,
+            'parent' => $parent,
+        );
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $translations
+     * @return array<string, array<string, mixed>>
+     */
+    private function orderTranslations(array $translations, $default)
+    {
+        $ordered = array();
+        if ($default !== '' && isset($translations[$default])) {
+            $ordered[$default] = $translations[$default];
+            unset($translations[$default]);
+        }
+        ksort($translations);
+        foreach ($translations as $lang => $row) {
+            $ordered[$lang] = $row;
+        }
+        return $ordered;
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $translations
+     * @return int
+     */
+    private function anchorId(array $translations, $default)
+    {
+        if ($default !== '' && isset($translations[$default]['id'])) {
+            return (int) $translations[$default]['id'];
+        }
+        $ids = array();
+        foreach ($translations as $row) {
+            if (isset($row['id'])) {
+                $ids[] = (int) $row['id'];
+            }
+        }
+        if ($ids === array()) {
+            return 0;
+        }
+        sort($ids, SORT_NUMERIC);
+        return (int) $ids[0];
+    }
+
+    /**
+     * @param array<string, mixed> $left
+     * @param array<string, mixed> $right
+     * @return int
+     */
+    private function compareItems($left, $right)
+    {
+        $leftTaxonomy = isset($left['taxonomy']) ? (string) $left['taxonomy'] : '';
+        $rightTaxonomy = isset($right['taxonomy']) ? (string) $right['taxonomy'] : '';
+        $byTaxonomy = strcmp($leftTaxonomy, $rightTaxonomy);
+        if ($byTaxonomy !== 0) {
+            return $byTaxonomy;
+        }
+        $leftId = $this->groupNumber(isset($left['group']) ? $left['group'] : '');
+        $rightId = $this->groupNumber(isset($right['group']) ? $right['group'] : '');
+        if ($leftId === $rightId) {
+            return 0;
+        }
+        return ($leftId < $rightId) ? -1 : 1;
+    }
+
+    /**
+     * @param mixed $group
+     * @return int
+     */
+    private function groupNumber($group)
+    {
+        if (!is_string($group) || strpos($group, 'term:') !== 0) {
+            return 0;
+        }
+        return (int) substr($group, 5);
+    }
+
+    /**
+     * @param mixed $lang
+     * @return string|null
+     */
+    private function languageKey($lang)
+    {
+        if (is_int($lang) || is_float($lang)) {
+            $lang = (string) $lang;
+        }
+        if (!is_string($lang)) {
+            return null;
+        }
+        $lang = strtolower(trim(str_replace("\0", '', $lang)));
+        if ($lang === '') {
+            return null;
+        }
+        return $lang;
+    }
+
+    /**
+     * The lowercase spelling wins. A null byte does not make it a different spelling.
+     *
+     * @param mixed $lang
+     * @param string $key
+     * @return bool
+     */
+    private function spellingWasLowercase($lang, $key)
+    {
+        if (!is_string($lang)) {
+            return false;
+        }
+        return trim(str_replace("\0", '', $lang)) === $key;
+    }
+
+    /**
+     * Fold SV and sv onto one lowercase key. The lowercase spelling wins.
+     *
+     * @param array<mixed, mixed> $map
+     * @return array{map: array<string, int>, dropped: array<int, int>, notes: array<int, array<string, mixed>>}
+     */
+    private function foldLanguageIds(array $map)
+    {
+        $clean = array();
+        $wasLower = array();
+        $dropped = array();
+        $notes = array();
+
+        foreach ($map as $lang => $id) {
+            $key = $this->languageKey($lang);
+            $id = (int) $id;
+            if ($key === null || $id <= 0) {
+                continue;
+            }
+            $incomingLower = $this->spellingWasLowercase($lang, $key);
+            if (!isset($clean[$key])) {
+                $clean[$key] = $id;
+                $wasLower[$key] = $incomingLower;
+                continue;
+            }
+            if ((int) $clean[$key] === $id) {
+                if ($incomingLower) {
+                    $wasLower[$key] = true;
+                }
+                continue;
+            }
+            if ($incomingLower && empty($wasLower[$key])) {
+                $dropped[(int) $clean[$key]] = (int) $clean[$key];
+                $notes[] = array('kept' => $id, 'dropped' => (int) $clean[$key], 'lang' => $key);
+                $clean[$key] = $id;
+                $wasLower[$key] = true;
+                continue;
+            }
+            $dropped[$id] = $id;
+            $notes[] = array('kept' => (int) $clean[$key], 'dropped' => $id, 'lang' => $key);
+        }
+
+        return array(
+            'map' => $clean,
+            'dropped' => array_values($dropped),
+            'notes' => $notes,
+        );
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $notes
+     * @return array<int, string>
+     */
+    private function languageCaseSentences(array $notes)
+    {
+        $sentences = array();
+        foreach ($notes as $note) {
+            if (!is_array($note) || empty($note['kept']) || empty($note['dropped']) || empty($note['lang'])) {
+                continue;
+            }
+            $sentences[] = sprintf(
+                $this->text('Term %1$d and term %2$d were both listed for the language %3$s. They share one key, and term %1$d was kept.'),
+                (int) $note['kept'],
+                (int) $note['dropped'],
+                $note['lang']
+            );
+        }
+        return $sentences;
+    }
+
+    /**
+     * @param mixed $slug
+     * @return string
+     */
+    private function languageFromRelationshipSlug($slug)
+    {
+        $slug = strtolower(trim($this->stringValue($slug)));
+        if (strpos($slug, 'pll_') === 0) {
+            $slug = trim(substr($slug, 4));
+        }
+        return $slug;
+    }
+
+    /**
+     * One term id can come back as a category and as a menu. Keep one row.
+     * A menu never replaces a content term. Between content taxonomies, the
+     * name that sorts first is kept, so a second read cannot switch the group.
+     *
+     * @param array<string, mixed>|null $existing
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    private function preferListedTerm($existing, array $incoming)
+    {
+        if ($existing === null) {
+            return $incoming;
+        }
+
+        $existingInternal = $this->isInternalTaxonomy(isset($existing['taxonomy']) ? $existing['taxonomy'] : '');
+        $incomingInternal = $this->isInternalTaxonomy(isset($incoming['taxonomy']) ? $incoming['taxonomy'] : '');
+        if ($existingInternal && !$incomingInternal) {
+            return $incoming;
+        }
+        if ($incomingInternal && !$existingInternal) {
+            return $existing;
+        }
+        if (!$existingInternal && !$incomingInternal) {
+            $existingName = isset($existing['taxonomy']) ? (string) $existing['taxonomy'] : '';
+            $incomingName = isset($incoming['taxonomy']) ? (string) $incoming['taxonomy'] : '';
+            if (strcmp($existingName, $incomingName) > 0) {
+                return $incoming;
+            }
+        }
+
+        return $existing;
+    }
+
+    /**
+     * @param mixed $taxonomy
+     * @return bool
+     */
+    private function isInternalTaxonomy($taxonomy)
+    {
+        return in_array($taxonomy, array(
+            'language',
+            'term_language',
+            'post_translations',
+            'term_translations',
+            'nav_menu',
+        ), true);
+    }
+
+    /**
+     * @return bool
+     */
+    protected function apiReady()
+    {
+        return function_exists('pll_get_term_translations') && function_exists('get_terms');
+    }
+
+    /**
+     * @return bool
+     */
+    protected function databaseReady()
+    {
+        global $wpdb;
+        return is_object($wpdb)
+            && method_exists($wpdb, 'get_results')
+            && $this->table('terms') !== ''
+            && $this->table('term_taxonomy') !== '';
+    }
+
+    /**
+     * @param string $property
+     * @return string
+     */
+    private function table($property)
+    {
+        global $wpdb;
+        if (!is_object($wpdb) || !isset($wpdb->$property) || !is_string($wpdb->$property)) {
+            return '';
+        }
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $wpdb->$property)) {
+            return '';
+        }
+        return $wpdb->$property;
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     * @return bool
+     */
+    private function hasSnapshotItems($snapshot)
+    {
+        $groups = isset($snapshot['groups']) && is_array($snapshot['groups']) ? $snapshot['groups'] : array();
+        $loose = isset($snapshot['untranslated']) && is_array($snapshot['untranslated']) ? $snapshot['untranslated'] : array();
+        return $groups !== array() || $loose !== array();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptySnapshot($default, $state)
+    {
+        return array(
+            'state' => $state,
+            'default_lang' => $default,
+            'groups' => array(),
+            'untranslated' => array(),
+            'errors' => array(),
+        );
+    }
+
+    /**
+     * @return string
+     */
+    private function inactiveSentence()
+    {
+        return $this->text('Polylang is not active. Term translations were not exported.');
+    }
+
+    /**
+     * @return string
+     */
+    private function failureSentence()
+    {
+        return $this->text('Term translations could not be read. Polylang\'s translation data is missing or the database query failed. Existing terms were left unchanged.');
+    }
+
+    /**
+     * @param array<int, string> $errors
+     * @param array<int, int> $missing
+     * @param array<int, array<string, mixed>> $mismatched
+     * @return void
+     */
+    private function appendTermProblems(array &$errors, array $missing, array $mismatched)
+    {
+        $sentences = array();
+        foreach ($missing as $id) {
+            $sentences[] = sprintf(
+                $this->text('Term %d was listed in a translation group, but that term no longer exists. It was left out of the export.'),
+                (int) $id
+            );
+        }
+        foreach ($mismatched as $row) {
+            if (!is_array($row) || empty($row['id'])) {
+                continue;
+            }
+            $taxonomy = isset($row['taxonomy']) ? $this->stringValue($row['taxonomy']) : '';
+            $groupTaxonomy = isset($row['group_taxonomy']) ? $this->stringValue($row['group_taxonomy']) : '';
+            if ($groupTaxonomy === '') {
+                $groupTaxonomy = 'term';
+            }
+            $sentences[] = sprintf(
+                $this->text('Term %1$d belongs to %2$s, so it was left out of the %3$s translation group.'),
+                (int) $row['id'],
+                $taxonomy !== '' ? $taxonomy : 'another taxonomy',
+                $groupTaxonomy
+            );
+        }
+        $this->appendCapped($errors, $sentences);
+    }
+
+    /**
+     * Keep the wizard readable when hundreds of terms have the same kind of problem.
+     *
+     * @param array<int, string> $errors
+     * @param array<int, string> $sentences
+     * @return void
+     */
+    private function applyActualLanguages(array $groups, array $languageMap, array &$notes)
+    {
+        $updated = array();
+        foreach ($groups as $group) {
+            if (!is_array($group) || !isset($group['translations']) || !is_array($group['translations'])) {
+                $updated[] = $group;
+                continue;
+            }
+            $ids = array();
+            foreach ($group['translations'] as $row) {
+                if (is_array($row) && isset($row['id'])) {
+                    $ids[] = (int) $row['id'];
+                }
+            }
+            $group['translations'] = $this->reconcileTranslations(
+                $group['translations'],
+                $this->actualLanguages($ids, $languageMap),
+                $notes
+            );
+            $updated[] = $group;
+        }
+        return $updated;
+    }
+
+    /**
+     * Prefer the language stored on the term when the group description is stale.
+     *
+     * @param array<string, array<string, mixed>> $translations
+     * @param array<int, string> $actual
+     * @param array<int, string> $notes
+     * @return array<string, array<string, mixed>>
+     */
+    private function reconcileTranslations(array $translations, array $actual, array &$notes)
+    {
+        if ($actual === array()) {
+            return $translations;
+        }
+        $rebuilt = array();
+        foreach ($translations as $stored => $row) {
+            if (!is_array($row) || !isset($row['id'])) {
+                continue;
+            }
+            $id = (int) $row['id'];
+            $real = isset($actual[$id]) ? trim((string) $actual[$id]) : '';
+            $lang = is_string($stored) ? $stored : (string) $stored;
+            if ($real !== '' && $real !== $lang) {
+                $taken = isset($translations[$real]) || isset($rebuilt[$real]);
+                if (!$taken) {
+                    $notes[] = sprintf(
+                        $this->text('Term %1$d is stored as %2$s in its translation group, but its language is %3$s. It was exported as %3$s.'),
+                        $id,
+                        $lang,
+                        $real
+                    );
+                    $lang = $real;
+                } else {
+                    $notes[] = sprintf(
+                        $this->text('Term %1$d is stored as %2$s in its translation group, but its language is %3$s. The stored language was kept because %3$s is already used in that group.'),
+                        $id,
+                        $lang,
+                        $real
+                    );
+                }
+            }
+            if (!isset($rebuilt[$lang])) {
+                $rebuilt[$lang] = $row;
+            }
+        }
+        return $rebuilt;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @param array<int, string> $languageMap
+     * @return array<int, string>
+     */
+    private function actualLanguages(array $ids, array $languageMap)
+    {
+        $actual = array();
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id <= 0) {
+                continue;
+            }
+            $real = $this->apiTermLanguage($id);
+            if ($real === '' && isset($languageMap[$id])) {
+                $real = $languageMap[$id];
+            }
+            if ($real !== '') {
+                $actual[$id] = $real;
+            }
+        }
+        return $actual;
+    }
+
+    /**
+     * @param array<int, string> $errors
+     * @param array<int, string> $sentences
+     * @return void
+     */
+    private function appendCapped(array &$errors, array $sentences)
+    {
+        $limit = 20;
+        $count = count($sentences);
+        $shown = 0;
+        foreach ($sentences as $sentence) {
+            if ($shown >= $limit) {
+                break;
+            }
+            $errors[] = $sentence;
+            $shown++;
+        }
+        if ($count > $limit) {
+            $errors[] = sprintf(
+                $this->text('%d more term problems were left out of this list so it stays readable.'),
+                $count - $limit
+            );
+        }
+    }
+
+    /**
+     * @param array<int, string> $taxonomies
+     * @return string
+     */
+    private function listFailureSentence(array $taxonomies)
+    {
+        $names = array();
+        foreach ($taxonomies as $taxonomy) {
+            if (is_string($taxonomy) && $taxonomy !== '' && !isset($names[$taxonomy])) {
+                $names[$taxonomy] = $taxonomy;
+            }
+        }
+        $names = array_values($names);
+        if (count($names) === 1) {
+            return sprintf($this->text('The %s terms could not be listed and were skipped.'), $names[0]);
+        }
+        return sprintf(
+            $this->text('Terms in these taxonomies could not be listed and were skipped: %s.'),
+            implode(', ', $names)
+        );
+    }
+
+    /**
+     * @param int $count
+     * @param string $language
+     * @param string $kind
+     * @return string
+     */
+    private function unassignedSentence($count, $language, $kind)
+    {
+        if ($kind === 'stored') {
+            if ((int) $count === 1) {
+                return sprintf(
+                    $this->text('A term has no Polylang language. It is included under %s, the first language stored by Polylang, so it is not dropped.'),
+                    $language
+                );
+            }
+            return sprintf(
+                $this->text('%1$d terms have no Polylang language. They are included under %2$s, the first language stored by Polylang, so they are not dropped.'),
+                (int) $count,
+                $language
+            );
+        }
+
+        if ((int) $count === 1) {
+            return sprintf(
+                $this->text('A term has no Polylang language. It is included under the default language (%s) so it is not dropped.'),
+                $language
+            );
+        }
+        return sprintf(
+            $this->text('%1$d terms have no Polylang language. They are included under the default language (%2$s) so they are not dropped.'),
+            (int) $count,
+            $language
+        );
+    }
+
+    /**
+     * Language to use when a term has none and the site has no default.
+     *
+     * @return string
+     */
+    private function fallbackLanguage()
+    {
+        $fromApi = $this->firstApiLanguage();
+        if ($fromApi !== '') {
+            return $fromApi;
+        }
+        return $this->firstStoredLanguage();
+    }
+
+    /**
+     * @return string
+     */
+    private function firstApiLanguage()
+    {
+        if (!function_exists('pll_languages_list')) {
+            return '';
+        }
+        try {
+            $list = pll_languages_list(array('fields' => 'slug'));
+        } catch (\Throwable $e) {
+            return '';
+        }
+        if (!is_array($list)) {
+            return '';
+        }
+        foreach ($list as $slug) {
+            if (is_string($slug) && trim($slug) !== '') {
+                return strtolower(trim($slug));
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @return string
+     */
+    private function firstStoredLanguage()
+    {
+        if (!$this->databaseReady()) {
+            return '';
+        }
+        $terms = $this->table('terms');
+        $taxonomy = $this->table('term_taxonomy');
+        if ($terms === '' || $taxonomy === '') {
+            return '';
+        }
+        $rows = $this->dbResults(
+            "SELECT lang.slug
+            FROM {$terms} AS lang
+            INNER JOIN {$taxonomy} AS tt ON tt.term_id = lang.term_id
+            WHERE tt.taxonomy = 'language'
+            ORDER BY lang.term_group ASC, lang.slug ASC
+            LIMIT 1"
+        );
+        if (!is_array($rows) || $rows === array() || !isset($rows[0]['slug'])) {
+            return '';
+        }
+        return $this->languageFromRelationshipSlug($rows[0]['slug']);
+    }
+
+    /**
+     * @param mixed $value
+     * @return int
+     */
+    private function parentId($value)
+    {
+        if (is_int($value)) {
+            return $value > 0 ? $value : 0;
+        }
+        if (is_string($value)) {
+            $value = trim(str_replace("\0", '', $value));
+            if ($value !== '' && preg_match('/^[0-9]+$/', $value)) {
+                $number = (int) $value;
+                return $number > 0 ? $number : 0;
+            }
+        }
+        if (is_float($value) && is_finite($value) && $value > 0 && floor($value) === $value && $value <= PHP_INT_MAX) {
+            return (int) $value;
+        }
+        return 0;
+    }
+
+    /**
+     * @param int $count
+     * @return string
+     */
+    private function countSentence($count, $one, $many)
+    {
+        if ((int) $count === 1) {
+            return $this->text($one);
+        }
+        return sprintf($this->text($many), (int) $count);
+    }
+
+    /**
+     * @param string $message
+     * @return string
+     */
+    private function text($message)
+    {
+        if (function_exists('__')) {
+            return __($message, 'migration-manager');
+        }
+        return $message;
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    private function stringValue($value)
+    {
+        // Keep letters such as å, ä, and ö. Remove only null bytes.
+        if (is_string($value)) {
+            return str_replace("\0", '', $value);
+        }
+        if (is_int($value) || is_float($value)) {
+            return str_replace("\0", '', (string) $value);
+        }
+        return '';
+    }
+
+    /**
+     * A slug of only whitespace is empty. Any other slug is kept, including å, ä, and ö.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function slugValue($value)
+    {
+        $slug = $this->lowercaseSlug($this->stringValue($value));
+        if ($slug === '') {
+            return '';
+        }
+        $whitespace = preg_match('/^\s+$/u', $slug);
+        if ($whitespace === 1 || trim($slug) === '') {
+            return '';
+        }
+        return $slug;
+    }
+
+    /**
+     * A missing or non-text description is an empty string. HTML is kept.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function descriptionValue($value)
+    {
+        if ($value === null || is_bool($value) || is_array($value) || is_object($value)) {
+            return '';
+        }
+        $text = $this->stringValue($value);
+        if (!is_string($text)) {
+            return '';
+        }
+        return $text;
+    }
+
+    /**
+     * Lowercase a slug without breaking å, ä, or ö.
+     *
+     * @param string $slug
+     * @return string
+     */
+    private function lowercaseSlug($slug)
+    {
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($slug, 'UTF-8');
+        }
+        return strtr(strtolower($slug), array(
+            'Å' => 'å',
+            'Ä' => 'ä',
+            'Ö' => 'ö',
+        ));
+    }
+
+    /**
+     * @param array<int, mixed> $errors
+     * @return array<int, string>
+     */
+    private function uniqueStrings(array $errors)
+    {
+        $unique = array();
+        foreach ($errors as $error) {
+            if (!is_string($error) || $error === '' || isset($unique[$error])) {
+                continue;
+            }
+            $unique[$error] = $error;
+        }
+        return array_values($unique);
+    }
+}
