@@ -48,7 +48,7 @@ class Polylang_Terms
      * Each item has taxonomy, group (`term:{id}`), and translations.
      * A translation is keyed by language slug and has id, name, slug, description, and parent.
      * HTML in a name is kept. Letters such as å, ä, and ö are kept in names and slugs.
-     * Null bytes are removed from names and slugs. Slug case is normalized, and å, ä, and ö stay letters.
+     * Null bytes are removed from names, slugs, and parents. Slug case is normalized, and å, ä, and ö stay letters.
      * A slug of only whitespace becomes empty. A missing description is an empty string, not null.
      * An empty name is still exported. The term is not dropped when its slug is empty.
      * HTML in a description is kept. A null byte in a description is removed.
@@ -270,8 +270,7 @@ class Polylang_Terms
                 if ($existingId === $newId) {
                     continue;
                 }
-                $original = is_string($lang) ? trim($lang) : '';
-                $incomingLower = ($original === $key);
+                $incomingLower = $this->spellingWasLowercase($lang, $key);
                 if ($incomingLower) {
                     $caseNotes[] = array('kept' => $newId, 'dropped' => $existingId, 'lang' => $key);
                     $used[$existingId] = true;
@@ -1642,11 +1641,26 @@ class Polylang_Terms
         if (!is_string($lang)) {
             return null;
         }
-        $lang = strtolower(trim($lang));
+        $lang = strtolower(trim(str_replace("\0", '', $lang)));
         if ($lang === '') {
             return null;
         }
         return $lang;
+    }
+
+    /**
+     * The lowercase spelling wins. A null byte does not make it a different spelling.
+     *
+     * @param mixed $lang
+     * @param string $key
+     * @return bool
+     */
+    private function spellingWasLowercase($lang, $key)
+    {
+        if (!is_string($lang)) {
+            return false;
+        }
+        return trim(str_replace("\0", '', $lang)) === $key;
     }
 
     /**
@@ -1668,8 +1682,7 @@ class Polylang_Terms
             if ($key === null || $id <= 0) {
                 continue;
             }
-            $original = is_string($lang) ? trim($lang) : (string) $lang;
-            $incomingLower = ($original === $key);
+            $incomingLower = $this->spellingWasLowercase($lang, $key);
             if (!isset($clean[$key])) {
                 $clean[$key] = $id;
                 $wasLower[$key] = $incomingLower;
@@ -2152,7 +2165,7 @@ class Polylang_Terms
             return $value > 0 ? $value : 0;
         }
         if (is_string($value)) {
-            $value = trim($value);
+            $value = trim(str_replace("\0", '', $value));
             if ($value !== '' && preg_match('/^[0-9]+$/', $value)) {
                 $number = (int) $value;
                 return $number > 0 ? $number : 0;
