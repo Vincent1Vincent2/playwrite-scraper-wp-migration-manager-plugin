@@ -766,6 +766,46 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertStringNotContainsString("\0", $broken);
     }
 
+    public function test_failed_placeholder_estimate_escapes_the_reason_and_still_shows_the_note()
+    {
+        $note = 'Placeholder <script>alert(1)</script> note';
+        $html = $this->render(true, array(
+            'ok' => false,
+            'current_ms' => 0,
+            'tolka_ms' => 0,
+            'faster_percent' => 12,
+            'faster_label' => '12.0% <img src=x onerror=alert(1)> faster',
+            'basis' => '<script>alert(2)</script>',
+            'provenance' => 'placeholder',
+            'provenance_note' => $note,
+            'error' => "Failed <scr\0ipt>alert(3)</script>",
+        ));
+        $document = $this->document($html);
+
+        foreach (array(
+            'wmm-tolka-current-load',
+            'wmm-tolka-tolka-load',
+            'wmm-tolka-faster',
+            'wmm-tolka-basis',
+            'wmm-tolka-provenance-note',
+        ) as $id) {
+            $this->assertNotNull($document->getElementById($id), $id);
+        }
+
+        $note_node = $document->getElementById('wmm-tolka-provenance-note');
+        $this->assertFalse($note_node->hasAttribute('hidden'));
+        $this->assertSame($note, $this->text($html, 'wmm-tolka-provenance-note'));
+        $this->assertSame(
+            'The speed estimate could not be completed. Failed <script>alert(3)</script>.',
+            $this->text($html, 'wmm-tolka-speed-error')
+        );
+        $this->assertSame('Unavailable', $this->text($html, 'wmm-tolka-faster'));
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringNotContainsString('<img', $html);
+        $this->assertStringNotContainsString('% faster', $html);
+        $this->assertStringNotContainsString("\0", $html);
+    }
+
     public function test_measure_payload_and_missing_label_still_render()
     {
         $html = $this->render(true, array(

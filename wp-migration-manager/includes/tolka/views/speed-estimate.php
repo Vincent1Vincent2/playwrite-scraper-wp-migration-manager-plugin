@@ -295,7 +295,7 @@ if ('error' === $wmm_tolka_speed_view['state']) {
     $wmm_tolka_speed_view['basis'] = '';
     $wmm_tolka_speed_detail = '';
     if (is_array($wmm_tolka_speed_payload)) {
-        $wmm_tolka_speed_detail = $wmm_tolka_speed_text(
+        $wmm_tolka_speed_detail = $wmm_tolka_speed_plain(
             isset($wmm_tolka_speed_payload['error']) ? $wmm_tolka_speed_payload['error'] : ''
         );
     }
