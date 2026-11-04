@@ -466,6 +466,73 @@ HTML;
         $this->assertSame(1, $capped_result['stylesheet_count']);
     }
 
+    public function test_script_inside_an_html_comment_does_not_count_and_a_later_script_does()
+    {
+        $result = $this->analyze('<!-- <script src="/hidden.js"></script> --><script src="/theme.js"></script>');
+        $this->assertSame(1, $result['script_count']);
+        $this->assertSame(1, $result['language_count']);
+
+        $several = $this->analyze('<!-- <script src="/a.js"></script><script src="/b.js"></script> --><script src="/real.js"></script><script src="/also.js"></script>');
+        $this->assertSame(2, $several['script_count']);
+
+        $tight = $this->analyze("<!--\n<script src=/hidden.js></script>\n--><script src=/theme.js></script>");
+        $this->assertSame(1, $tight['script_count']);
+
+        $upper = $this->analyze('<!-- <SCRIPT SRC="/hidden.js"></SCRIPT> --><SCRIPT SRC="/theme.js"></SCRIPT>');
+        $this->assertSame(1, $upper['script_count']);
+
+        $with_default = $this->analyze('<!-- <script src="/hidden.js"></script> --><script src="/theme.js"></script><link rel="alternate" hreflang="x-default" href="/">');
+        $this->assertSame(1, $with_default['script_count']);
+        $this->assertSame(0, $with_default['hreflang_count']);
+        $this->assertSame(1, $with_default['language_count']);
+
+        $page = '<!-- <script src="/hidden.js"></script> --><script src="/theme.js"></script><link rel="alternate" hreflang="x-default" href="/">';
+        $capped = $page . str_repeat(' ', 2000000 - strlen($page));
+        $this->assertSame(2000000, strlen($capped));
+        $capped_result = $this->analyze($capped);
+        $this->assertTrue($capped_result['truncated']);
+        $this->assertSame(1, $capped_result['script_count']);
+        $this->assertSame(0, $capped_result['hreflang_count']);
+        $this->assertSame(1, $capped_result['language_count']);
+    }
+
+    public function test_script_inside_noscript_template_or_iframe_does_not_count()
+    {
+        $cases = array(
+            '<noscript><script src="/hidden.js"></script></noscript><script src="/theme.js"></script>',
+            '<template><script src="/hidden.js"></script></template><script src="/theme.js"></script>',
+            '<iframe><script src="/hidden.js"></script></iframe><script src="/theme.js"></script>',
+        );
+
+        foreach ($cases as $html) {
+            $result = $this->analyze($html . '<link rel="alternate" hreflang="x-default" href="/">');
+
+            $this->assertSame(1, $result['script_count'], $html);
+            $this->assertSame(0, $result['hreflang_count'], $html);
+            $this->assertSame(1, $result['language_count'], $html);
+        }
+    }
+
+    public function test_x_default_is_not_a_language_when_it_is_the_only_alternate()
+    {
+        $cases = array(
+            '<link rel="alternate" hreflang="x-default" href="/">',
+            '<link rel="alternate" href="https://example.com/" hreflang="X-DEFAULT" />',
+            '<link rel="alternate" hreflang=x-default href=/>',
+            '<link rel="alternate" hreflang=" x-default " href="/">',
+            '<link rel="alternate" hreflang="x-default" href="/"><link rel="alternate" hreflang="X-Default" href="/home/">',
+            '<a hreflang="x-default" href="/"></a>',
+        );
+
+        foreach ($cases as $html) {
+            $result = $this->analyze($html);
+
+            $this->assertSame(0, $result['hreflang_count'], $html);
+            $this->assertSame(1, $result['language_count'], $html);
+            $this->assertFalse($result['has_polylang_switcher'], $html);
+        }
+    }
+
     public function test_img_inside_an_html_comment_does_not_count_and_a_later_img_does()
     {
         $result = $this->analyze('<!-- <img src="/hidden.png"> --><img src="/shown.png">');
