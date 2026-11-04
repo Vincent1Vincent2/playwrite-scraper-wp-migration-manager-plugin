@@ -319,6 +319,43 @@ class Tolka_Schema_Test extends \PHPUnit\Framework\TestCase
         $this->assertSame(array(), $GLOBALS['wmm_tolka_schema_driver']['term_meta']);
     }
 
+    public function test_empty_package_replaces_the_snapshot_and_leaves_tags()
+    {
+        $GLOBALS['wmm_tolka_schema_driver']['post_meta'][5] = array(
+            '_wmm_tolka_lang' => 'en',
+            '_wmm_tolka_group' => 'post:5',
+            '_pll_lang' => 'en',
+        );
+        $GLOBALS['wmm_tolka_schema_driver']['term_meta'][8] = array(
+            '_wmm_tolka_lang' => 'sv',
+            '_wmm_tolka_group' => 'term:8',
+        );
+
+        $package = Tolka_Schema::package(array());
+        $result = Tolka_Writer::write($package);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(array(), $result['errors']);
+        $this->assertSame($package, $GLOBALS['wmm_tolka_schema_driver']['stored_package']);
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'en',
+                '_wmm_tolka_group' => 'post:5',
+                '_pll_lang' => 'en',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['post_meta'][5]
+        );
+        $this->assertSame(
+            array(
+                '_wmm_tolka_lang' => 'sv',
+                '_wmm_tolka_group' => 'term:8',
+            ),
+            $GLOBALS['wmm_tolka_schema_driver']['term_meta'][8]
+        );
+        $this->assertSame(0, $this->call_count('update_post_meta'));
+        $this->assertSame(0, $this->call_count('update_term_meta'));
+    }
+
     public function test_package_with_no_sections_counts_as_empty()
     {
         $result = Tolka_Writer::write(array(
