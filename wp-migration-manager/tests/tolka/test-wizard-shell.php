@@ -373,6 +373,10 @@ namespace WMM\Tolka {
             $this->assertArrayNotHasKey('faster_percent', $dropped);
             $this->assertArrayNotHasKey('faster_label', $dropped);
             $this->assertSame('The page could not be measured.', $dropped['error']);
+            $this->assertSame(
+                'The page could not be measured.',
+                \wmm_tolka_plain_value('The page could not be measured. <script>secret-html</script>')
+            );
         }
 
         public function test_guard_rejects_bad_nonce_and_capability()
@@ -838,6 +842,8 @@ namespace WMM\Tolka {
             $this->assertArrayNotHasKey('html', $payload['data']['estimate']);
             $this->assertStringNotContainsString('secret-html', $encoded);
             $this->assertSame('Measured page load plus coefficients from benchmarks.json', $payload['data']['estimate']['basis']);
+            $this->assertSame(25.0, $payload['data']['estimate']['faster_percent']);
+            $this->assertSame('25% faster', $payload['data']['estimate']['faster_label']);
 
             $this->capture(function () {
                 \wmm_tolka_ajax_preview();
@@ -951,6 +957,7 @@ PHP
             $this->assertTrue($payload['success']);
             $this->assertFalse($payload['data']['estimate']['ok']);
             $this->assertSame('The page could not be measured.', $payload['data']['estimate']['error']);
+            $this->assertStringNotContainsString('secret-html', json_encode($payload));
             $this->assertArrayNotHasKey('faster_percent', $payload['data']['estimate']);
             $this->assertArrayNotHasKey('faster_label', $payload['data']['estimate']);
             $this->assertArrayNotHasKey('html', $payload['data']['estimate']);
@@ -1088,7 +1095,7 @@ class Speed_Estimate {
                 'tolka_ms' => 0,
                 'faster_percent' => 99.9,
                 'faster_label' => '99.9% faster',
-                'error' => 'The page could not be measured.',
+                'error' => 'The page could not be measured. <script>secret-html</script>',
                 'html' => '<script>secret-html</script>',
             );
         }
