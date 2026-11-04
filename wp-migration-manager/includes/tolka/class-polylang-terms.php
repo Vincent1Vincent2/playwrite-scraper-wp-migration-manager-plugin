@@ -50,7 +50,7 @@ class Polylang_Terms
      * HTML in a name is kept. Letters such as å, ä, and ö are kept in names and slugs.
      * Null bytes are removed from names and slugs. A slug of only whitespace becomes empty.
      * An empty name is still exported. The term is not dropped when its slug is empty.
-     * description is the term description in that language.
+     * HTML in a description is kept. A null byte in a description is removed.
      * parent is that language's WordPress parent term id, or 0 when the term has none.
      * Calling export() again on the same instance does not append duplicate groups.
      * The group id is the default-language term when that translation exists,
@@ -201,6 +201,7 @@ class Polylang_Terms
                 }
                 $row['name'] = $this->stringValue(isset($row['name']) ? $row['name'] : '');
                 $row['slug'] = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
+                $row['description'] = $this->stringValue(isset($row['description']) ? $row['description'] : '');
                 $row['parent'] = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
                 $items[$index]['translations'][$lang] = $row;
             }
@@ -321,7 +322,7 @@ class Polylang_Terms
                     'id' => $id,
                     'name' => $this->stringValue(isset($term['name']) ? $term['name'] : ''),
                     'slug' => $this->slugValue(isset($term['slug']) ? $term['slug'] : ''),
-                    'description' => $this->plainText(isset($term['description']) ? $term['description'] : ''),
+                    'description' => $this->stringValue(isset($term['description']) ? $term['description'] : ''),
                     'parent' => $this->parentId(isset($term['parent']) ? $term['parent'] : 0),
                 ),
             ),
@@ -491,7 +492,7 @@ class Polylang_Terms
                 'id' => $translatedId,
                 'name' => $this->stringValue(isset($details['name']) ? $details['name'] : ''),
                 'slug' => $this->slugValue(isset($details['slug']) ? $details['slug'] : ''),
-                'description' => $this->plainText(isset($details['description']) ? $details['description'] : ''),
+                'description' => $this->stringValue(isset($details['description']) ? $details['description'] : ''),
                 'parent' => isset($details['parent']) ? $this->parentId($details['parent']) : 0,
             );
         }
@@ -1493,7 +1494,7 @@ class Polylang_Terms
             $id = isset($row['id']) ? (int) $row['id'] : 0;
             $name = $this->stringValue(isset($row['name']) ? $row['name'] : '');
             $slug = $this->slugValue(isset($row['slug']) ? $row['slug'] : '');
-            $description = $this->plainText(isset($row['description']) ? $row['description'] : '');
+            $description = $this->stringValue(isset($row['description']) ? $row['description'] : '');
             $parent = $this->parentId(isset($row['parent']) ? $row['parent'] : 0);
         } elseif (is_int($row) || (is_string($row) && is_numeric($row))) {
             $id = (int) $row;
@@ -2079,24 +2080,6 @@ class Polylang_Terms
             return '';
         }
         return $slug;
-    }
-
-    /**
-     * Term text as an editor would show it. Slugs stay encoded.
-     *
-     * @param mixed $value
-     * @return string
-     */
-    private function plainText($value)
-    {
-        $text = $this->stringValue($value);
-        if ($text === '') {
-            return '';
-        }
-        if (function_exists('wp_specialchars_decode')) {
-            return wp_specialchars_decode($text, ENT_QUOTES);
-        }
-        return html_entity_decode($text, ENT_QUOTES, 'UTF-8');
     }
 
     /**
