@@ -1,0 +1,10 @@
+{
+  "id": "tolka-lab",
+  "provenance": "placeholder",
+  "provenance_note": "Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.",
+  "polylang_extra_ms_per_language": 35,
+  "polylang_switcher_ms": 25,
+  "polylang_extra_ms_per_script": 8,
+  "tolka_ms_per_language": 6,
+  "max_overhead_ratio": 0.7
+}

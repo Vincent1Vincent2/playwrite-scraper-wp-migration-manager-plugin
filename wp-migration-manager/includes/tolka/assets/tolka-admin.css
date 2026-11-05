@@ -1,0 +1,2401 @@
+/**
+ * Migrate to Tolka — admin wizard.
+ *
+ * Every class starts with wmm-tolka. The speed figure is the largest text
+ * on the screen. Markup hooks live on the wizard view, the speed partial,
+ * the help partial, and the admin script.
+ *
+ * Buttons show a busy state with .wmm-tolka-busy or aria-busy="true".
+ * Failed requests show .wmm-tolka-error (or .wmm-tolka-errors).
+ *
+ * @package MigrationManager
+ */
+
+/* ==========================================================================
+   Tokens
+   ========================================================================== */
+
+.wmm-tolka,
+.wmm-tolka-wrap {
+    --wmm-tolka-ink: #1d2327;
+    --wmm-tolka-body: #50575e;
+    --wmm-tolka-muted: #646970;
+    --wmm-tolka-line: #dcdcde;
+    --wmm-tolka-line-strong: #c3c4c7;
+    --wmm-tolka-surface: #fff;
+    --wmm-tolka-soft: #f6f7f7;
+    --wmm-tolka-win: #0b6e4f;
+    --wmm-tolka-win-dark: #084e39;
+    --wmm-tolka-win-text: #0f3d2c;
+    --wmm-tolka-win-bg: #e7f6ef;
+    --wmm-tolka-win-wash: #f4fbf7;
+    --wmm-tolka-win-line: #8fceb0;
+    --wmm-tolka-warn: #6e4e00;
+    --wmm-tolka-warn-bg: #fcf9e8;
+    --wmm-tolka-warn-line: #dba617;
+    --wmm-tolka-danger: #8a2424;
+    --wmm-tolka-danger-bg: #fcf0f1;
+    --wmm-tolka-danger-line: #f0c2c2;
+    --wmm-tolka-radius: 12px;
+    --wmm-tolka-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 28px rgba(0, 0, 0, 0.05);
+    box-sizing: border-box;
+    max-width: 960px;
+    color: var(--wmm-tolka-ink);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.wmm-tolka *,
+.wmm-tolka *::before,
+.wmm-tolka *::after,
+.wmm-tolka-wrap *,
+.wmm-tolka-wrap *::before,
+.wmm-tolka-wrap *::after {
+    box-sizing: border-box;
+}
+
+.wmm-tolka [hidden] {
+    display: none !important;
+}
+
+/* ==========================================================================
+   Page title and wizard shell
+   ========================================================================== */
+
+.wrap.wmm-tolka > .wmm-tolka-title,
+.wmm-tolka > h1.wmm-tolka-title {
+    margin: 0 0 18px;
+    padding: 0;
+    color: var(--wmm-tolka-ink);
+    font-size: 23px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+#wmm-tolka-wizard,
+.wmm-tolka-wizard {
+    margin: 0;
+    container-type: inline-size;
+    container-name: wmm-tolka-wizard;
+}
+
+.wmm-tolka-lead,
+.wmm-tolka-intro {
+    margin: 0 0 18px;
+    max-width: 68ch;
+    color: var(--wmm-tolka-body);
+    font-size: 14px;
+}
+
+/* ==========================================================================
+   Five steps
+   ========================================================================== */
+
+.wmm-tolka-steps {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: wmm-tolka-step;
+}
+
+.wmm-tolka-steps::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset-block: 28px;
+    inset-inline-start: 35px;
+    width: 2px;
+    background: var(--wmm-tolka-line);
+}
+
+.wmm-tolka-step {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    padding: 20px 22px 20px 72px;
+    list-style: none;
+    background: var(--wmm-tolka-surface);
+    border: 1px solid var(--wmm-tolka-line);
+    border-radius: var(--wmm-tolka-radius);
+    box-shadow: var(--wmm-tolka-shadow);
+    counter-increment: wmm-tolka-step;
+}
+
+.wmm-tolka-step::marker {
+    content: none;
+}
+
+.wmm-tolka-step::before {
+    content: counter(wmm-tolka-step);
+    position: absolute;
+    top: 20px;
+    inset-inline-start: 20px;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--wmm-tolka-soft);
+    color: var(--wmm-tolka-ink);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.wmm-tolka-step:nth-child(3) {
+    background: linear-gradient(180deg, var(--wmm-tolka-win-wash) 0%, var(--wmm-tolka-surface) 148px);
+    border-color: var(--wmm-tolka-win-line);
+}
+
+.wmm-tolka-step:nth-child(3)::before {
+    background: var(--wmm-tolka-win);
+    color: #fff;
+}
+
+.wmm-tolka-step:focus-within {
+    border-color: var(--wmm-tolka-win);
+    box-shadow: 0 0 0 1px var(--wmm-tolka-win);
+}
+
+.wmm-tolka-step-title {
+    margin: 2px 0 8px;
+    color: var(--wmm-tolka-ink);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.wmm-tolka-step:nth-child(3) .wmm-tolka-step-title {
+    color: var(--wmm-tolka-win-text);
+    font-size: 18px;
+}
+
+.wmm-tolka-step-text,
+.wmm-tolka-basis,
+.wmm-tolka-provenance-note,
+.wmm-tolka-summary,
+.wmm-tolka-help__benchmark,
+.wmm-tolka-help-benchmark {
+    text-wrap: pretty;
+}
+
+.wmm-tolka-step-text {
+    margin: 0 0 12px;
+    max-width: 68ch;
+    color: var(--wmm-tolka-body);
+}
+
+.wmm-tolka-step:has(#wmm-tolka-speed .wmm-tolka-is-ready),
+.wmm-tolka-step:has(#wmm-tolka-speed.wmm-tolka-has-result),
+.wmm-tolka-step:has(#wmm-tolka-preview-result.wmm-tolka-has-result),
+.wmm-tolka-step:has(#wmm-tolka-report.wmm-tolka-has-result) {
+    display: flex;
+    flex-direction: column;
+}
+
+.wmm-tolka-step:has(#wmm-tolka-speed .wmm-tolka-is-ready) > #wmm-tolka-speed,
+.wmm-tolka-step:has(#wmm-tolka-speed.wmm-tolka-has-result) > #wmm-tolka-speed,
+.wmm-tolka-step:has(#wmm-tolka-preview-result.wmm-tolka-has-result) > #wmm-tolka-preview-result,
+.wmm-tolka-step:has(#wmm-tolka-report.wmm-tolka-has-result) > #wmm-tolka-report {
+    order: 3;
+    margin-top: 4px;
+}
+
+.wmm-tolka-step:has(#wmm-tolka-speed .wmm-tolka-is-ready) > .wmm-tolka-field,
+.wmm-tolka-step:has(#wmm-tolka-speed.wmm-tolka-has-result) > .wmm-tolka-field {
+    order: 4;
+    margin-top: 18px;
+}
+
+.wmm-tolka-step:has(#wmm-tolka-speed .wmm-tolka-is-ready) > .wmm-tolka-actions,
+.wmm-tolka-step:has(#wmm-tolka-speed.wmm-tolka-has-result) > .wmm-tolka-actions,
+.wmm-tolka-step:has(#wmm-tolka-preview-result.wmm-tolka-has-result) > .wmm-tolka-actions,
+.wmm-tolka-step:has(#wmm-tolka-report.wmm-tolka-has-result) > .wmm-tolka-actions {
+    order: 5;
+}
+
+/* ==========================================================================
+   URL field and actions
+   ========================================================================== */
+
+.wmm-tolka-field {
+    margin: 4px 0 12px;
+    max-width: 100%;
+}
+
+.wmm-tolka-field > .wmm-tolka-label,
+.wmm-tolka-field > label {
+    display: block;
+    margin: 0 0 6px;
+    color: var(--wmm-tolka-ink);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#wmm-tolka-url,
+.wmm-tolka-url {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-height: 40px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid #8c8f94;
+    border-radius: 6px;
+    background: var(--wmm-tolka-surface);
+    color: var(--wmm-tolka-ink);
+    font-size: 15px;
+    line-height: 1.4;
+}
+
+#wmm-tolka-url:focus,
+.wmm-tolka-url:focus {
+    border-color: var(--wmm-tolka-win);
+    outline: 2px solid transparent;
+    box-shadow: 0 0 0 1px var(--wmm-tolka-win);
+}
+
+.wmm-tolka-description,
+.wmm-tolka-field .description {
+    margin: 6px 0 0;
+    color: var(--wmm-tolka-muted);
+    font-size: 13px;
+}
+
+.wmm-tolka-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 12px 0;
+}
+
+.wmm-tolka-actions .spinner {
+    float: none;
+    margin: 0;
+}
+
+.wmm-tolka-button {
+    min-height: 36px;
+    white-space: nowrap;
+}
+
+#wmm-tolka-measure.button {
+    background: var(--wmm-tolka-win);
+    border-color: var(--wmm-tolka-win-dark);
+    color: #fff;
+    font-weight: 600;
+}
+
+#wmm-tolka-measure.button:hover,
+#wmm-tolka-measure.button:focus {
+    background: var(--wmm-tolka-win-dark);
+    border-color: #063828;
+    color: #fff;
+}
+
+#wmm-tolka-url:focus-visible {
+    outline: 2px solid var(--wmm-tolka-win);
+    outline-offset: 2px;
+}
+
+#wmm-tolka-measure:focus,
+#wmm-tolka-preview:focus,
+#wmm-tolka-run:focus,
+#wmm-tolka-measure:focus-visible,
+#wmm-tolka-preview:focus-visible,
+#wmm-tolka-run:focus-visible {
+    outline: 3px solid #1d2327 !important;
+    outline-offset: 2px !important;
+}
+
+#wmm-tolka-wizard button.wmm-tolka-busy,
+#wmm-tolka-wizard button.wmm-tolka-is-busy,
+#wmm-tolka-wizard button.wmm-tolka-button--busy,
+#wmm-tolka-wizard button[aria-busy="true"] {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    overflow: visible;
+    cursor: progress;
+    opacity: 1 !important;
+    color: #1d2327 !important;
+    background-color: #f0f0f1 !important;
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent) !important;
+    background-repeat: no-repeat !important;
+    background-size: 40% 100% !important;
+    border-color: #1d2327 !important;
+    text-shadow: none !important;
+    box-shadow: inset 0 0 0 1px rgba(29, 35, 39, 0.35) !important;
+    animation: wmm-tolka-busy 1s linear infinite;
+}
+
+#wmm-tolka-measure.button.wmm-tolka-is-busy,
+#wmm-tolka-measure.button.wmm-tolka-busy,
+#wmm-tolka-measure.button[aria-busy="true"] {
+    color: #fff !important;
+    background-color: #084e39 !important;
+    border-color: #063828 !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35) !important;
+}
+
+#wmm-tolka-run.button.wmm-tolka-is-busy,
+#wmm-tolka-run.button.wmm-tolka-busy,
+#wmm-tolka-run.button[aria-busy="true"] {
+    color: #fff !important;
+    background-color: #0a4b78 !important;
+    border-color: #083654 !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28) !important;
+}
+
+button.wmm-tolka-is-busy,
+.wmm-tolka-button.wmm-tolka-is-busy,
+#wmm-tolka-measure.wmm-tolka-is-busy,
+#wmm-tolka-preview.wmm-tolka-is-busy,
+#wmm-tolka-run.wmm-tolka-is-busy {
+    position: relative;
+    z-index: 0;
+}
+
+button.wmm-tolka-is-busy::after,
+.wmm-tolka-button.wmm-tolka-is-busy::after,
+#wmm-tolka-measure.wmm-tolka-is-busy::after,
+#wmm-tolka-preview.wmm-tolka-is-busy::after,
+#wmm-tolka-run.wmm-tolka-is-busy::after,
+#wmm-tolka-wizard button.wmm-tolka-busy::after,
+#wmm-tolka-wizard button.wmm-tolka-is-busy::after,
+#wmm-tolka-wizard button.wmm-tolka-button--busy::after,
+#wmm-tolka-wizard button[aria-busy="true"]::after {
+    content: "" !important;
+    position: static !important;
+    float: none !important;
+    inset: auto !important;
+    display: inline-block !important;
+    visibility: visible !important;
+    flex: 0 0 auto;
+    width: 14px !important;
+    min-width: 14px !important;
+    height: 14px !important;
+    min-height: 14px !important;
+    margin: 0 0 0 8px;
+    vertical-align: -2px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    pointer-events: none;
+    animation: wmm-tolka-spin 0.7s linear infinite;
+}
+
+@keyframes wmm-tolka-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes wmm-tolka-busy {
+    from {
+        background-position: -40% 0;
+    }
+
+    to {
+        background-position: 140% 0;
+    }
+}
+
+/* ==========================================================================
+   Speed estimate — the selling point
+   ========================================================================== */
+
+#wmm-tolka-speed,
+#wmm-tolka-preview-result,
+#wmm-tolka-report {
+    scroll-margin-top: 48px;
+}
+
+#wmm-tolka-speed:not(:has(*)),
+#wmm-tolka-preview-result:not(:has(*)),
+#wmm-tolka-report:not(:has(*)) {
+    margin-top: 4px;
+    padding: 14px 16px;
+    border: 1px dashed var(--wmm-tolka-line-strong);
+    border-radius: 10px;
+    background: var(--wmm-tolka-soft);
+    color: var(--wmm-tolka-muted);
+}
+
+#wmm-tolka-speed:not(:has(*))::before,
+#wmm-tolka-preview-result:not(:has(*))::before,
+#wmm-tolka-report:not(:has(*))::before {
+    display: block;
+    max-width: 62ch;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+#wmm-tolka-speed:not(:has(*))::before {
+    content: "Measure the public site URL to see the current load time, the estimated Tolka time, and how much faster Tolka is.";
+}
+
+#wmm-tolka-preview-result:not(:has(*))::before {
+    content: "Preview has not been run. Languages, posts, terms, strings, menus, and media will be listed here. Nothing is written yet.";
+}
+
+#wmm-tolka-report:not(:has(*))::before {
+    content: "The migration has not been run. The result will appear here. Polylang data stays in place.";
+}
+
+#wmm-tolka-speed:has(*) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    margin-top: 4px;
+    padding: 20px 20px 18px;
+    border: 1px solid var(--wmm-tolka-win-line);
+    border-radius: var(--wmm-tolka-radius);
+    background: var(--wmm-tolka-surface);
+}
+
+#wmm-tolka-speed:has(.wmm-tolka-error):not(:has(
+    .wmm-tolka-faster,
+    .wmm-tolka-percent-faster,
+    .wmm-tolka-faster-label,
+    .wmm-tolka-compare,
+    .wmm-tolka-speed__faster,
+    [data-wmm-tolka="faster_label"]
+)) {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+#wmm-tolka-speed:has(*) > * {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+#wmm-tolka-speed:has(*) > .wmm-tolka-current-load,
+#wmm-tolka-speed:has(*) > .wmm-tolka-current,
+#wmm-tolka-speed:has(*) > .wmm-tolka-tolka-load,
+#wmm-tolka-speed:has(*) > .wmm-tolka-tolka,
+#wmm-tolka-speed:has(*) > .wmm-tolka-metric,
+#wmm-tolka-speed:has(*) > .wmm-tolka-speed__current,
+#wmm-tolka-speed:has(*) > .wmm-tolka-speed__tolka,
+#wmm-tolka-speed:has(*) > .wmm-tolka-speed__metric {
+    grid-column: auto;
+}
+
+#wmm-tolka-speed:has(
+    .wmm-tolka-faster,
+    .wmm-tolka-percent-faster,
+    .wmm-tolka-faster-label,
+    .wmm-tolka-speed__faster,
+    [data-wmm-tolka="faster_label"],
+    [data-wmm-tolka="faster_percent"]
+):not(:has(h2, h3, h4, .wmm-tolka-kicker, .wmm-tolka-eyebrow, .wmm-tolka-speed__kicker))::before {
+    content: "Estimated with Tolka";
+    grid-column: 1 / -1;
+    order: -3;
+    color: var(--wmm-tolka-win);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+#wmm-tolka-speed .wmm-tolka-faster,
+#wmm-tolka-speed .wmm-tolka-percent-faster,
+#wmm-tolka-speed .wmm-tolka-faster-label,
+#wmm-tolka-speed .wmm-tolka-faster-percent,
+#wmm-tolka-speed .wmm-tolka-percent,
+#wmm-tolka-speed .wmm-tolka-speed__faster,
+#wmm-tolka-speed .wmm-tolka-speed__percent,
+#wmm-tolka-speed [data-wmm-tolka="faster_label"],
+#wmm-tolka-speed [data-wmm-tolka="faster_percent"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    order: -2;
+    margin: 0;
+    color: var(--wmm-tolka-win);
+    font-size: clamp(2.5rem, 5vw, 3.75rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.035em;
+    line-height: 0.95;
+}
+
+#wmm-tolka-speed .wmm-tolka-kicker,
+#wmm-tolka-speed .wmm-tolka-eyebrow,
+#wmm-tolka-speed .wmm-tolka-speed__kicker,
+#wmm-tolka-speed .wmm-tolka-faster .wmm-tolka-kicker {
+    display: block;
+    flex-basis: 100%;
+    order: -1;
+    margin: 0 0 6px;
+    color: var(--wmm-tolka-win);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-compare,
+.wmm-tolka-metrics,
+.wmm-tolka-speed__compare,
+#wmm-tolka-speed > dl {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 28px;
+    order: -1;
+    margin: 4px 0 0;
+}
+
+.wmm-tolka-compare::before,
+.wmm-tolka-metrics::before,
+.wmm-tolka-speed__compare::before,
+#wmm-tolka-speed > dl::before {
+    content: "vs";
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 50%;
+    padding: 2px 7px;
+    border: 1px solid var(--wmm-tolka-line);
+    border-radius: 999px;
+    background: var(--wmm-tolka-surface);
+    color: var(--wmm-tolka-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+    pointer-events: none;
+    text-transform: uppercase;
+    transform: translate(-50%, -50%);
+}
+
+#wmm-tolka-speed .wmm-tolka-metric,
+#wmm-tolka-speed .wmm-tolka-speed__metric,
+#wmm-tolka-speed .wmm-tolka-current-load,
+#wmm-tolka-speed .wmm-tolka-current,
+#wmm-tolka-speed .wmm-tolka-tolka-load,
+#wmm-tolka-speed .wmm-tolka-tolka,
+#wmm-tolka-speed .wmm-tolka-speed__current,
+#wmm-tolka-speed .wmm-tolka-speed__tolka,
+#wmm-tolka-speed > dl > div {
+    min-width: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--wmm-tolka-line);
+    border-radius: 10px;
+    background: var(--wmm-tolka-soft);
+}
+
+#wmm-tolka-speed .wmm-tolka-tolka-load,
+#wmm-tolka-speed .wmm-tolka-tolka,
+#wmm-tolka-speed .wmm-tolka-speed__tolka,
+#wmm-tolka-speed .wmm-tolka-metric-tolka,
+.wmm-tolka-compare:has(> :nth-child(2):last-child) > :last-child,
+.wmm-tolka-metrics:has(> :nth-child(2):last-child) > :last-child,
+#wmm-tolka-speed > dl > div:last-child {
+    border-color: var(--wmm-tolka-win-line);
+    background: var(--wmm-tolka-win-bg);
+}
+
+#wmm-tolka-speed .wmm-tolka-label,
+#wmm-tolka-speed .wmm-tolka-metric-label,
+#wmm-tolka-speed .wmm-tolka-speed__label,
+#wmm-tolka-speed dt,
+#wmm-tolka-speed [data-wmm-tolka="label"] {
+    display: block;
+    margin: 0;
+    color: var(--wmm-tolka-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+#wmm-tolka-speed .wmm-tolka-speed-figure .wmm-tolka-value,
+#wmm-tolka-speed .wmm-tolka-metric .wmm-tolka-value,
+#wmm-tolka-speed .wmm-tolka-metric-value,
+#wmm-tolka-speed .wmm-tolka-speed__value,
+#wmm-tolka-speed .wmm-tolka-speed-figure dd,
+#wmm-tolka-speed > dl > dd,
+#wmm-tolka-speed dd.wmm-tolka-speed-current,
+#wmm-tolka-speed dd.wmm-tolka-speed-tolka,
+#wmm-tolka-speed dd.wmm-tolka-speed-faster,
+#wmm-tolka-speed .wmm-tolka-current-load strong,
+#wmm-tolka-speed .wmm-tolka-tolka-load strong,
+#wmm-tolka-speed [data-wmm-tolka="current_ms"],
+#wmm-tolka-speed [data-wmm-tolka="tolka_ms"] {
+    display: block;
+    margin: 6px 0 0;
+    color: var(--wmm-tolka-ink);
+    font-size: clamp(1.75rem, 3vw, 2.15rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+}
+
+#wmm-tolka-speed .wmm-tolka-tolka-load .wmm-tolka-value,
+#wmm-tolka-speed .wmm-tolka-tolka .wmm-tolka-value,
+#wmm-tolka-speed .wmm-tolka-tolka-load strong,
+#wmm-tolka-speed .wmm-tolka-speed__tolka .wmm-tolka-value,
+#wmm-tolka-speed .wmm-tolka-metric-tolka .wmm-tolka-value,
+#wmm-tolka-speed [data-wmm-tolka="tolka_ms"],
+.wmm-tolka-compare:has(> :nth-child(2):last-child) > :last-child .wmm-tolka-value,
+#wmm-tolka-speed > dl > div:last-child dd,
+#wmm-tolka-speed > dl > div:last-child .wmm-tolka-value {
+    color: var(--wmm-tolka-win);
+}
+
+#wmm-tolka-speed > dl > dt:nth-of-type(1) {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+#wmm-tolka-speed > dl > dd:nth-of-type(1) {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+#wmm-tolka-speed > dl > dt:nth-of-type(2) {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+#wmm-tolka-speed > dl > dd:nth-of-type(2) {
+    grid-column: 2;
+    grid-row: 2;
+    color: var(--wmm-tolka-win);
+}
+
+#wmm-tolka-speed > dl {
+    row-gap: 0;
+}
+
+#wmm-tolka-speed > dl > dt,
+#wmm-tolka-speed > dl > dd {
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--wmm-tolka-line);
+    background: var(--wmm-tolka-soft);
+}
+
+#wmm-tolka-speed > dl > dt {
+    padding-bottom: 0;
+    border-bottom: 0;
+    border-radius: 10px 10px 0 0;
+}
+
+#wmm-tolka-speed > dl > dd {
+    padding-top: 6px;
+    border-top: 0;
+    border-radius: 0 0 10px 10px;
+}
+
+#wmm-tolka-speed > dl > dt:nth-of-type(2),
+#wmm-tolka-speed > dl > dd:nth-of-type(2) {
+    border-color: var(--wmm-tolka-win-line);
+    background: var(--wmm-tolka-win-bg);
+}
+
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields,
+dl.wmm-tolka-speed-fields {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin: 0;
+}
+
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt,
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields > dd,
+dl.wmm-tolka-speed-fields > dt,
+dl.wmm-tolka-speed-fields > dd {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+#wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt,
+dl.wmm-tolka-speed-fields > dt {
+    margin-top: 12px;
+    padding-top: 0;
+    color: var(--wmm-tolka-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+dl.wmm-tolka-speed-fields > dt:first-child {
+    margin-top: 0;
+}
+
+#wmm-tolka-speed .wmm-tolka-basis,
+#wmm-tolka-speed .wmm-tolka-speed__basis,
+#wmm-tolka-speed [data-wmm-tolka="basis"] {
+    order: 4;
+    margin: 2px 0 0;
+    max-width: 68ch;
+    color: var(--wmm-tolka-muted);
+    font-size: 13px;
+}
+
+#wmm-tolka-speed .wmm-tolka-provenance,
+#wmm-tolka-speed .wmm-tolka-provenance-note,
+#wmm-tolka-speed .wmm-tolka-speed__note,
+#wmm-tolka-speed .wmm-tolka-speed__provenance,
+#wmm-tolka-speed [data-wmm-tolka="provenance_note"] {
+    order: 5;
+    margin: 0;
+    padding: 12px 14px;
+    border-inline-start: 4px solid var(--wmm-tolka-warn-line);
+    border-radius: 6px;
+    background: var(--wmm-tolka-warn-bg);
+    color: var(--wmm-tolka-warn);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+#wmm-tolka-speed .wmm-tolka-overhead,
+#wmm-tolka-speed [data-wmm-tolka="overhead_ms"] {
+    color: var(--wmm-tolka-muted);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   Preview and migration result
+   ========================================================================== */
+
+#wmm-tolka-preview-result,
+#wmm-tolka-report {
+    min-width: 0;
+    clear: both;
+    position: relative;
+    z-index: 1;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+#wmm-tolka-preview-result:has(*),
+#wmm-tolka-report:has(*) {
+    margin-top: 4px;
+    padding: 16px 18px 18px;
+    overflow: visible;
+    border: 1px solid var(--wmm-tolka-line);
+    border-radius: var(--wmm-tolka-radius);
+    background: var(--wmm-tolka-surface);
+}
+
+#wmm-tolka-preview-result :is(p, li, dd, dt, th, td, h2, h3, h4, span, a, code, pre, div, caption, strong),
+#wmm-tolka-report :is(p, li, dd, dt, th, td, h2, h3, h4, span, a, code, pre, div, caption, strong) {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+#wmm-tolka-preview-result pre,
+#wmm-tolka-report pre {
+    white-space: pre-wrap;
+}
+
+#wmm-tolka-preview-result table,
+#wmm-tolka-report table {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+}
+
+#wmm-tolka-preview-result:has(> .wmm-tolka-empty:only-child),
+#wmm-tolka-report:has(> .wmm-tolka-empty:only-child) {
+    margin-top: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+#wmm-tolka-report h2,
+#wmm-tolka-report h3,
+#wmm-tolka-preview-result h2,
+#wmm-tolka-preview-result h3,
+#wmm-tolka-report .wmm-tolka-title,
+#wmm-tolka-report .wmm-tolka-report-title,
+#wmm-tolka-preview-result .wmm-tolka-report-title {
+    margin: 16px 0 8px;
+    color: var(--wmm-tolka-ink);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+#wmm-tolka-report > :first-child,
+#wmm-tolka-preview-result > :first-child {
+    margin-top: 0;
+}
+
+p.wmm-tolka-summary,
+.wmm-tolka-report-summary {
+    margin: 0 0 14px;
+    max-width: 68ch;
+    color: var(--wmm-tolka-body);
+    font-size: 15px;
+}
+
+table.wmm-tolka-summary {
+    width: 100%;
+    max-width: none;
+    margin-top: 12px;
+}
+
+.wmm-tolka-ok {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--wmm-tolka-win-bg);
+    color: var(--wmm-tolka-win-text);
+    font-weight: 600;
+}
+
+.wmm-tolka-counts,
+.wmm-tolka-preview-counts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 0;
+    list-style: none;
+}
+
+.wmm-tolka-count {
+    min-width: 0;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--wmm-tolka-soft);
+}
+
+.wmm-tolka-count .wmm-tolka-value,
+.wmm-tolka-count strong {
+    display: block;
+    color: var(--wmm-tolka-ink);
+    font-size: 1.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+}
+
+.wmm-tolka-count .wmm-tolka-label {
+    display: block;
+    margin-top: 4px;
+    color: var(--wmm-tolka-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-lines {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.wmm-tolka-line,
+#wmm-tolka-report .wmm-tolka-lines > div,
+#wmm-tolka-report dl.wmm-tolka-lines > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    justify-content: space-between;
+    align-items: baseline;
+    min-width: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid #e2e4e7;
+}
+
+.wmm-tolka-line .wmm-tolka-label,
+#wmm-tolka-report dt {
+    color: var(--wmm-tolka-muted);
+    font-weight: 600;
+}
+
+.wmm-tolka-line .wmm-tolka-value,
+#wmm-tolka-report dd {
+    margin: 0;
+    color: var(--wmm-tolka-ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums lining-nums;
+    text-align: end;
+}
+
+#wmm-tolka-report dl {
+    display: grid;
+    grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr);
+    gap: 8px 16px;
+    margin: 0;
+}
+
+#wmm-tolka-report dl.wmm-tolka-lines,
+#wmm-tolka-report dl.wmm-tolka-counts {
+    display: block;
+}
+
+.wmm-tolka-sample,
+.wmm-tolka-items,
+.wmm-tolka-sample-list {
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.wmm-tolka-sample h3,
+.wmm-tolka-sample h4,
+.wmm-tolka-sample-title,
+.wmm-tolka-section-title {
+    margin: 16px 0 8px;
+    color: var(--wmm-tolka-body);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e2e4e7;
+}
+
+.wmm-tolka-item:last-child {
+    border-bottom: 0;
+}
+
+.wmm-tolka-item-title {
+    font-weight: 600;
+}
+
+#wmm-tolka-preview-result table:not(.widefat),
+#wmm-tolka-report table:not(.widefat) {
+    width: 100%;
+    margin: 8px 0 0;
+    border-collapse: collapse;
+}
+
+#wmm-tolka-preview-result table:not(.widefat) th,
+#wmm-tolka-preview-result table:not(.widefat) td,
+#wmm-tolka-report table:not(.widefat) th,
+#wmm-tolka-report table:not(.widefat) td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e4e7;
+    text-align: start;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+#wmm-tolka-preview-result table:not(.widefat) th,
+#wmm-tolka-report table:not(.widefat) th {
+    color: var(--wmm-tolka-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+#wmm-tolka-preview-result table:not(.widefat) tbody tr:nth-child(even),
+#wmm-tolka-report table:not(.widefat) tbody tr:nth-child(even) {
+    background: var(--wmm-tolka-soft);
+}
+
+#wmm-tolka-preview-result pre,
+#wmm-tolka-report pre {
+    max-height: 240px;
+    margin: 8px 0 0;
+    padding: 12px;
+    overflow: auto;
+    border-radius: 6px;
+    background: var(--wmm-tolka-soft);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+}
+
+#wmm-tolka-preview-result img,
+.wmm-tolka-flag {
+    width: auto;
+    max-width: 80px;
+    max-height: 48px;
+    object-fit: contain;
+    vertical-align: middle;
+}
+
+/* ==========================================================================
+   Errors, missing slices, Polylang status
+   ========================================================================== */
+
+.wmm-tolka-error,
+.wmm-tolka-errors,
+#wmm-tolka-wizard [role="alert"] {
+    margin: 12px 0;
+    padding: 12px 14px;
+    border: 1px solid var(--wmm-tolka-danger-line);
+    border-inline-start: 4px solid #b32d2e;
+    border-radius: 6px;
+    background: var(--wmm-tolka-danger-bg);
+    color: var(--wmm-tolka-danger);
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+ul.wmm-tolka-errors,
+ol.wmm-tolka-errors {
+    padding-inline-start: 14px;
+    list-style: none;
+}
+
+ul.wmm-tolka-errors .wmm-tolka-error,
+ol.wmm-tolka-errors .wmm-tolka-error,
+.wmm-tolka-errors li {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+}
+
+.wmm-tolka-errors li + li {
+    margin-top: 4px;
+}
+
+.wmm-tolka-missing {
+    margin: 8px 0 0;
+    color: var(--wmm-tolka-muted);
+    font-size: 13px;
+}
+
+.wmm-tolka-empty {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--wmm-tolka-muted);
+    font-size: 14px;
+}
+
+.wmm-tolka-placeholder {
+    margin: 12px 0 0;
+    max-width: 72ch;
+    padding: 12px 14px;
+    border-inline-start: 4px solid var(--wmm-tolka-warn-line);
+    border-radius: 6px;
+    background: var(--wmm-tolka-warn-bg);
+    color: var(--wmm-tolka-warn);
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.wmm-tolka-speed-label {
+    display: block;
+    margin: 0;
+    color: var(--wmm-tolka-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-measured-url {
+    margin: 0 0 8px;
+    color: var(--wmm-tolka-body);
+    overflow-wrap: anywhere;
+}
+
+.wmm-tolka-stat {
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--wmm-tolka-line);
+}
+
+.wmm-tolka-stat-label {
+    color: var(--wmm-tolka-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-stat-value {
+    color: var(--wmm-tolka-ink);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    text-align: end;
+}
+
+.wmm-tolka-caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.wmm-tolka-status {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    margin: 0 0 8px;
+    padding: 4px 10px 4px 8px;
+    border-radius: 999px;
+    background: var(--wmm-tolka-soft);
+    color: var(--wmm-tolka-ink);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.wmm-tolka-status::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.wmm-tolka-status-active {
+    background: var(--wmm-tolka-win-bg);
+    color: var(--wmm-tolka-win-text);
+}
+
+.wmm-tolka-status-inactive,
+.wmm-tolka-status-missing {
+    background: var(--wmm-tolka-danger-bg);
+    color: var(--wmm-tolka-danger);
+}
+
+.wmm-tolka code,
+.wmm-tolka-path {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--wmm-tolka-soft);
+    font-size: 12px;
+}
+
+/* ==========================================================================
+   Help
+   ========================================================================== */
+
+.wmm-tolka-help {
+    margin-top: 8px;
+    padding: 18px 4px 8px;
+    border-top: 1px solid var(--wmm-tolka-line);
+    color: var(--wmm-tolka-body);
+}
+
+.wmm-tolka-help__title,
+.wmm-tolka-help-title {
+    margin: 0 0 8px;
+    color: var(--wmm-tolka-ink);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.wmm-tolka-help__steps,
+.wmm-tolka-help-steps {
+    margin: 0 0 12px;
+    padding-inline-start: 1.3em;
+}
+
+.wmm-tolka-help__steps li,
+.wmm-tolka-help-steps li {
+    margin: 0 0 6px;
+    padding: 0;
+}
+
+.wmm-tolka-help__benchmark,
+.wmm-tolka-help-benchmark,
+.wmm-tolka-help__path,
+.wmm-tolka-help-path {
+    margin: 0 0 8px;
+    max-width: 72ch;
+    color: var(--wmm-tolka-muted);
+    font-size: 13px;
+}
+
+.wmm-tolka-help__path code,
+.wmm-tolka-help-path code {
+    color: var(--wmm-tolka-ink);
+    font-size: 12px;
+}
+
+/* ==========================================================================
+   Motion, print, forced colors, narrow admin
+   ========================================================================== */
+
+/* ==========================================================================
+   Speed panel from the speed partial and behavior script
+   ========================================================================== */
+
+.wmm-tolka-speed-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.wmm-tolka-speed-heading {
+    margin: 0;
+    color: var(--wmm-tolka-win);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-speed-summary {
+    margin: 0;
+    max-width: 68ch;
+    color: var(--wmm-tolka-body);
+    font-size: 14px;
+}
+
+.wmm-tolka-speed-figures {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: 4px 0 0;
+}
+
+.wmm-tolka-speed-figure {
+    min-width: 0;
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--wmm-tolka-line);
+    border-radius: 10px;
+    background: var(--wmm-tolka-soft);
+}
+
+.wmm-tolka-speed-figure:has(.wmm-tolka-speed-faster),
+.wmm-tolka-speed-figure.wmm-tolka-speed-faster,
+.wmm-tolka-speed-figure:has(#wmm-tolka-faster) {
+    grid-column: 1 / -1;
+    order: -1;
+    padding: 2px 0 0;
+    border: 0;
+    background: transparent;
+}
+
+.wmm-tolka-speed-figure:has(.wmm-tolka-speed-tolka),
+.wmm-tolka-speed-figure.wmm-tolka-speed-tolka,
+.wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+    border-color: var(--wmm-tolka-win-line);
+    background: var(--wmm-tolka-win-bg);
+}
+
+.wmm-tolka-is-ready #wmm-tolka-faster,
+.wmm-tolka-is-ready dd.wmm-tolka-speed-faster,
+#wmm-tolka-speed.wmm-tolka-has-result #wmm-tolka-faster,
+#wmm-tolka-speed.wmm-tolka-has-result dd.wmm-tolka-speed-faster,
+.wmm-tolka-speed-result > .wmm-tolka-speed-faster {
+    margin: 4px 0 0;
+    color: #084e39;
+    font-size: clamp(2.6rem, 5vw, 3.75rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.wmm-tolka-is-ready #wmm-tolka-tolka-load,
+.wmm-tolka-is-ready dd.wmm-tolka-speed-tolka,
+#wmm-tolka-speed.wmm-tolka-has-result #wmm-tolka-tolka-load,
+#wmm-tolka-speed.wmm-tolka-has-result dd.wmm-tolka-speed-tolka {
+    color: var(--wmm-tolka-win);
+}
+
+.wmm-tolka-is-ready .wmm-tolka-speed-figures {
+    order: 1;
+}
+
+.wmm-tolka-is-ready .wmm-tolka-speed-summary,
+.wmm-tolka-is-ready .wmm-tolka-speed-savings,
+.wmm-tolka-is-ready .wmm-tolka-speed-scope,
+.wmm-tolka-is-ready .wmm-tolka-provenance,
+.wmm-tolka-is-ready .wmm-tolka-speed-basis-label,
+.wmm-tolka-is-ready .wmm-tolka-speed-basis {
+    order: 2;
+}
+
+#wmm-tolka-speed .wmm-tolka-is-empty .wmm-tolka-speed-figure dd,
+#wmm-tolka-speed .wmm-tolka-is-error .wmm-tolka-speed-figure dd,
+#wmm-tolka-speed .wmm-tolka-is-empty #wmm-tolka-faster,
+#wmm-tolka-speed .wmm-tolka-is-empty #wmm-tolka-current-load,
+#wmm-tolka-speed .wmm-tolka-is-empty #wmm-tolka-tolka-load,
+#wmm-tolka-speed .wmm-tolka-is-error #wmm-tolka-faster,
+#wmm-tolka-speed .wmm-tolka-is-error #wmm-tolka-current-load,
+#wmm-tolka-speed .wmm-tolka-is-error #wmm-tolka-tolka-load,
+#wmm-tolka-speed.wmm-tolka-has-error #wmm-tolka-faster,
+#wmm-tolka-speed.wmm-tolka-has-error #wmm-tolka-current-load,
+#wmm-tolka-speed.wmm-tolka-has-error #wmm-tolka-tolka-load {
+    color: var(--wmm-tolka-muted);
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.3;
+}
+
+#wmm-tolka-speed:has(.wmm-tolka-is-empty) {
+    border-style: dashed;
+    border-color: var(--wmm-tolka-line-strong);
+    background: var(--wmm-tolka-soft);
+}
+
+#wmm-tolka-speed:has(.wmm-tolka-is-ready),
+#wmm-tolka-speed.wmm-tolka-has-result {
+    border-style: solid;
+    border-color: var(--wmm-tolka-win-line);
+    background: var(--wmm-tolka-surface);
+}
+
+#wmm-tolka-speed:has(.wmm-tolka-is-error),
+#wmm-tolka-speed.wmm-tolka-has-error {
+    border-color: var(--wmm-tolka-danger-line);
+    background: var(--wmm-tolka-surface);
+}
+
+.wmm-tolka-speed-error {
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--wmm-tolka-danger-line);
+    border-inline-start: 4px solid #b32d2e;
+    border-radius: 6px;
+    background: var(--wmm-tolka-danger-bg);
+    color: var(--wmm-tolka-danger);
+}
+
+.wmm-tolka-speed-error p,
+#wmm-tolka-speed-error {
+    margin: 0;
+    color: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.45;
+}
+
+.wmm-tolka-is-error .wmm-tolka-speed-error {
+    order: -1;
+}
+
+.wmm-tolka-speed-savings {
+    margin: 0;
+    color: var(--wmm-tolka-win-text);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.wmm-tolka-speed-scope,
+.wmm-tolka-speed-truncated,
+.wmm-tolka-speed-url,
+p.wmm-tolka-speed-current,
+p.wmm-tolka-speed-tolka {
+    margin: 0;
+    max-width: 68ch;
+    color: var(--wmm-tolka-muted);
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.45;
+}
+
+.wmm-tolka-speed-basis-label {
+    margin: 4px 0 0;
+    color: var(--wmm-tolka-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-speed-basis,
+#wmm-tolka-basis,
+#wmm-tolka-provenance-note,
+.wmm-tolka-provenance .wmm-tolka-value {
+    margin: 0;
+    max-width: 72ch;
+    color: var(--wmm-tolka-body);
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.45;
+}
+
+.wmm-tolka-provenance,
+.wmm-tolka-provenance-note,
+.wmm-tolka-provenance-placeholder {
+    margin: 0;
+    padding: 12px 14px;
+    border: 0;
+    border-inline-start: 4px solid var(--wmm-tolka-warn-line);
+    border-radius: 6px;
+    background: var(--wmm-tolka-warn-bg);
+    color: var(--wmm-tolka-warn);
+}
+
+.wmm-tolka-provenance .wmm-tolka-value,
+#wmm-tolka-provenance-note:not([hidden]),
+.wmm-tolka-provenance-placeholder {
+    color: var(--wmm-tolka-warn);
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+#wmm-tolka-speed #wmm-tolka-current-load,
+#wmm-tolka-speed #wmm-tolka-tolka-load {
+    display: block;
+    max-width: 100%;
+    margin: 6px 0 0;
+    color: var(--wmm-tolka-ink);
+    font-size: clamp(1.65rem, 3vw, 2.15rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    overflow-wrap: break-word;
+}
+
+#wmm-tolka-speed #wmm-tolka-tolka-load {
+    color: var(--wmm-tolka-win);
+}
+
+#wmm-tolka-speed #wmm-tolka-faster {
+    display: block;
+    max-width: 100%;
+    margin: 4px 0 0;
+    color: #084e39;
+    font-size: clamp(2.4rem, 5vw, 3.75rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+#wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster:not([data-faster-percent]),
+#wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster[data-faster-percent=""] {
+    color: var(--wmm-tolka-muted);
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.35;
+}
+
+#wmm-tolka-speed .wmm-tolka-is-ready #wmm-tolka-faster[data-faster-percent]:not([data-faster-percent=""]),
+#wmm-tolka-speed.wmm-tolka-has-result:not(.wmm-tolka-has-error) #wmm-tolka-faster[data-faster-percent]:not([data-faster-percent=""]) {
+    color: #084e39;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+#wmm-tolka-provenance-note[hidden],
+.wmm-tolka-provenance:has(> #wmm-tolka-provenance-note[hidden]),
+.wmm-tolka-provenance-note:has(> #wmm-tolka-provenance-note[hidden]) {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    border: 0 !important;
+    background: none !important;
+}
+
+.wmm-tolka-speed-result {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.wmm-tolka-speed-result > .wmm-tolka-speed-faster {
+    order: -1;
+}
+
+/* ==========================================================================
+   Preview sections and migration report
+   ========================================================================== */
+
+.wmm-tolka-preview-lead,
+.wmm-tolka-empty-lead,
+.wmm-tolka-report-note,
+.wmm-tolka-section-note,
+.wmm-tolka-hint {
+    margin: 0 0 10px;
+    max-width: 68ch;
+    color: var(--wmm-tolka-body);
+}
+
+.wmm-tolka-preview-notes,
+.wmm-tolka-report-extra {
+    margin: 0 0 14px;
+}
+
+.wmm-tolka-preview-notes .wmm-tolka-error,
+.wmm-tolka-report-extra .wmm-tolka-error {
+    margin-top: 0;
+}
+
+.wmm-tolka-preview-samples {
+    margin-top: 4px;
+}
+
+.wmm-tolka-section {
+    margin-top: 16px;
+}
+
+.wmm-tolka-section-title,
+.wmm-tolka-heading {
+    margin: 0 0 8px;
+    color: var(--wmm-tolka-ink);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.wmm-tolka-section-count {
+    margin: 0 0 6px;
+    color: var(--wmm-tolka-ink);
+    font-size: 1.35rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.03em;
+}
+
+.wmm-tolka-sample-item {
+    padding: 8px 0;
+    border-bottom: 1px solid #e2e4e7;
+    overflow-wrap: anywhere;
+}
+
+.wmm-tolka-sample-item:last-child {
+    border-bottom: 0;
+}
+
+dl.wmm-tolka-lines,
+#wmm-tolka-report dl.wmm-tolka-lines,
+dl.wmm-tolka-report-lines {
+    display: grid;
+    grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr);
+    gap: 0 16px;
+    margin: 8px 0 0;
+}
+
+dl.wmm-tolka-lines dt,
+dl.wmm-tolka-lines dd,
+.wmm-tolka-report-line {
+    margin: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid #e2e4e7;
+}
+
+.wmm-tolka-report-line {
+    display: grid;
+    grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr);
+    gap: 8px 16px;
+}
+
+dl.wmm-tolka-lines dt,
+.wmm-tolka-report-label {
+    color: var(--wmm-tolka-muted);
+    font-weight: 600;
+}
+
+dl.wmm-tolka-lines dd,
+.wmm-tolka-report-value {
+    margin: 0;
+    color: var(--wmm-tolka-ink);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    text-align: end;
+}
+
+.wmm-tolka-report-title {
+    margin: 0 0 8px;
+    font-size: 18px;
+}
+
+.wmm-tolka-report-failed,
+.wmm-tolka-panel-error {
+    border-color: var(--wmm-tolka-danger-line);
+}
+
+.wmm-tolka-status.notice,
+.wmm-tolka-errors.notice,
+.wmm-tolka-notice.notice,
+#wmm-tolka-polylang-status {
+    display: block;
+    clear: both;
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border-radius: 6px;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+#wmm-tolka-polylang-status.notice-success {
+    background: #edfaef;
+    border-inline-start: 4px solid #0b6e4f;
+    color: #1d2327;
+}
+
+#wmm-tolka-polylang-status.notice-warning {
+    background: #fcf9e8;
+    border-inline-start: 4px solid #9a6700;
+    color: #1d2327;
+}
+
+#wmm-tolka-polylang-status.notice-error {
+    background: #fcf0f1;
+    border-inline-start: 4px solid #b32d2e;
+    color: #1d2327;
+}
+
+#wmm-tolka-polylang-status p,
+#wmm-tolka-polylang .wmm-tolka-status p {
+    margin: 0;
+    max-width: 100%;
+    color: #1d2327;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+.wmm-tolka-wrap {
+    display: flex;
+    flex-direction: column;
+}
+
+#wmm-tolka-polylang-status {
+    order: -1;
+}
+
+.wmm-tolka-status.notice::before,
+.wmm-tolka-errors.notice::before {
+    content: none;
+}
+
+.wmm-tolka-status.notice p,
+.wmm-tolka-notice p {
+    margin: 0.35em 0;
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.wmm-tolka-status-unreadable {
+    background: var(--wmm-tolka-danger-bg);
+    color: var(--wmm-tolka-danger);
+}
+
+.wmm-tolka-error-list,
+.wmm-tolka-gaps,
+.wmm-tolka-problems {
+    margin: 0.35em 0 0.2em 1.2em;
+    padding: 0;
+    list-style: disc;
+}
+
+.wmm-tolka .widefat th,
+.wmm-tolka .widefat td {
+    overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   Help reference
+   ========================================================================== */
+
+.wmm-tolka-help-region {
+    margin-top: 28px;
+}
+
+.wmm-tolka-help__intro,
+.wmm-tolka-help__limits,
+.wmm-tolka-help__step p {
+    max-width: 68ch;
+}
+
+.wmm-tolka-help__step {
+    margin: 0 0 14px;
+}
+
+.wmm-tolka-help__step-title,
+.wmm-tolka-help__limits-title,
+.wmm-tolka-help__benchmark-title {
+    margin: 16px 0 6px;
+    color: var(--wmm-tolka-ink);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.wmm-tolka-help__note {
+    margin: 8px 0;
+    padding: 8px 12px;
+    border-inline-start: 3px solid var(--wmm-tolka-line-strong);
+    background: var(--wmm-tolka-soft);
+    color: var(--wmm-tolka-body);
+}
+
+.wmm-tolka-help__quote {
+    margin: 8px 0 12px;
+    padding: 10px 14px;
+    border-inline-start: 3px solid var(--wmm-tolka-win-line);
+    background: var(--wmm-tolka-win-wash);
+    color: var(--wmm-tolka-win-text);
+}
+
+.wmm-tolka-help__quote p {
+    margin: 0;
+}
+
+.wmm-tolka-help__details {
+    margin: 8px 0 12px;
+    padding-inline-start: 1.2em;
+}
+
+.wmm-tolka-help__details li {
+    margin: 0 0 6px;
+}
+
+@container wmm-tolka-wizard (max-width: 720px) {
+    .wmm-tolka-speed-figures,
+    .wmm-tolka-compare,
+    .wmm-tolka-metrics,
+    .wmm-tolka-speed__compare,
+    #wmm-tolka-speed > dl {
+        grid-template-columns: 1fr;
+    }
+
+    .wmm-tolka-speed-figure,
+    .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-faster) {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wmm-tolka-wizard button.wmm-tolka-busy,
+    #wmm-tolka-wizard button.wmm-tolka-is-busy,
+    #wmm-tolka-wizard button.wmm-tolka-button--busy,
+    #wmm-tolka-wizard button[aria-busy="true"] {
+        animation: none !important;
+        transition: none !important;
+        outline: 2px dashed currentColor;
+        outline-offset: 2px;
+    }
+
+    #wmm-tolka-wizard button.wmm-tolka-busy::after,
+    #wmm-tolka-wizard button.wmm-tolka-is-busy::after,
+    #wmm-tolka-wizard button.wmm-tolka-button--busy::after,
+    #wmm-tolka-wizard button[aria-busy="true"]::after {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}
+
+@media (forced-colors: active) {
+    .wmm-tolka-step,
+    #wmm-tolka-speed:has(*),
+    #wmm-tolka-preview-result:has(*),
+    #wmm-tolka-report:has(*),
+    .wmm-tolka-error,
+    .wmm-tolka-provenance-note,
+    #wmm-tolka-measure.button {
+        border: 1px solid CanvasText;
+        background: Canvas;
+        color: CanvasText;
+        box-shadow: none;
+    }
+
+    #wmm-tolka-speed .wmm-tolka-faster,
+    #wmm-tolka-speed .wmm-tolka-value,
+    #wmm-tolka-speed dd,
+    .wmm-tolka-count .wmm-tolka-value {
+        color: CanvasText;
+    }
+}
+
+@media print {
+    .wmm-tolka-actions {
+        display: none;
+    }
+
+    .wmm-tolka-step,
+    #wmm-tolka-speed:has(*) {
+        break-inside: avoid;
+        box-shadow: none;
+    }
+}
+
+@media (max-width: 782px) {
+    .wmm-tolka-steps::before {
+        inset-inline-start: 31px;
+    }
+
+    .wmm-tolka-step {
+        padding: 56px 16px 16px;
+    }
+
+    .wmm-tolka-step::before {
+        top: 16px;
+        inset-inline-start: 16px;
+    }
+
+    .wmm-tolka-actions .button,
+    .wmm-tolka-actions .wmm-tolka-button {
+        justify-content: center;
+        width: 100%;
+        max-width: 100%;
+        text-align: center;
+    }
+
+    #wmm-tolka-polylang-status,
+    #wmm-tolka-polylang .wmm-tolka-status {
+        width: 100%;
+        max-width: 100%;
+        margin: 0 0 12px;
+        padding: 12px;
+    }
+
+    #wmm-tolka-polylang-status p,
+    #wmm-tolka-polylang .wmm-tolka-status p {
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+    #wmm-tolka-wizard button.wmm-tolka-is-busy,
+    #wmm-tolka-wizard button.wmm-tolka-busy,
+    #wmm-tolka-wizard button[aria-busy="true"] {
+        flex-wrap: nowrap;
+        height: auto !important;
+        min-height: 40px;
+        padding: 8px 12px;
+        white-space: normal;
+        line-height: 1.35;
+        overflow-wrap: break-word;
+    }
+
+    #wmm-tolka-speed:has(*),
+    #wmm-tolka-preview-result:has(*),
+    #wmm-tolka-report:has(*) {
+        padding: 12px;
+    }
+
+    #wmm-tolka-speed.wmm-tolka-has-error,
+    #wmm-tolka-speed:has(.wmm-tolka-is-error),
+    #wmm-tolka-preview-result.wmm-tolka-has-error,
+    #wmm-tolka-report.wmm-tolka-has-error,
+    .wmm-tolka-report-failed,
+    .wmm-tolka-speed-error,
+    .wmm-tolka-error,
+    #wmm-tolka-speed-error {
+        max-width: 100%;
+        overflow-wrap: anywhere;
+    }
+
+    .wmm-tolka-speed-error,
+    p.wmm-tolka-error,
+    .wmm-tolka-errors {
+        padding: 12px;
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+    .wmm-tolka-speed-error p,
+    #wmm-tolka-speed-error {
+        margin: 0;
+        padding: 0;
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+    #wmm-tolka-speed #wmm-tolka-current-load,
+    #wmm-tolka-speed #wmm-tolka-tolka-load {
+        font-size: 1.25rem;
+        line-height: 1.25;
+    }
+
+    #wmm-tolka-speed:has(*),
+    .wmm-tolka-compare,
+    .wmm-tolka-metrics,
+    .wmm-tolka-speed__compare,
+    .wmm-tolka-speed-figures,
+    #wmm-tolka-speed > dl,
+    #wmm-tolka-report dl,
+    dl.wmm-tolka-lines,
+    dl.wmm-tolka-report-lines,
+    .wmm-tolka-report-line {
+        grid-template-columns: 1fr;
+    }
+
+    .wmm-tolka-speed-figure,
+    .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load),
+    .wmm-tolka-speed-figure:has(#wmm-tolka-faster) {
+        grid-column: 1 / -1;
+    }
+
+    #wmm-tolka-speed > dl > dt:nth-of-type(1),
+    #wmm-tolka-speed > dl > dd:nth-of-type(1) {
+        grid-column: 1;
+    }
+
+    #wmm-tolka-speed > dl > dt:nth-of-type(1) {
+        grid-row: 1;
+    }
+
+    #wmm-tolka-speed > dl > dd:nth-of-type(1) {
+        grid-row: 2;
+    }
+
+    #wmm-tolka-speed > dl > dt:nth-of-type(2) {
+        grid-row: 3;
+    }
+
+    #wmm-tolka-speed > dl > dd:nth-of-type(2) {
+        grid-row: 4;
+    }
+
+    .wmm-tolka-compare::before,
+    .wmm-tolka-metrics::before,
+    .wmm-tolka-speed__compare::before,
+    #wmm-tolka-speed > dl::before {
+        content: none;
+    }
+
+    #wmm-tolka-speed > dl > dt:nth-of-type(2) {
+        margin-top: 12px;
+    }
+
+    #wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt,
+    #wmm-tolka-speed > dl.wmm-tolka-speed-fields > dd {
+        grid-column: 1 / -1;
+        grid-row: auto;
+        margin-top: 0;
+    }
+
+    #wmm-tolka-speed > dl.wmm-tolka-speed-fields > dt {
+        margin-top: 12px;
+    }
+
+    .wmm-tolka-line,
+    #wmm-tolka-report .wmm-tolka-lines > div {
+        flex-direction: column;
+        gap: 2px;
+        align-items: flex-start;
+    }
+
+    .wmm-tolka-line .wmm-tolka-value,
+    #wmm-tolka-report dd,
+    .wmm-tolka-stat-value {
+        text-align: start;
+    }
+
+    .wmm-tolka-stat {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
+
+    #wmm-tolka-speed .wmm-tolka-faster,
+    #wmm-tolka-speed .wmm-tolka-percent-faster,
+    #wmm-tolka-speed .wmm-tolka-faster-label,
+    #wmm-tolka-speed [data-wmm-tolka="faster_label"],
+    .wmm-tolka-is-ready #wmm-tolka-faster,
+    #wmm-tolka-speed.wmm-tolka-has-result #wmm-tolka-faster,
+    #wmm-tolka-speed #wmm-tolka-faster {
+        font-size: clamp(2rem, 8.5vw, 2.5rem);
+        line-height: 1.2;
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+
+    #wmm-tolka-speed .wmm-tolka-speed-figure:not(.wmm-tolka-speed-faster):not(:has(.wmm-tolka-speed-faster, #wmm-tolka-faster)) dd,
+    #wmm-tolka-speed dd.wmm-tolka-speed-current,
+    #wmm-tolka-speed dd.wmm-tolka-speed-tolka {
+        font-size: 1.45rem;
+        line-height: 1.15;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wmm-tolka button.wmm-tolka-busy,
+    .wmm-tolka button.wmm-tolka-is-busy,
+    .wmm-tolka button.wmm-tolka-button--busy,
+    .wmm-tolka button[aria-busy="true"],
+    #wmm-tolka-measure[aria-busy="true"],
+    #wmm-tolka-preview[aria-busy="true"],
+    #wmm-tolka-run[aria-busy="true"] {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .wmm-tolka button.wmm-tolka-busy::before,
+    .wmm-tolka button.wmm-tolka-is-busy::before,
+    .wmm-tolka button[aria-busy="true"]::before,
+    #wmm-tolka-measure[aria-busy="true"]::before,
+    #wmm-tolka-preview[aria-busy="true"]::before,
+    #wmm-tolka-run[aria-busy="true"]::before {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+
+    button.wmm-tolka-is-busy::after,
+    .wmm-tolka-button.wmm-tolka-is-busy::after,
+    .wmm-tolka button.wmm-tolka-busy::after,
+    .wmm-tolka button.wmm-tolka-is-busy::after,
+    .wmm-tolka button[aria-busy="true"]::after,
+    #wmm-tolka-measure.wmm-tolka-is-busy::after,
+    #wmm-tolka-preview.wmm-tolka-is-busy::after,
+    #wmm-tolka-run.wmm-tolka-is-busy::after,
+    #wmm-tolka-measure[aria-busy="true"]::after,
+    #wmm-tolka-preview[aria-busy="true"]::after,
+    #wmm-tolka-run[aria-busy="true"]::after {
+        content: "" !important;
+        display: inline-block !important;
+        visibility: visible !important;
+        width: 14px !important;
+        height: 14px !important;
+        border-style: solid !important;
+        border-width: 2px !important;
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}
+
+button.wmm-tolka-is-busy::after,
+#wmm-tolka-wizard button.wmm-tolka-is-busy::after,
+#wmm-tolka-run.wmm-tolka-is-busy::after,
+#wmm-tolka-preview.wmm-tolka-is-busy::after {
+    position: static !important;
+    float: none !important;
+    z-index: auto !important;
+}
+
+#wmm-tolka-report,
+#wmm-tolka-preview-result {
+    position: relative;
+    z-index: 2;
+    clear: both;
+}
+
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-faster,
+#wmm-tolka-wizard:has(button[aria-busy="true"]) #wmm-tolka-faster,
+#wmm-tolka-wizard.wmm-tolka-is-busy #wmm-tolka-faster {
+    position: relative;
+    z-index: 1;
+    color: #063828;
+    background-color: #fff;
+    box-shadow: 0 0 0 4px #fff;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) {
+    display: flex;
+    flex-direction: column;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > dt:nth-of-type(3) {
+    order: 1;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > #wmm-tolka-faster {
+    order: 2;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > dt:nth-of-type(1) {
+    order: 3;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > #wmm-tolka-current-load {
+    order: 4;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > dt:nth-of-type(2) {
+    order: 5;
+}
+
+dl.wmm-tolka-speed-fields:has(#wmm-tolka-current-load):has(#wmm-tolka-tolka-load):has(#wmm-tolka-faster) > #wmm-tolka-tolka-load {
+    order: 6;
+}
+
+.wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-faster) {
+    order: -2;
+    grid-column: 1 / -1;
+}
+
+.wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+.wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+    order: 1;
+}
+
+#wmm-tolka-speed #wmm-tolka-current-load,
+#wmm-tolka-speed #wmm-tolka-tolka-load,
+dl.wmm-tolka-speed-fields > #wmm-tolka-current-load,
+dl.wmm-tolka-speed-fields > #wmm-tolka-tolka-load {
+    font-size: clamp(1.2rem, 2.2vw, 1.7rem);
+}
+
+#wmm-tolka-speed #wmm-tolka-faster,
+#wmm-tolka-wizard #wmm-tolka-faster,
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-faster,
+#wmm-tolka-wizard.wmm-tolka-is-busy #wmm-tolka-faster,
+dl.wmm-tolka-speed-fields > #wmm-tolka-faster {
+    font-size: clamp(2.5rem, 6vw, 3.75rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    button.wmm-tolka-is-busy::after,
+    .wmm-tolka-button.wmm-tolka-is-busy::after,
+    #wmm-tolka-measure.wmm-tolka-is-busy::after,
+    #wmm-tolka-preview.wmm-tolka-is-busy::after,
+    #wmm-tolka-run.wmm-tolka-is-busy::after,
+    #wmm-tolka-wizard button[aria-busy="true"]::after {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}
+
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) #wmm-tolka-provenance-note[hidden],
+#wmm-tolka-wizard:has(button[aria-busy="true"]) #wmm-tolka-provenance-note[hidden],
+#wmm-tolka-wizard.wmm-tolka-is-busy #wmm-tolka-provenance-note[hidden],
+.wmm-tolka:has(button.wmm-tolka-is-busy) #wmm-tolka-provenance-note[hidden] {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    border: 0 !important;
+    background: none !important;
+    color: transparent !important;
+}
+
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) .wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
+#wmm-tolka-wizard:has(button[aria-busy="true"]) .wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
+#wmm-tolka-wizard.wmm-tolka-is-busy .wmm-tolka-provenance:has(#wmm-tolka-provenance-note[hidden]),
+#wmm-tolka-wizard:has(button.wmm-tolka-is-busy) .wmm-tolka-provenance[hidden],
+#wmm-tolka-wizard.wmm-tolka-is-busy .wmm-tolka-provenance[hidden] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    background: none !important;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load):has(> #wmm-tolka-tolka-load):has(> #wmm-tolka-faster) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster)::before {
+    content: none;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) > dt:has(+ #wmm-tolka-faster) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    order: -2;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-faster) > #wmm-tolka-faster {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    order: -1;
+    margin-bottom: 12px;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load {
+    grid-column: 1;
+    order: 1;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load) {
+    grid-row: 3;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load {
+    grid-row: 4;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+    grid-column: 2;
+    order: 2;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load) {
+    grid-row: 3;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+    grid-row: 4;
+}
+
+#wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-faster),
+#wmm-tolka-wizard .wmm-tolka-compare > :has(#wmm-tolka-faster),
+#wmm-tolka-wizard .wmm-tolka-metrics > :has(#wmm-tolka-faster) {
+    order: -2;
+    grid-column: 1 / -1;
+    grid-row: 1;
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed #wmm-tolka-current-load,
+#wmm-tolka-wizard #wmm-tolka-speed #wmm-tolka-tolka-load {
+    font-size: clamp(1.15rem, 2.2vw, 1.65rem);
+}
+
+#wmm-tolka-wizard #wmm-tolka-speed #wmm-tolka-faster {
+    font-size: clamp(2.5rem, 6vw, 3.75rem);
+}
+
+@media (max-width: 782px) {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load):has(> #wmm-tolka-tolka-load):has(> #wmm-tolka-faster),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures,
+    #wmm-tolka-wizard .wmm-tolka-compare,
+    #wmm-tolka-wizard .wmm-tolka-metrics,
+    #wmm-tolka-wizard .wmm-tolka-speed__compare {
+        grid-template-columns: 1fr;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load,
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load,
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+        grid-column: 1 / -1;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load) {
+        grid-row: 5;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+        grid-row: 6;
+    }
+
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+        grid-row: auto;
+    }
+}
+
+@container wmm-tolka-wizard (max-width: 720px) {
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load):has(> #wmm-tolka-tolka-load):has(> #wmm-tolka-faster),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures,
+    #wmm-tolka-wizard .wmm-tolka-compare,
+    #wmm-tolka-wizard .wmm-tolka-metrics,
+    #wmm-tolka-wizard .wmm-tolka-speed__compare {
+        grid-template-columns: 1fr;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > dt:has(+ #wmm-tolka-current-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-current-load) > #wmm-tolka-current-load,
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load),
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load,
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+        grid-column: 1 / -1;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > dt:has(+ #wmm-tolka-tolka-load) {
+        grid-row: 5;
+    }
+
+    #wmm-tolka-wizard #wmm-tolka-speed dl:has(> #wmm-tolka-tolka-load) > #wmm-tolka-tolka-load {
+        grid-row: 6;
+    }
+
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-current-load),
+    #wmm-tolka-wizard .wmm-tolka-speed-figures > .wmm-tolka-speed-figure:has(#wmm-tolka-tolka-load) {
+        grid-row: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wmm-tolka-wizard button.wmm-tolka-is-busy,
+    #wmm-tolka-wizard button.wmm-tolka-busy,
+    #wmm-tolka-wizard button[aria-busy="true"],
+    #wmm-tolka-measure.wmm-tolka-is-busy,
+    #wmm-tolka-preview.wmm-tolka-is-busy,
+    #wmm-tolka-run.wmm-tolka-is-busy {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    #wmm-tolka-wizard button.wmm-tolka-is-busy::after,
+    #wmm-tolka-wizard button.wmm-tolka-busy::after,
+    #wmm-tolka-wizard button[aria-busy="true"]::after,
+    #wmm-tolka-measure.wmm-tolka-is-busy::after,
+    #wmm-tolka-preview.wmm-tolka-is-busy::after,
+    #wmm-tolka-run.wmm-tolka-is-busy::after {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}

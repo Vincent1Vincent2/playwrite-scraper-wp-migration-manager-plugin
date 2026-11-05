@@ -64,6 +64,7 @@ class MigrationManager
 
         // Load AJAX handlers
         require_once MIGRATION_MANAGER_PLUGIN_DIR . 'includes/ajax/scrape-handler.php';
+        require_once MIGRATION_MANAGER_PLUGIN_DIR . 'includes/tolka/bootstrap.php';
 
         // Activation and deactivation hooks
         register_activation_hook(__FILE__, array($this, 'activate'));
