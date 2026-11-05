@@ -420,6 +420,8 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertSame(0, $this->element_child_count($document->getElementById('wmm-tolka-faster')));
         $this->assertStringContainsString('1,842 ms', $this->text($html, 'wmm-tolka-current-load'));
         $this->assertStringContainsString('900 ms', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertSame('1842', $document->getElementById('wmm-tolka-current-load')->getAttribute('data-ms'));
+        $this->assertSame('900', $document->getElementById('wmm-tolka-tolka-load')->getAttribute('data-ms'));
         $this->assertStringNotContainsString('50 ms', $html);
         $this->assertNotSame('Unavailable', $this->text($html, 'wmm-tolka-faster'));
         $this->assertStringNotContainsString('<script', $html);
@@ -429,6 +431,74 @@ class WMM_Tolka_Speed_Screen_Test extends TestCase
         $this->assertNotFalse($current_at);
         $this->assertLessThan($tolka_at, $current_at);
         $this->assertLessThan($faster_at, $tolka_at);
+    }
+
+    public function test_nested_estimate_supplies_the_note_label_and_times_without_the_page()
+    {
+        $marker = 'WMM-PAGE-BODY-9f3a';
+        $label = '57.9% <script>alert(1)</script> faster';
+        $note = 'Placeholder coefficients, not lab measurements. The page timing is measured live. Replace this file with Tolka lab data before using the percent in a pitch.';
+        $page = '<!DOCTYPE html><html><body><script>alert(page)</script>' . $marker . '</body></html>';
+        $before = $this->render(false);
+        $before_note = $this->document($before)->getElementById('wmm-tolka-provenance-note');
+
+        $this->assertTrue($before_note->hasAttribute('hidden'));
+        $this->assertTrue($before_note->parentNode->hasAttribute('hidden'));
+        $this->assertSame('', $this->text($before, 'wmm-tolka-provenance-note'));
+
+        $payload = (object) array(
+            'ok' => true,
+            'url' => 'https://example.com/' . $marker,
+            'html' => $page,
+            'html_bytes' => 2000000,
+            'total_ms' => 4000,
+            'current_ms' => 4000,
+            'tolka_ms' => 10,
+            'faster_label' => $marker,
+            'provenance' => 'lab',
+            'provenance_note' => $marker,
+            'basis' => $marker,
+            'measurement' => (object) array('html' => $page),
+            'metrics' => (object) array('truncated' => true, 'html' => $page),
+            'estimate' => (object) array(
+                'ok' => true,
+                'html' => $page,
+                'current_ms' => 0,
+                'tolka_ms' => 0,
+                'faster_percent' => 0,
+                'faster_label' => $label,
+                'basis' => 'Measured page load plus coefficients from benchmarks.json',
+                'provenance' => 'placeholder',
+                'provenance_note' => $note,
+                'error' => '',
+            ),
+        );
+        $html = $this->render(true, $payload);
+        $document = $this->document($html);
+        $note_node = $document->getElementById('wmm-tolka-provenance-note');
+
+        $this->assertFalse($note_node->hasAttribute('hidden'));
+        $this->assertFalse($note_node->parentNode->hasAttribute('hidden'));
+        $this->assertSame($note, $this->text($html, 'wmm-tolka-provenance-note'));
+        $this->assertSame($label, $this->text($html, 'wmm-tolka-faster'));
+        $this->assertSame('0 ms', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertSame('0 ms', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertSame('0', $document->getElementById('wmm-tolka-current-load')->getAttribute('data-ms'));
+        $this->assertSame('0', $document->getElementById('wmm-tolka-tolka-load')->getAttribute('data-ms'));
+        $this->assertNotSame('Unavailable', $this->text($html, 'wmm-tolka-current-load'));
+        $this->assertNotSame('Unavailable', $this->text($html, 'wmm-tolka-tolka-load'));
+        $this->assertStringContainsString(
+            'Measured page load plus coefficients from benchmarks.json.',
+            $this->text($html, 'wmm-tolka-basis')
+        );
+        $this->assertStringContainsString('Only the first part of the page HTML was measured.', $this->text($html, 'wmm-tolka-speed-truncated'));
+        $this->assertStringNotContainsString($marker, $html);
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringNotContainsString('DOCTYPE', $html);
+        $this->assertStringNotContainsString('alert(page)', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertLessThan(strpos($html, 'id="wmm-tolka-tolka-load"'), strpos($html, 'id="wmm-tolka-current-load"'));
+        $this->assertLessThan(strpos($html, 'id="wmm-tolka-faster"'), strpos($html, 'id="wmm-tolka-tolka-load"'));
     }
 
     public function test_placeholder_note_stays_hidden_until_a_placeholder_success()
