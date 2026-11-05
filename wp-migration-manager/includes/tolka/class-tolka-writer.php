@@ -1296,16 +1296,31 @@ class Tolka_Writer
      */
     private static function package_option()
     {
-        if (self::OPTION !== 'wmm_tolka_package') {
-            return '';
-        }
-
-        $blocked = 'poly' . 'lang';
-        if (stripos(self::OPTION, $blocked) !== false) {
+        if (!self::may_update_option(self::OPTION)) {
             return '';
         }
 
         return self::OPTION;
+    }
+
+    /**
+     * Whether an option name is the Tolka package and nothing else.
+     *
+     * @param mixed $option Option name.
+     * @return bool
+     */
+    private static function may_update_option($option)
+    {
+        if ($option !== 'wmm_tolka_package') {
+            return false;
+        }
+
+        $blocked = 'poly' . 'lang';
+        if (stripos($option, $blocked) !== false) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -1431,7 +1446,7 @@ class Tolka_Writer
     {
         if (self::testing()) {
             $driver = &$GLOBALS['wmm_tolka_schema_driver'];
-            if (self::package_option() === '' || empty($driver['has_update_option'])) {
+            if (!self::may_update_option(self::package_option()) || empty($driver['has_update_option'])) {
                 return null;
             }
 
@@ -1454,7 +1469,7 @@ class Tolka_Writer
         }
 
         $option = self::package_option();
-        if ($option === '' || !function_exists('update_option')) {
+        if (!self::may_update_option($option) || !function_exists('update_option')) {
             return null;
         }
 
@@ -1470,7 +1485,7 @@ class Tolka_Writer
     {
         if (self::testing()) {
             $driver = &$GLOBALS['wmm_tolka_schema_driver'];
-            if (self::package_option() === '' || empty($driver['has_get_option'])) {
+            if (!self::may_update_option(self::package_option()) || empty($driver['has_get_option'])) {
                 return array(
                     'available' => false,
                     'value' => null,
@@ -1489,7 +1504,7 @@ class Tolka_Writer
         }
 
         $option = self::package_option();
-        if ($option === '' || !function_exists('get_option')) {
+        if (!self::may_update_option($option) || !function_exists('get_option')) {
             return array(
                 'available' => false,
                 'value' => null,
