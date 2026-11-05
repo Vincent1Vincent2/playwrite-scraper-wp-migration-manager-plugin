@@ -2000,6 +2000,58 @@ class Polylang_Menus_Test extends TestCase
         $this->assertSame(1, array_count_values($this->locations($second))['primary']);
     }
 
+    public function test_sv_parent_id_with_a_null_byte_still_nests(): void
+    {
+        $fixture = $this->fixture(array(
+            'active' => true,
+            'stylesheet' => 'flavor',
+            'default_language' => 'en',
+            'languages' => array('en', 'sv'),
+            'menus' => array(8 => 'Meny'),
+            'term_languages' => array(8 => 'sv'),
+            'options' => array(
+                'nav_menus' => array(
+                    'flavor' => array(
+                        'primary' => array('sv' => 8),
+                    ),
+                ),
+            ),
+            'items' => array(
+                8 => array(
+                    array(
+                        'id' => "30\0",
+                        'parent' => "10\0",
+                        'title' => "R&amp;auml;k\0sm&ouml;rg&aring;s",
+                        'url' => "https://example.com/r%C3%A4tt\0",
+                        'object' => 'custom',
+                        'object_id' => 4,
+                        'position' => "2\0",
+                    ),
+                    array(
+                        'id' => 10,
+                        'parent' => 0,
+                        'title' => 'Mat',
+                        'url' => 'https://example.com/mat',
+                        'object' => 'custom',
+                        'object_id' => 1,
+                        'position' => 9,
+                    ),
+                ),
+            ),
+        ));
+
+        $second = $fixture->export();
+        $child = $this->location($second, 'primary')['translations']['sv']['items'][0]['children'][0];
+
+        $this->assertSame('Mat', $this->location($second, 'primary')['translations']['sv']['items'][0]['title']);
+        $this->assertSame(30, $child['id']);
+        $this->assertSame(10, $child['parent']);
+        $this->assertSame('R&auml;ksmörgås', $child['title']);
+        $this->assertSame('https://example.com/r%C3%A4tt', $child['url']);
+        $this->assertSame(array(), $second['errors']);
+        $this->assertSame(1, array_count_values($this->locations($second))['primary']);
+    }
+
     public function test_sv_siblings_follow_position_and_keep_swedish_classes(): void
     {
         $fixture = $this->fixture(array(
